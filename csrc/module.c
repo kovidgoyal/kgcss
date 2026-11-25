@@ -82,6 +82,7 @@ module_exec(PyObject *module) {
     if (kg_values_init(module) != 0) return -1;
     if (kg_properties_init(module) != 0) return -1;
     if (kg_selectors_init(module) != 0) return -1;
+    if (kg_select_init(module) != 0) return -1;
     return kg_syntax_init(module);
 }
 
@@ -92,6 +93,7 @@ module_traverse(PyObject *module, visitproc visit, void *arg) {
     Py_VISIT(state->str_important);
     if (kg_properties_traverse(module, visit, arg) != 0) return -1;
     if (kg_selectors_traverse(module, visit, arg) != 0) return -1;
+    if (kg_select_traverse(module, visit, arg) != 0) return -1;
     if (kg_types_traverse(module, visit, arg) != 0) return -1;
     if (kg_values_traverse(module, visit, arg) != 0) return -1;
     return kg_syntax_traverse(module, visit, arg);
@@ -104,6 +106,7 @@ module_clear(PyObject *module) {
     Py_CLEAR(state->str_important);
     kg_properties_clear(module);
     kg_selectors_clear(module);
+    kg_select_clear(module);
     kg_types_clear(module);
     kg_values_clear(module);
     kg_syntax_clear(module);

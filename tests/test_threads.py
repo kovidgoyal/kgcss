@@ -329,3 +329,33 @@ def test_selectors_shared() -> None:
         assert all(r == results[0] for r in results)
         assert results[0][0][1:] == ((1, 0, 2), 'before')  # #i0:is(a, b)::before
     check_gil()
+
+
+def test_select_shared() -> None:
+    # One Select used by many threads: matching runs without the GIL, and the data for :empty and
+    # the map from elements to indices are filled lazily by whichever thread needs them first.
+    # The standard library's ElementTree, as lxml enables the GIL on free-threaded builds.
+    import xml.etree.ElementTree as ET
+
+    parts = ['<root>']
+    for i in range(200):
+        parts.append(f'<div class="d{i % 7}"><p id="p{i}" class="x{i % 3}">t</p><p/><span/></div>')
+    parts.append('</root>')
+    document = ET.fromstring(''.join(parts))
+    barrier = threading.Barrier(THREADS)
+    for _ in range(3 * STRESS):
+        select = kgcss.Select(document)
+        roots = [div for div in document if div.get('class') == 'd3']
+
+        def work(idx: int, select: kgcss.Select = select, roots: list[ET.Element] = roots) -> list[object]:
+            barrier.wait()
+            out: list[object] = []
+            out.append([e.get('id') for e in select('div.d1 > p.x2, p:empty + span, :not(div, p, span)')])
+            out.append(sum(1 for r in roots for _ in select('p', root=r)))
+            out.append(select.matches(roots[idx % len(roots)], 'div:first-child, .d3'))
+            return out
+
+        results = run_concurrently(work)
+        assert all(r == results[0] for r in results)
+        assert results[0][1] == 2 * len(roots)
+    check_gil()

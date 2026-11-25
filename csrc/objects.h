@@ -134,6 +134,11 @@ int kg_selectors_traverse(PyObject *module, visitproc visit, void *arg);
 void kg_selectors_clear(PyObject *module);
 PyObject *kg_parse_selectors(PyObject *module, PyObject *const *args, Py_ssize_t nargs);
 
+/* select.c */
+int kg_select_init(PyObject *module);
+int kg_select_traverse(PyObject *module, visitproc visit, void *arg);
+void kg_select_clear(PyObject *module);
+
 /* urls.c */
 PyObject *kg_find_urls(PyObject *module, PyObject *const *args, Py_ssize_t nargs);
 

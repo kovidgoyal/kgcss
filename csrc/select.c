@@ -1,0 +1,1076 @@
+/*
+ * select.c
+ * Copyright (C) 2026 Kovid Goyal <kovid at kovidgoyal.net>
+ *
+ * Distributed under terms of the GPL3 license.
+ *
+ * Matching selectors against element trees (docs/plan-03-selectors.md, §5).
+ *
+ * Snapshot walks an ElementTree-style tree (lxml, html5-parser, or the
+ * standard library) once and records each element in compact arrays: tree
+ * links, document order, the local name, id and classes as atoms (interned
+ * strings, as integers), and the attributes. Indexes map tag, id and class
+ * atoms to elements. Matching then works on these arrays only, so it can run
+ * without the GIL.
+ *
+ * Matching is right to left: candidates for the rightmost compound selector
+ * come from an index where possible, and the combinators are followed with
+ * an explicit stack, so long selectors cannot overflow the C stack. Where a
+ * descendant or subsequent sibling combinator makes it backtrack, a bitset
+ * remembers where the selector to the left is known to fail, which keeps
+ * patterns like "a b c d" linear in the size of the tree.
+ *
+ * Thread safety: a Snapshot is immutable after construction, except for
+ * caches filled on first use (text content for :empty, and the map from
+ * elements to their index), which are filled inside a critical section on
+ * the snapshot and only read afterwards.
+ */
+
+#include "selectors.h"
+
+#define NONE UINT32_MAX
+#define ABSENT (UINT32_MAX - 1)  /* an atom for a name that occurs nowhere in the document */
+
+/* Atoms that are always present, at these indices */
+enum { ATOM_ID = 0, ATOM_CLASS, ATOM_HREF, ATOM_A, ATOM_AREA, ATOM_LINK, FIXED_ATOMS };
+static const char *const fixed_atoms[FIXED_ATOMS] = {"id", "class", "href", "a", "area", "link"};
+
+typedef struct {
+    uint32_t parent, prev, next, first_child, subtree_end;
+    uint32_t sibling_index, sibling_count, child_count;
+    uint32_t name, id;
+    uint32_t class_start, class_count, attr_start, attr_count;
+    uint8_t has_content;  /* for :empty, valid once content_done */
+} snap_el;
+
+typedef struct {
+    uint32_t name;
+    PyObject *value;  /* str */
+} snap_attr;
+
+typedef struct {
+    uint32_t *off, *items;  /* the elements with atom a are items[off[a]:off[a+1]], in document order */
+} snap_index;
+
+typedef struct {
+    PyObject_HEAD
+    uint32_t n, n_classes, n_attrs, n_atoms;
+    PyObject **elements;
+    snap_el *els;
+    uint32_t *classes;
+    snap_attr *attrs;
+    PyObject *atoms;   /* dict: str -> int */
+    snap_index by_name, by_id, by_class;
+    bool quirks;
+    /* Filled on first use, inside a critical section */
+    bool content_done;
+    PyObject *index_map;  /* dict: element -> index */
+} kg_Snapshot;
+
+/* ---------------------------------------------------------------------------
+ * Building the snapshot
+ * ------------------------------------------------------------------------- */
+
+typedef struct {
+    kg_Snapshot *s;
+    size_t cap_el, cap_elements, cap_classes, cap_attrs;
+    PyObject *tag_atoms;   /* raw tag or attribute name -> atom of its lowercased local name */
+    PyObject *str_tag, *str_items, *str_getparent, *str_iter;  /* interned names */
+} builder;
+
+static bool
+grow(void **ptr, size_t *cap, size_t need, size_t size) {
+    if (need <= *cap) return true;
+    size_t cap2 = *cap ? *cap * 2 : 64;
+    while (cap2 < need) cap2 *= 2;
+    void *p = PyMem_Realloc(*ptr, cap2 * size);
+    if (p == NULL) { PyErr_NoMemory(); return false; }
+    *ptr = p;
+    *cap = cap2;
+    return true;
+}
+
+/* The atom for an interned string, adding it if needed */
+static uint32_t
+atom_of(kg_Snapshot *s, PyObject *text) {
+    PyObject *v = PyDict_GetItemWithError(s->atoms, text);
+    if (v != NULL) return (uint32_t)PyLong_AsUnsignedLong(v);
+    if (PyErr_Occurred()) return NONE;
+    PyObject *num = PyLong_FromUnsignedLong(s->n_atoms);
+    if (num == NULL) return NONE;
+    int r = PyDict_SetItem(s->atoms, text, num);
+    Py_DECREF(num);
+    return r == 0 ? s->n_atoms++ : NONE;
+}
+
+/* The atom of the ASCII lowercased local name of a tag or attribute name ({ns}local) */
+static uint32_t
+name_atom(builder *b, PyObject *raw) {
+    PyObject *v = PyDict_GetItemWithError(b->tag_atoms, raw);
+    if (v != NULL) return (uint32_t)PyLong_AsUnsignedLong(v);
+    if (PyErr_Occurred()) return NONE;
+    PyObject *local = raw;
+    Py_ssize_t len = PyUnicode_GET_LENGTH(raw);
+    if (len && PyUnicode_READ_CHAR(raw, 0) == '{') {
+        Py_ssize_t close = PyUnicode_FindChar(raw, '}', 0, len, 1);
+        if (close >= 0) local = PyUnicode_Substring(raw, close + 1, len);
+        else Py_INCREF(local);
+    } else Py_INCREF(local);
+    if (local == NULL) return NONE;
+    PyObject *lower = kg_ascii_lower(local);
+    Py_DECREF(local);
+    if (lower == NULL) return NONE;
+    uint32_t a = atom_of(b->s, lower);
+    Py_DECREF(lower);
+    if (a == NONE) return NONE;
+    PyObject *num = PyLong_FromUnsignedLong(a);
+    if (num == NULL || PyDict_SetItem(b->tag_atoms, raw, num) != 0) { Py_XDECREF(num); return NONE; }
+    Py_DECREF(num);
+    return a;
+}
+
+/* The atom of an id or class: lowercased in quirks mode */
+static uint32_t
+value_atom(kg_Snapshot *s, PyObject *text) {
+    if (!s->quirks) return atom_of(s, text);
+    PyObject *lower = kg_ascii_lower(text);
+    if (lower == NULL) return NONE;
+    uint32_t a = atom_of(s, lower);
+    Py_DECREF(lower);
+    return a;
+}
+
+static inline bool
+is_ascii_ws(Py_UCS4 c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f'; }
+
+static bool
+add_classes(builder *b, snap_el *el, PyObject *value) {
+    kg_Snapshot *s = b->s;
+    const Py_ssize_t len = PyUnicode_GET_LENGTH(value);
+    Py_ssize_t i = 0;
+    el->class_start = s->n_classes;
+    while (i < len) {
+        while (i < len && is_ascii_ws(PyUnicode_READ_CHAR(value, i))) i++;
+        Py_ssize_t start = i;
+        while (i < len && !is_ascii_ws(PyUnicode_READ_CHAR(value, i))) i++;
+        if (i == start) break;
+        PyObject *cls = PyUnicode_Substring(value, start, i);
+        if (cls == NULL) return false;
+        uint32_t a = value_atom(s, cls);
+        Py_DECREF(cls);
+        if (a == NONE || !grow((void **)&s->classes, &b->cap_classes, s->n_classes + 1, sizeof(uint32_t))) return false;
+        s->classes[s->n_classes++] = a;
+    }
+    el->class_count = s->n_classes - el->class_start;
+    return true;
+}
+
+/* Record element e, a child of parent (NONE for the root) */
+static bool
+add_element(builder *b, PyObject *e, PyObject *tag, uint32_t parent) {
+    kg_Snapshot *s = b->s;
+    if (!grow((void **)&s->els, &b->cap_el, s->n + 1, sizeof(snap_el))) return false;
+    if (!grow((void **)&s->elements, &b->cap_elements, s->n + 1, sizeof(PyObject *))) return false;
+    const uint32_t idx = s->n;
+    snap_el *el = s->els + idx;
+    memset(el, 0, sizeof *el);
+    el->parent = parent;
+    el->prev = el->next = el->first_child = NONE;
+    el->id = NONE;
+    if ((el->name = name_atom(b, tag)) == NONE) return false;
+    s->elements[idx] = Py_NewRef(e);
+    s->n++;
+    if (parent != NONE) {
+        snap_el *p = s->els + parent;
+        el->sibling_index = p->child_count++;
+        if (p->first_child == NONE) p->first_child = idx;
+    }
+    PyObject *items = PyObject_CallMethodNoArgs(e, b->str_items);
+    if (items == NULL) return false;
+    PyObject *seq = PySequence_Fast(items, "items() must return a sequence");
+    Py_DECREF(items);
+    if (seq == NULL) return false;
+    el = s->els + idx;
+    el->attr_start = s->n_attrs;
+    bool ok = true;
+    for (Py_ssize_t i = 0; ok && i < PySequence_Fast_GET_SIZE(seq); i++) {
+        PyObject *pair = PySequence_Fast_GET_ITEM(seq, i);
+        if (!PyTuple_Check(pair) || PyTuple_GET_SIZE(pair) != 2) continue;
+        PyObject *k = PyTuple_GET_ITEM(pair, 0), *v = PyTuple_GET_ITEM(pair, 1);
+        if (!PyUnicode_Check(k) || !PyUnicode_Check(v)) continue;
+        uint32_t a = name_atom(b, k);
+        if (a == NONE || !grow((void **)&s->attrs, &b->cap_attrs, s->n_attrs + 1, sizeof(snap_attr))) { ok = false; break; }
+        s->attrs[s->n_attrs++] = (snap_attr){.name = a, .value = Py_NewRef(v)};
+        if (a == ATOM_ID && el->id == NONE) {
+            if ((el->id = value_atom(s, v)) == NONE) ok = false;
+        } else if (a == ATOM_CLASS && el->class_count == 0) {
+            ok = add_classes(b, el, v);
+        }
+    }
+    Py_DECREF(seq);
+    el->attr_count = s->n_attrs - el->attr_start;
+    return ok;
+}
+
+typedef struct { PyObject *iter; uint32_t idx, last_child; } walk_frame;
+
+typedef struct { PyObject *element; uint32_t idx, last_child; } lxml_frame;
+
+/* For lxml: one iteration over the whole tree in document order, with each element's parent from
+ * getparent(), is much faster than iterating the children of every element */
+static bool
+walk_lxml(builder *b, PyObject *root) {
+    kg_Snapshot *s = b->s;
+    PyObject *it = PyObject_CallMethodNoArgs(root, b->str_iter);
+    if (it == NULL) return false;
+    size_t cap = 64, depth = 0;
+    lxml_frame *stack = PyMem_Malloc(cap * sizeof(lxml_frame));
+    if (stack == NULL) { Py_DECREF(it); PyErr_NoMemory(); return false; }
+    bool ok = true;
+    PyObject *e;
+    while (ok && (e = PyIter_Next(it)) != NULL) {
+        PyObject *tag = PyObject_GetAttr(e, b->str_tag);
+        if (tag == NULL) { Py_DECREF(e); ok = false; break; }
+        if (PyUnicode_Check(tag)) {
+            uint32_t parent = NONE;
+            if (depth) {
+                PyObject *p = PyObject_CallMethodNoArgs(e, b->str_getparent);
+                if (p == NULL) ok = false;
+                else {
+                    /* Elements of the stack whose subtree has ended */
+                    while (depth && stack[depth - 1].element != p) {
+                        depth--;
+                        s->els[stack[depth].idx].subtree_end = s->n;
+                    }
+                    Py_DECREF(p);
+                    if (!depth) {
+                        PyErr_SetString(PyExc_ValueError, "The tree changed while it was being read");
+                        ok = false;
+                    } else parent = stack[depth - 1].idx;
+                }
+            }
+            const uint32_t idx = s->n;
+            if (ok && (depth == 0) != (idx == 0)) {
+                PyErr_SetString(PyExc_ValueError, "The tree changed while it was being read");
+                ok = false;
+            }
+            ok = ok && add_element(b, e, tag, parent);
+            if (ok && depth) {
+                lxml_frame *f = stack + depth - 1;
+                if (f->last_child != NONE) { s->els[f->last_child].next = idx; s->els[idx].prev = f->last_child; }
+                f->last_child = idx;
+            }
+            if (ok && depth == cap) {
+                lxml_frame *ns = PyMem_Realloc(stack, cap * 2 * sizeof(lxml_frame));
+                if (ns == NULL) { PyErr_NoMemory(); ok = false; }
+                else { stack = ns; cap *= 2; }
+            }
+            /* The elements array holds a reference, so the borrowed pointer stays valid */
+            if (ok) stack[depth++] = (lxml_frame){s->elements[idx], idx, NONE};
+        }
+        Py_DECREF(tag);
+        Py_DECREF(e);
+    }
+    if (ok && PyErr_Occurred()) ok = false;
+    while (depth) { depth--; s->els[stack[depth].idx].subtree_end = s->n; }
+    PyMem_Free(stack);
+    Py_DECREF(it);
+    return ok;
+}
+
+static bool
+walk(builder *b, PyObject *root) {
+    kg_Snapshot *s = b->s;
+    int is_lxml = PyObject_HasAttrWithError(root, b->str_getparent);
+    if (is_lxml < 0) return false;
+    if (is_lxml) {
+        if (!walk_lxml(b, root)) return false;
+        goto counts;
+    }
+    PyObject *tag = PyObject_GetAttr(root, b->str_tag);
+    if (tag == NULL) return false;
+    if (!PyUnicode_Check(tag)) {
+        Py_DECREF(tag);
+        PyErr_SetString(PyExc_TypeError, "The root must be an element");
+        return false;
+    }
+    bool ok = add_element(b, root, tag, NONE);
+    Py_DECREF(tag);
+    if (!ok) return false;
+    size_t cap = 64, depth = 0;
+    walk_frame *stack = PyMem_Malloc(cap * sizeof(walk_frame));
+    if (stack == NULL) { PyErr_NoMemory(); return false; }
+    PyObject *it = PyObject_GetIter(root);
+    if (it == NULL) { PyMem_Free(stack); return false; }
+    stack[depth++] = (walk_frame){it, 0, NONE};
+    while (ok && depth) {
+        walk_frame *f = stack + depth - 1;
+        PyObject *child = PyIter_Next(f->iter);
+        if (child == NULL) {
+            if (PyErr_Occurred()) { ok = false; break; }
+            s->els[f->idx].subtree_end = s->n;
+            Py_DECREF(f->iter);
+            depth--;
+            continue;
+        }
+        PyObject *ctag = PyObject_GetAttr(child, b->str_tag);
+        if (ctag == NULL) { Py_DECREF(child); ok = false; break; }
+        if (PyUnicode_Check(ctag)) {
+            /* An element: comments, processing instructions and entities have other tags */
+            const uint32_t idx = s->n;
+            ok = add_element(b, child, ctag, f->idx);
+            if (ok) {
+                if (f->last_child != NONE) { s->els[f->last_child].next = idx; s->els[idx].prev = f->last_child; }
+                f->last_child = idx;
+                PyObject *cit = PyObject_GetIter(child);
+                if (cit == NULL) ok = false;
+                else if (depth == cap) {
+                    walk_frame *ns = PyMem_Realloc(stack, cap * 2 * sizeof(walk_frame));
+                    if (ns == NULL) { Py_DECREF(cit); PyErr_NoMemory(); ok = false; }
+                    else { stack = ns; cap *= 2; }
+                }
+                if (ok) stack[depth++] = (walk_frame){cit, idx, NONE};
+            }
+        }
+        Py_DECREF(ctag);
+        Py_DECREF(child);
+    }
+    while (depth) Py_DECREF(stack[--depth].iter);
+    PyMem_Free(stack);
+    if (!ok) return false;
+counts:
+    for (uint32_t i = 0; i < s->n; i++) {
+        snap_el *el = s->els + i;
+        el->sibling_count = el->parent == NONE ? 1 : s->els[el->parent].child_count;
+    }
+    return true;
+}
+
+/* An index from atoms to elements, by counting sort */
+static bool
+build_index(kg_Snapshot *s, snap_index *index, uint32_t count_of(const kg_Snapshot *, uint32_t, uint32_t *)) {
+    index->off = PyMem_Calloc(s->n_atoms + 1, sizeof(uint32_t));
+    if (index->off == NULL) { PyErr_NoMemory(); return false; }
+    uint32_t total = 0;
+    for (uint32_t i = 0; i < s->n; i++) total += count_of(s, i, NULL);
+    /* The atom of each entry, and its element */
+    uint32_t *atoms = PyMem_Malloc((total ? total : 1) * sizeof(uint32_t));
+    if (atoms == NULL) { PyErr_NoMemory(); return false; }
+    uint32_t *owner = PyMem_Malloc((total ? total : 1) * sizeof(uint32_t));
+    if (owner == NULL) { PyMem_Free(atoms); PyErr_NoMemory(); return false; }
+    uint32_t pos = 0;
+    for (uint32_t i = 0; i < s->n; i++) {
+        uint32_t k = count_of(s, i, atoms + pos);
+        for (uint32_t j = 0; j < k; j++) owner[pos + j] = i;
+        pos += k;
+    }
+    for (uint32_t j = 0; j < total; j++) index->off[atoms[j] + 1]++;
+    for (uint32_t a = 0; a < s->n_atoms; a++) index->off[a + 1] += index->off[a];
+    index->items = PyMem_Malloc((total ? total : 1) * sizeof(uint32_t));
+    uint32_t *fill = PyMem_Malloc((s->n_atoms + 1) * sizeof(uint32_t));
+    if (index->items == NULL || fill == NULL) {
+        PyMem_Free(atoms); PyMem_Free(owner); PyMem_Free(fill);
+        PyErr_NoMemory();
+        return false;
+    }
+    memcpy(fill, index->off, (s->n_atoms + 1) * sizeof(uint32_t));
+    for (uint32_t j = 0; j < total; j++) index->items[fill[atoms[j]]++] = owner[j];
+    PyMem_Free(atoms); PyMem_Free(owner); PyMem_Free(fill);
+    return true;
+}
+
+/* The atoms of element i for each index: the number of them, written to out if not NULL */
+static uint32_t
+name_atoms(const kg_Snapshot *s, uint32_t i, uint32_t *out) {
+    if (out) out[0] = s->els[i].name;
+    return 1;
+}
+
+static uint32_t
+id_atoms(const kg_Snapshot *s, uint32_t i, uint32_t *out) {
+    if (s->els[i].id == NONE) return 0;
+    if (out) out[0] = s->els[i].id;
+    return 1;
+}
+
+static uint32_t
+class_atoms(const kg_Snapshot *s, uint32_t i, uint32_t *out) {
+    const snap_el *el = s->els + i;
+    /* An element can have the same class twice: index it once */
+    uint32_t k = 0;
+    for (uint32_t j = 0; j < el->class_count; j++) {
+        const uint32_t a = s->classes[el->class_start + j];
+        bool seen = false;
+        for (uint32_t m = 0; m < j && !seen; m++) seen = s->classes[el->class_start + m] == a;
+        if (!seen) { if (out) out[k] = a; k++; }
+    }
+    return k;
+}
+
+static void
+Snapshot_dealloc(PyObject *o) {
+    kg_Snapshot *s = (kg_Snapshot *)o;
+    PyTypeObject *tp = Py_TYPE(o);
+    PyObject_GC_UnTrack(o);
+    for (uint32_t i = 0; i < s->n; i++) Py_XDECREF(s->elements[i]);
+    for (uint32_t i = 0; i < s->n_attrs; i++) Py_XDECREF(s->attrs[i].value);
+    PyMem_Free(s->elements); PyMem_Free(s->els); PyMem_Free(s->classes); PyMem_Free(s->attrs);
+    snap_index *indexes[] = {&s->by_name, &s->by_id, &s->by_class};
+    for (size_t i = 0; i < 3; i++) { PyMem_Free(indexes[i]->off); PyMem_Free(indexes[i]->items); }
+    Py_XDECREF(s->atoms);
+    Py_XDECREF(s->index_map);
+    tp->tp_free(o);
+    Py_DECREF(tp);
+}
+
+static int
+Snapshot_traverse(PyObject *o, visitproc visit, void *arg) {
+    kg_Snapshot *s = (kg_Snapshot *)o;
+    Py_VISIT(Py_TYPE(o));
+    for (uint32_t i = 0; i < s->n; i++) Py_VISIT(s->elements[i]);
+    Py_VISIT(s->index_map);
+    return 0;
+}
+
+static int
+Snapshot_clear(PyObject *o) {
+    kg_Snapshot *s = (kg_Snapshot *)o;
+    for (uint32_t i = 0; i < s->n; i++) Py_CLEAR(s->elements[i]);
+    Py_CLEAR(s->index_map);
+    return 0;
+}
+
+static PyObject *
+Snapshot_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
+    static char *kwlist[] = {"root", "quirks_mode", NULL};
+    PyObject *root;
+    int quirks = 0;
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|p", kwlist, &root, &quirks)) return NULL;
+    kg_Snapshot *s = (kg_Snapshot *)type->tp_alloc(type, 0);
+    if (s == NULL) return NULL;
+    s->quirks = quirks;
+    builder b = {.s = s};
+    bool ok = (s->atoms = PyDict_New()) != NULL && (b.tag_atoms = PyDict_New()) != NULL;
+    ok = ok && (b.str_tag = PyUnicode_InternFromString("tag")) && (b.str_items = PyUnicode_InternFromString("items")) &&
+         (b.str_getparent = PyUnicode_InternFromString("getparent")) && (b.str_iter = PyUnicode_InternFromString("iter"));
+    for (int i = 0; ok && i < FIXED_ATOMS; i++) {
+        PyObject *t = PyUnicode_InternFromString(fixed_atoms[i]);
+        ok = t != NULL && atom_of(s, t) == (uint32_t)i;
+        Py_XDECREF(t);
+    }
+    ok = ok && walk(&b, root);
+    Py_XDECREF(b.tag_atoms);
+    Py_XDECREF(b.str_tag); Py_XDECREF(b.str_items); Py_XDECREF(b.str_getparent); Py_XDECREF(b.str_iter);
+    ok = ok && build_index(s, &s->by_name, name_atoms) && build_index(s, &s->by_id, id_atoms) &&
+         build_index(s, &s->by_class, class_atoms);
+    if (!ok) { Py_DECREF(s); return NULL; }
+    return (PyObject *)s;
+}
+
+/* :empty needs text, which is read from the elements on first use */
+static bool
+ensure_content(kg_Snapshot *s) {
+    bool ok = true;
+    Py_BEGIN_CRITICAL_SECTION(s);
+    for (uint32_t i = 0; ok && !s->content_done && i < s->n; i++) {
+        snap_el *el = s->els + i;
+        if (el->first_child != NONE) { el->has_content = 1; continue; }
+        PyObject *e = s->elements[i];
+        PyObject *text = PyObject_GetAttrString(e, "text");
+        if (text == NULL) { ok = false; break; }
+        el->has_content = text != Py_None && PyObject_IsTrue(text) == 1;
+        Py_DECREF(text);
+        /* The tails of comments and processing instructions are text too */
+        PyObject *it = el->has_content ? NULL : PyObject_GetIter(e);
+        if (!el->has_content && it == NULL) { ok = false; break; }
+        PyObject *child;
+        while (it != NULL && (child = PyIter_Next(it)) != NULL) {
+            PyObject *tail = PyObject_GetAttrString(child, "tail");
+            Py_DECREF(child);
+            if (tail == NULL) { ok = false; break; }
+            if (tail != Py_None && PyObject_IsTrue(tail) == 1) el->has_content = 1;
+            Py_DECREF(tail);
+            if (el->has_content) break;
+        }
+        if (it != NULL && PyErr_Occurred()) ok = false;
+        Py_XDECREF(it);
+    }
+    if (ok) s->content_done = true;
+    Py_END_CRITICAL_SECTION();
+    return ok;
+}
+
+/* ---------------------------------------------------------------------------
+ * Preparing a compiled selector for a snapshot
+ * ------------------------------------------------------------------------- */
+
+typedef enum {
+    P_NONE = 0, P_ROOT, P_SCOPE, P_ANY_LINK, P_EMPTY, P_FIRST_CHILD, P_LAST_CHILD, P_ONLY_CHILD,
+    P_ALL,  /* an inappropriate pseudo-class or pseudo-element, ignored: matches everything */
+    P_IS, P_NOT,
+} pseudo_code;
+
+/* Keep in sync with INAPPROPRIATE_PSEUDO_CLASSES in src/kgcss/selectors.py */
+static const char *const inappropriate[] = {
+    "active", "after", "disabled", "visited", "link", "before", "focus", "first-letter", "enabled", "first-line",
+    "hover", "checked", "target", "focus-within", "focus-visible", "target-within", NULL,
+};
+
+static bool
+in_list(PyObject *name, const char *const *list) {
+    for (; *list; list++) if (PyUnicode_CompareWithASCIIString(name, *list) == 0) return true;
+    return false;
+}
+
+/* Per node, for one compiled selector against one snapshot */
+typedef struct {
+    const kg_CompiledSelector *c;
+    uint32_t *atom;
+    uint8_t *code;
+    uint8_t *skip;      /* complex selectors in :is() that cannot be matched, and so match nothing */
+    uint8_t **memo;     /* per complex selector: bits per (compound, element) known to fail */
+    bool needs_content;
+} prepared;
+
+static void
+prepared_free(prepared *p) {
+    if (p->memo) for (uint32_t i = 0; i < p->c->n; i++) PyMem_RawFree(p->memo[i]);
+    PyMem_Free(p->atom); PyMem_Free(p->code); PyMem_Free(p->skip); PyMem_Free(p->memo);
+}
+
+static uint32_t
+lookup_atom(kg_Snapshot *s, PyObject *name, bool lower) {
+    PyObject *key = lower ? kg_ascii_lower(name) : Py_NewRef(name);
+    if (key == NULL) return NONE;
+    PyObject *v = PyDict_GetItemWithError(s->atoms, key);
+    Py_DECREF(key);
+    if (v != NULL) return (uint32_t)PyLong_AsUnsignedLong(v);
+    return PyErr_Occurred() ? NONE : ABSENT;
+}
+
+/* Prepare the subtree at node i. Returns a new reference to an error message for selectors that
+ * cannot be matched, Py_None if fine, or NULL with an exception set. */
+static PyObject *
+prepare_node(prepared *p, kg_Snapshot *s, uint32_t i, bool ignore) {
+    const sn_node *nodes = p->c->nodes, *node = nodes + i;
+    switch ((sn_kind)node->kind) {
+        case SN_COMPLEX: case SN_COMPOUND:
+            for (uint32_t k = i + 1; k < node->subtree_end; k = nodes[k].subtree_end) {
+                PyObject *r = prepare_node(p, s, k, ignore);
+                if (r != Py_None) return r;
+                Py_DECREF(r);
+            }
+            Py_RETURN_NONE;
+        case SN_TYPE:
+            if (node->name != NULL && (p->atom[i] = lookup_atom(s, node->name, true)) == NONE) return NULL;
+            if (node->name == NULL) p->atom[i] = NONE;
+            Py_RETURN_NONE;
+        case SN_ID: case SN_CLASS:
+            if ((p->atom[i] = lookup_atom(s, node->name, s->quirks)) == NONE) return NULL;
+            Py_RETURN_NONE;
+        case SN_ATTRIBUTE:
+            if ((p->atom[i] = lookup_atom(s, node->name, true)) == NONE) return NULL;
+            Py_RETURN_NONE;
+        case SN_NESTING:
+            p->code[i] = P_SCOPE;
+            Py_RETURN_NONE;
+        case SN_PSEUDO_CLASS: {
+            static const struct { const char *name; pseudo_code code; } known[] = {
+                {"root", P_ROOT}, {"scope", P_SCOPE}, {"any-link", P_ANY_LINK}, {"empty", P_EMPTY},
+                {"first-child", P_FIRST_CHILD}, {"last-child", P_LAST_CHILD}, {"only-child", P_ONLY_CHILD},
+            };
+            for (size_t k = 0; k < sizeof known / sizeof known[0]; k++) {
+                if (PyUnicode_CompareWithASCIIString(node->name, known[k].name) == 0) {
+                    p->code[i] = (uint8_t)known[k].code;
+                    if (known[k].code == P_EMPTY) p->needs_content = true;
+                    Py_RETURN_NONE;
+                }
+            }
+            if (ignore && in_list(node->name, inappropriate)) { p->code[i] = P_ALL; Py_RETURN_NONE; }
+            if (in_list(node->name, (const char *const[]){"first-of-type", "last-of-type", "only-of-type", NULL})) {
+                return PyUnicode_FromFormat("The pseudo-class :%U is not supported yet", node->name);
+            }
+            return PyUnicode_FromFormat("The pseudo-class :%U is not supported", node->name);
+        }
+        case SN_SELECTOR_PSEUDO: {
+            const bool negation = PyUnicode_CompareWithASCIIString(node->name, "not") == 0;
+            if (PyUnicode_CompareWithASCIIString(node->name, "has") == 0) {
+                return PyUnicode_FromString("The pseudo-class :has() is not supported yet");
+            }
+            p->code[i] = negation ? P_NOT : P_IS;
+            for (uint32_t k = i + 1; k < node->subtree_end; k = nodes[k].subtree_end) {
+                PyObject *r = prepare_node(p, s, k, ignore);
+                if (r == NULL) return NULL;
+                if (r != Py_None) {
+                    /* :is(), :where() and :matches() take forgiving lists: such an argument matches nothing */
+                    if (negation) return r;
+                    p->skip[k] = 1;
+                }
+                Py_DECREF(r);
+            }
+            Py_RETURN_NONE;
+        }
+        case SN_NTH: case SN_LANG:
+            return PyUnicode_FromFormat("The pseudo-class :%s() is not supported yet",
+                                        node->kind == SN_LANG ? "lang" : PyUnicode_AsUTF8(node->name));
+        case SN_FUNCTIONAL_PSEUDO:
+            return PyUnicode_FromFormat("The pseudo-class :%U() is not supported", node->name);
+        case SN_PSEUDO_ELEMENT:
+            if (!ignore || (node->flags & F_FUNCTIONAL) || !in_list(node->name, inappropriate)) {
+                return PyUnicode_FromFormat("The pseudo-element ::%U is not supported", node->name);
+            }
+            p->code[i] = P_ALL;
+            /* The pseudo-classes after it */
+            for (uint32_t k = i + 1; k < node->subtree_end; k = nodes[k].subtree_end) {
+                PyObject *r = prepare_node(p, s, k, ignore);
+                if (r != Py_None) return r;
+                Py_DECREF(r);
+            }
+            Py_RETURN_NONE;
+    }
+    Py_RETURN_NONE;
+}
+
+/* Returns a new reference to an error message, Py_None, or NULL with an exception set */
+static PyObject *
+prepare(prepared *p, kg_Snapshot *s, const kg_CompiledSelector *c, bool ignore) {
+    memset(p, 0, sizeof *p);
+    p->c = c;
+    p->atom = PyMem_Calloc(c->n, sizeof(uint32_t));
+    p->code = PyMem_Calloc(c->n, 1);
+    p->skip = PyMem_Calloc(c->n, 1);
+    p->memo = PyMem_Calloc(c->n, sizeof(uint8_t *));
+    if (!p->atom || !p->code || !p->skip || !p->memo) return PyErr_NoMemory();
+    return prepare_node(p, s, 0, ignore);
+}
+
+/* ---------------------------------------------------------------------------
+ * Matching
+ * ------------------------------------------------------------------------- */
+
+typedef struct {
+    const kg_Snapshot *s;
+    prepared *p;
+    uint32_t scope;
+    bool oom;
+} mctx;
+
+static bool match_complex(mctx *m, uint32_t x, uint32_t e);
+
+static inline Py_UCS4
+uch(PyObject *u, Py_ssize_t i) { return PyUnicode_READ(PyUnicode_KIND(u), PyUnicode_DATA(u), i); }
+
+static inline Py_UCS4
+fold(Py_UCS4 c, bool ci) { return (ci && c >= 'A' && c <= 'Z') ? c + 32 : c; }
+
+/* Whether hay[start:start+len(needle)] equals needle */
+static bool
+equal_at(PyObject *hay, Py_ssize_t start, PyObject *needle, bool ci) {
+    const Py_ssize_t n = PyUnicode_GET_LENGTH(needle);
+    if (start < 0 || start + n > PyUnicode_GET_LENGTH(hay)) return false;
+    for (Py_ssize_t i = 0; i < n; i++) if (fold(uch(hay, start + i), ci) != fold(uch(needle, i), ci)) return false;
+    return true;
+}
+
+static bool
+attribute_matches(const sn_node *node, PyObject *v, bool ci) {
+    PyObject *want = node->value;
+    const Py_ssize_t vn = PyUnicode_GET_LENGTH(v), wn = want ? PyUnicode_GET_LENGTH(want) : 0;
+    switch (node->op) {
+        case A_EXISTS: return true;
+        case A_EQUALS: return vn == wn && equal_at(v, 0, want, ci);
+        case A_DASH: return equal_at(v, 0, want, ci) && (vn == wn || uch(v, wn) == '-');
+        case A_PREFIX: return wn && equal_at(v, 0, want, ci);
+        case A_SUFFIX: return wn && equal_at(v, vn - wn, want, ci);
+        case A_SUBSTRING:
+            if (!wn) return false;
+            for (Py_ssize_t i = 0; i + wn <= vn; i++) if (equal_at(v, i, want, ci)) return true;
+            return false;
+        case A_INCLUDES: {
+            if (!wn) return false;
+            for (Py_ssize_t i = 0; i < wn; i++) if (is_ascii_ws(uch(want, i))) return false;
+            Py_ssize_t i = 0;
+            while (i < vn) {
+                while (i < vn && is_ascii_ws(uch(v, i))) i++;
+                Py_ssize_t start = i;
+                while (i < vn && !is_ascii_ws(uch(v, i))) i++;
+                if (i - start == wn && equal_at(v, start, want, ci)) return true;
+            }
+            return false;
+        }
+    }
+    return false;
+}
+
+static bool
+match_simple(mctx *m, uint32_t i, uint32_t e) {
+    const kg_Snapshot *s = m->s;
+    const sn_node *nodes = m->p->c->nodes, *node = nodes + i;
+    const snap_el *el = s->els + e;
+    const uint32_t atom = m->p->atom[i];
+    switch ((sn_kind)node->kind) {
+        case SN_TYPE: return atom == NONE || el->name == atom;
+        case SN_ID: return el->id == atom;
+        case SN_CLASS:
+            for (uint32_t k = 0; k < el->class_count; k++) if (s->classes[el->class_start + k] == atom) return true;
+            return false;
+        case SN_ATTRIBUTE: {
+            if (atom == ABSENT) return false;
+            const bool ci = node->flags & F_CASE_I;
+            for (uint32_t k = 0; k < el->attr_count; k++) {
+                const snap_attr *a = s->attrs + el->attr_start + k;
+                if (a->name == atom && attribute_matches(node, a->value, ci)) return true;
+            }
+            return false;
+        }
+        case SN_NESTING: return e == m->scope;
+        case SN_PSEUDO_CLASS:
+            switch ((pseudo_code)m->p->code[i]) {
+                case P_ROOT: return el->parent == NONE;
+                case P_SCOPE: return e == m->scope;
+                case P_ANY_LINK: {
+                    if (el->name != ATOM_A && el->name != ATOM_AREA && el->name != ATOM_LINK) return false;
+                    for (uint32_t k = 0; k < el->attr_count; k++) if (s->attrs[el->attr_start + k].name == ATOM_HREF) return true;
+                    return false;
+                }
+                case P_EMPTY: return !el->has_content;
+                case P_FIRST_CHILD: return el->prev == NONE;
+                case P_LAST_CHILD: return el->next == NONE;
+                case P_ONLY_CHILD: return el->prev == NONE && el->next == NONE;
+                case P_ALL: return true;
+                default: return false;
+            }
+        case SN_SELECTOR_PSEUDO: {
+            const bool negation = m->p->code[i] == P_NOT;
+            for (uint32_t k = i + 1; k < node->subtree_end; k = nodes[k].subtree_end) {
+                if (m->p->skip[k]) continue;
+                if (match_complex(m, k, e)) return !negation;
+            }
+            return negation;
+        }
+        case SN_PSEUDO_ELEMENT:
+            /* Only the ignored ones get here: they match their originating element */
+            for (uint32_t k = i + 1; k < node->subtree_end; k = nodes[k].subtree_end) if (!match_simple(m, k, e)) return false;
+            return true;
+        default:
+            return false;
+    }
+}
+
+static bool
+match_compound(mctx *m, uint32_t ci, uint32_t e) {
+    const sn_node *nodes = m->p->c->nodes;
+    for (uint32_t k = ci + 1; k < nodes[ci].subtree_end; k = nodes[k].subtree_end) if (!match_simple(m, k, e)) return false;
+    return true;
+}
+
+/* The first candidate for the compound before one that matched x, given the combinator between them */
+static inline uint32_t
+first_candidate(const kg_Snapshot *s, uint8_t comb, uint32_t x) {
+    switch (comb) {
+        case C_DESCENDANT: case C_CHILD: return s->els[x].parent;
+        case C_NEXT_SIBLING: case C_SUBSEQUENT_SIBLING: return s->els[x].prev;
+    }
+    return NONE;
+}
+
+static inline uint32_t
+next_candidate(const kg_Snapshot *s, uint8_t comb, uint32_t y) {
+    switch (comb) {
+        case C_DESCENDANT: return s->els[y].parent;
+        case C_SUBSEQUENT_SIBLING: return s->els[y].prev;
+    }
+    return NONE;
+}
+
+#define MAX_STACK_COMPOUNDS 32
+
+/* Whether the complex selector at node x matches element e */
+static bool
+match_complex(mctx *m, uint32_t x, uint32_t e) {
+    const sn_node *nodes = m->p->c->nodes;
+    const kg_Snapshot *s = m->s;
+    /* The compounds, left to right */
+    uint32_t small_c[MAX_STACK_COMPOUNDS], small_f[MAX_STACK_COMPOUNDS];
+    uint32_t *comp = small_c, *frames = small_f, K = 0;
+    for (uint32_t k = x + 1; k < nodes[x].subtree_end; k = nodes[k].subtree_end) K++;
+    if (K > MAX_STACK_COMPOUNDS) {
+        comp = PyMem_RawMalloc(K * sizeof(uint32_t));
+        frames = PyMem_RawMalloc(K * sizeof(uint32_t));
+        if (!comp || !frames) { PyMem_RawFree(comp); PyMem_RawFree(frames); m->oom = true; return false; }
+    }
+    K = 0;
+    for (uint32_t k = x + 1; k < nodes[x].subtree_end; k = nodes[k].subtree_end) comp[K++] = k;
+    bool ans = false;
+    uint32_t k = K - 1;
+    if (!match_compound(m, comp[k], e)) goto done;
+    /* A relative first compound (in :has() or nested rules) has nothing to its left here */
+    if (k == 0) { ans = true; goto done; }
+    frames[k] = e;
+    /* Failure memo: bit (j, el) set when compounds 0..j cannot match with compound j at el */
+    uint8_t *memo = m->p->memo[x];
+    bool backtracks = false;
+    for (uint32_t j = 1; j < K; j++) {
+        const uint8_t comb = nodes[comp[j]].op;
+        if (comb == C_DESCENDANT || comb == C_SUBSEQUENT_SIBLING) backtracks = true;
+    }
+    if (backtracks && memo == NULL) {
+        memo = m->p->memo[x] = PyMem_RawCalloc(((size_t)K * s->n + 7) / 8, 1);
+        if (memo == NULL) { m->oom = true; goto done; }
+    }
+#define MEMO_BIT(j, el) ((size_t)(j) * s->n + (el))
+#define FAILED(j, el) (memo && (memo[MEMO_BIT(j, el) / 8] & (1u << (MEMO_BIT(j, el) % 8))))
+#define MARK_FAILED(j, el) do { if (memo) memo[MEMO_BIT(j, el) / 8] |= (uint8_t)(1u << (MEMO_BIT(j, el) % 8)); } while (0)
+    uint32_t cand = first_candidate(s, nodes[comp[k]].op, e);
+    while (true) {
+        if (cand == NONE) {
+            /* No more candidates for compound k - 1: backtrack */
+            if (k < K - 1) MARK_FAILED(k, frames[k]);
+            k++;
+            if (k >= K) break;
+            cand = next_candidate(s, nodes[comp[k]].op, frames[k - 1]);
+            continue;
+        }
+        if (!FAILED(k - 1, cand) && match_compound(m, comp[k - 1], cand)) {
+            k--;
+            frames[k] = cand;
+            if (k == 0) { ans = true; break; }
+            cand = first_candidate(s, nodes[comp[k]].op, cand);
+        } else cand = next_candidate(s, nodes[comp[k]].op, cand);
+    }
+#undef MEMO_BIT
+#undef FAILED
+#undef MARK_FAILED
+done:
+    if (comp != small_c) { PyMem_RawFree(comp); PyMem_RawFree(frames); }
+    return ans;
+}
+
+/* The candidates for the complex selector of p: from the index for the most selective part of its
+ * last compound, or every element */
+static void
+candidates(const kg_Snapshot *s, const prepared *p, const uint32_t **items, uint32_t *count, bool *all) {
+    const sn_node *nodes = p->c->nodes;
+    uint32_t last = 1;
+    for (uint32_t k = 1; k < nodes[0].subtree_end; k = nodes[k].subtree_end) last = k;
+    const snap_index *best = NULL;
+    uint32_t best_atom = 0, best_count = UINT32_MAX;
+    *all = true;
+    for (uint32_t k = last + 1; k < nodes[last].subtree_end; k = nodes[k].subtree_end) {
+        const snap_index *index = NULL;
+        switch (nodes[k].kind) {
+            case SN_ID: index = &s->by_id; break;
+            case SN_CLASS: index = &s->by_class; break;
+            case SN_TYPE: if (p->atom[k] != NONE) index = &s->by_name; break;
+            default: break;
+        }
+        if (index == NULL) continue;
+        const uint32_t a = p->atom[k];
+        if (a == ABSENT) { *all = false; *count = 0; *items = NULL; return; }
+        const uint32_t n = index->off[a + 1] - index->off[a];
+        if (n < best_count) { best = index; best_atom = a; best_count = n; }
+    }
+    if (best == NULL) return;
+    *all = false;
+    *items = best->items + best->off[best_atom];
+    *count = best_count;
+}
+
+typedef struct {
+    kg_Snapshot *s;
+    prepared *ps;
+    Py_ssize_t count;
+    uint32_t scope, lo, hi, target;  /* target: a single element to test, or NONE */
+    bool first_only;
+    uint8_t *found;  /* bitset over elements */
+    bool oom, any;
+} run_args;
+
+static void
+run(run_args *r) {
+    const kg_Snapshot *s = r->s;
+    for (Py_ssize_t q = 0; q < r->count && !(r->first_only && r->any); q++) {
+        mctx m = {.s = s, .p = r->ps + q, .scope = r->scope};
+        if (r->target != NONE) {
+            if (match_complex(&m, 0, r->target)) r->any = true;
+        } else {
+            const uint32_t *items = NULL;
+            uint32_t count = 0;
+            bool all;
+            candidates(s, r->ps + q, &items, &count, &all);
+            const uint32_t n = all ? r->hi - r->lo : count;
+            for (uint32_t j = 0; j < n && !(r->first_only && r->any); j++) {
+                const uint32_t e = all ? r->lo + j : items[j];
+                if (e < r->lo || e >= r->hi || (r->found[e / 8] & (1u << (e % 8)))) continue;
+                if (match_complex(&m, 0, e)) { r->found[e / 8] |= (uint8_t)(1u << (e % 8)); r->any = true; }
+                if (m.oom) break;
+            }
+        }
+        if (m.oom) { r->oom = true; return; }
+    }
+}
+
+/* match(selectors, ignore_inappropriate, scope, root, target, first_only)
+ * selectors: a sequence of CompiledSelector. root: index of the element whose subtree is searched.
+ * target: index of a single element to test, or -1. Returns the list of matching elements in document
+ * order, or with first_only or a target, a bool. Raises MatchError(message) for selectors that cannot
+ * be matched. */
+static PyObject *
+Snapshot_match(PyObject *o, PyObject *args) {
+    kg_Snapshot *s = (kg_Snapshot *)o;
+    kg_module_state *state = PyType_GetModuleState(Py_TYPE(o));
+    PyObject *selectors;
+    int ignore, first_only;
+    long scope, root, target;
+    if (!PyArg_ParseTuple(args, "Oplllp", &selectors, &ignore, &scope, &root, &target, &first_only)) return NULL;
+    if (scope < 0 || (uint32_t)scope >= s->n || root < 0 || (uint32_t)root >= s->n || target >= (long)s->n) {
+        PyErr_SetString(PyExc_IndexError, "element index out of range");
+        return NULL;
+    }
+    PyObject *seq = PySequence_Fast(selectors, "selectors must be a sequence");
+    if (seq == NULL) return NULL;
+    const Py_ssize_t count = PySequence_Fast_GET_SIZE(seq);
+    prepared *ps = PyMem_Calloc(count ? count : 1, sizeof(prepared));
+    if (ps == NULL) { Py_DECREF(seq); return PyErr_NoMemory(); }
+    PyObject *ans = NULL;
+    bool needs_content = false;
+    Py_ssize_t prepared_count = 0;
+    for (Py_ssize_t q = 0; q < count; q++) {
+        PyObject *c = PySequence_Fast_GET_ITEM(seq, q);
+        if (!Py_IS_TYPE(c, state->CompiledSelector_type)) {
+            PyErr_SetString(PyExc_TypeError, "selectors must be CompiledSelector objects");
+            goto end;
+        }
+        PyObject *err = prepare(ps + q, s, (const kg_CompiledSelector *)c, ignore);
+        prepared_count = q + 1;
+        if (err == NULL) goto end;
+        if (err != Py_None) { PyErr_SetObject(state->MatchError, err); Py_DECREF(err); goto end; }
+        Py_DECREF(err);
+        needs_content |= ps[q].needs_content;
+    }
+    if (needs_content && !s->content_done && !ensure_content(s)) goto end;
+    run_args r = {
+        .s = s, .ps = ps, .count = count, .scope = (uint32_t)scope, .lo = (uint32_t)root,
+        .hi = s->els[root].subtree_end, .target = target < 0 ? NONE : (uint32_t)target, .first_only = first_only,
+    };
+    r.found = PyMem_RawCalloc((s->n + 7) / 8, 1);
+    if (r.found == NULL) { PyErr_NoMemory(); goto end; }
+    /* Matching only reads the snapshot, so other threads can run meanwhile */
+    Py_BEGIN_ALLOW_THREADS
+    run(&r);
+    Py_END_ALLOW_THREADS
+    if (r.oom) PyErr_NoMemory();
+    else if (first_only || r.target != NONE) ans = Py_NewRef(r.any ? Py_True : Py_False);
+    else {
+        ans = PyList_New(0);
+        for (uint32_t e = r.lo; ans != NULL && e < r.hi; e++) {
+            if ((r.found[e / 8] & (1u << (e % 8))) && PyList_Append(ans, s->elements[e]) != 0) Py_CLEAR(ans);
+        }
+    }
+    PyMem_RawFree(r.found);
+end:
+    for (Py_ssize_t q = 0; q < prepared_count; q++) prepared_free(ps + q);
+    PyMem_Free(ps);
+    Py_DECREF(seq);
+    return ans;
+}
+
+/* index_of(element) -> int: the index of an element of the snapshot. Raises KeyError. */
+static PyObject *
+Snapshot_index_of(PyObject *o, PyObject *element) {
+    kg_Snapshot *s = (kg_Snapshot *)o;
+    PyObject *ans = NULL;
+    bool ok = true;
+    Py_BEGIN_CRITICAL_SECTION(s);
+    if (s->index_map == NULL) {
+        PyObject *map = PyDict_New();
+        for (uint32_t i = 0; map != NULL && i < s->n; i++) {
+            PyObject *num = PyLong_FromUnsignedLong(i);
+            if (num == NULL || PyDict_SetItem(map, s->elements[i], num) != 0) Py_CLEAR(map);
+            Py_XDECREF(num);
+        }
+        if (map == NULL) ok = false;
+        else s->index_map = map;
+    }
+    Py_END_CRITICAL_SECTION();
+    if (!ok) return NULL;
+    if (PyDict_GetItemRef(s->index_map, element, &ans) == 0) PyErr_SetObject(PyExc_KeyError, element);
+    return ans;
+}
+
+static PyObject *
+Snapshot_get(PyObject *o, void *closure) {
+    kg_Snapshot *s = (kg_Snapshot *)o;
+    if (closure == NULL) return PyLong_FromUnsignedLong(s->n);
+    return PyBool_FromLong(s->quirks);
+}
+
+static PyObject *
+Snapshot_element(PyObject *o, PyObject *arg) {
+    kg_Snapshot *s = (kg_Snapshot *)o;
+    Py_ssize_t i = PyLong_AsSsize_t(arg);
+    if (i == -1 && PyErr_Occurred()) return NULL;
+    if (i < 0 || (size_t)i >= s->n) { PyErr_SetString(PyExc_IndexError, "element index out of range"); return NULL; }
+    return Py_NewRef(s->elements[i]);
+}
+
+static PyMethodDef Snapshot_methods[] = {
+    {"match", Snapshot_match, METH_VARARGS,
+     "match(selectors, ignore_inappropriate, scope, root, target, first_only)\n\n"
+     "Match CompiledSelectors, see kgcss.matching.Select."},
+    {"index_of", Snapshot_index_of, METH_O, "index_of(element) -> int"},
+    {"element", Snapshot_element, METH_O, "element(index) -> the element at this index, in document order"},
+    {NULL, NULL, 0, NULL}
+};
+
+static PyGetSetDef Snapshot_getset[] = {
+    {"count", Snapshot_get, NULL, "The number of elements", NULL},
+    {"quirks_mode", Snapshot_get, NULL, "True if ids and classes are ASCII case-insensitive", (void *)1},
+    {NULL, NULL, NULL, NULL, NULL}
+};
+
+static PyType_Slot Snapshot_slots[] = {
+    {Py_tp_new, Snapshot_new},
+    {Py_tp_dealloc, Snapshot_dealloc},
+    {Py_tp_traverse, Snapshot_traverse},
+    {Py_tp_clear, Snapshot_clear},
+    {Py_tp_methods, Snapshot_methods},
+    {Py_tp_getset, Snapshot_getset},
+    {Py_tp_doc, (void *)"Snapshot(root, quirks_mode=False): the elements of a tree, for matching. Not a public API, "
+                        "see kgcss.matching.Select."},
+    {0, NULL}
+};
+
+static PyType_Spec Snapshot_spec = {
+    .name = "kgcss.Snapshot",
+    .basicsize = sizeof(kg_Snapshot),
+    .flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_IMMUTABLETYPE | Py_TPFLAGS_HAVE_GC,
+    .slots = Snapshot_slots,
+};
+
+int
+kg_select_init(PyObject *module) {
+    kg_module_state *state = kg_get_module_state(module);
+    state->Snapshot_type = (PyTypeObject *)PyType_FromModuleAndSpec(module, &Snapshot_spec, NULL);
+    if (state->Snapshot_type == NULL || PyModule_AddType(module, state->Snapshot_type) != 0) return -1;
+    state->MatchError = PyErr_NewExceptionWithDoc(
+        "kgcss._kgcss.MatchError", "Raised by Snapshot.match(). Not a public API: kgcss raises ExpressionError.",
+        PyExc_ValueError, NULL);
+    if (state->MatchError == NULL) return -1;
+    return PyModule_AddObjectRef(module, "MatchError", state->MatchError);
+}
+
+int
+kg_select_traverse(PyObject *module, visitproc visit, void *arg) {
+    kg_module_state *state = kg_get_module_state(module);
+    Py_VISIT(state->Snapshot_type);
+    Py_VISIT(state->MatchError);
+    return 0;
+}
+
+void
+kg_select_clear(PyObject *module) {
+    kg_module_state *state = kg_get_module_state(module);
+    Py_CLEAR(state->Snapshot_type);
+    Py_CLEAR(state->MatchError);
+}

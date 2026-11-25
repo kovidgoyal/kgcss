@@ -89,6 +89,16 @@ def format_url(url: str, attribute_safe: bool) -> str:
     return f'url({serialize_string_single_quoted(url) if attribute_safe else serialize_string(url)})'
 
 
+def starts_like_exponent(unit: str) -> bool:
+    """Whether a unit starts with e or E and an ASCII digit, or a sign and an ASCII digit."""
+    digits = '0123456789'
+    if unit[:1] not in ('e', 'E') or len(unit) < 2:
+        return False
+    if unit[1] in digits:
+        return True
+    return unit[1] in '+-' and len(unit) > 2 and unit[2] in digits
+
+
 def format_number(tok: Token, top_level: bool) -> str:
     """Normalise a NUMBER, PERCENTAGE or DIMENSION: .5 -> 0.5, 1.0 -> 1, 010 -> 10, -0.0 -> 0, 0px -> 0, +1px kept."""
     rep = tok.representation or ''
@@ -111,6 +121,10 @@ def format_number(tok: Token, top_level: bool) -> str:
             return s + '%'
         case TokenType.DIMENSION:
             unit_text = tok.source_text[len(rep) :]
+            if starts_like_exponent(unit_text):
+                # A unit that starts like an exponent (1e1e3 is 1e1 with the unit e3) would join a
+                # rewritten number: 10e3 is a number. Keep the number as written then.
+                return rep + unit_text
             unit = str(tok.unit)
             if v == 0 and top_level and unit.isascii() and unit.lower() in LENGTH_UNITS:
                 return '0'

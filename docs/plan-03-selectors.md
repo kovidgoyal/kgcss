@@ -502,7 +502,83 @@ the selectors that match. Decide in milestone 5, from measurements (D9).
 
 ## 8. Milestones
 
-Status: milestones 1 and 2 are done.
+Status: milestones 1 to 3 are done.
+
+Notes from milestone 3:
+- **The snapshot** (`csrc/select.c`, `Snapshot`) records each element in
+  arrays:
+  - parent, previous and next sibling, first child and subtree end;
+  - position among its siblings;
+  - local name, id and classes as atoms (indices into a dict of strings);
+  - attributes, with their local names as atoms.
+
+  Indexes by tag, id and class are built with a counting sort, so their
+  lists are in document order. For lxml trees, the walk is one `iter()`
+  over the whole document, with parents from `getparent()` checked against
+  a stack. That is 2.3 times faster than iterating each element's children,
+  which is still the way for other trees, such as `xml.etree`.
+- **Matching.**
+  - The rightmost compound gets its candidates from the smallest index list
+    among its id, classes and type, or from every element in the range of
+    `root=`. A name that is in no element means no matches at once.
+  - Combinators are followed right to left with an explicit stack, so long
+    selectors cannot overflow the C stack.
+  - A bitset per complex selector and compound records where the selector
+    to the left is known to fail. A test matches chains of 1500 compounds
+    on a tree 2000 deep.
+  - Results are a bitset over document order, so selector lists come out
+    merged, de-duplicated and in order. Matching runs without the GIL.
+- **Preparing** a compiled selector for a snapshot resolves its names to
+  atoms and its pseudo-classes to codes. It decides what cannot be matched:
+  in `:is()`, `:where()` and `:matches()` such arguments match nothing,
+  elsewhere they raise `ExpressionError`. The nth family, the of-type
+  pseudo-classes, `:has()` and `:lang()` say "not supported yet" until
+  milestone 4.
+- **`Select`** (`kgcss.matching`):
+  - It takes an element anywhere in an lxml tree, or an ElementTree, and
+    snapshots the whole document. `:root` is the document's root and
+    `:scope` is the element given.
+  - `select()` and `__call__` are generators that parse and match on the
+    first `next()`, so errors are raised during iteration.
+  - `has_matches()` stops at the first match, and `matches(element,
+    selector)` tests one element.
+  - Selectors of nested rules are matched in their `resolved()` form.
+  - `quirks_mode` decides how ids and classes are stored, so it costs
+    nothing.
+- **Intended differences from `css_selectors`**:
+  - the root element matches `:first-child`, `:last-child` and
+    `:only-child`, as in Selectors Level 4;
+  - `li:root` matches nothing, where `css_selectors` ignored the rest of a
+    compound with `:root` and returned the root;
+  - ids and classes are case-sensitive unless `quirks_mode=True` (D5).
+- **Testing.**
+  - `test_select` is ported, with the parts that need milestone 4 in a
+    strict expected failure.
+  - The oracle (`tests/selector_oracle.py`) is compared with `Select` on
+    random trees and selectors: namespaced and plain trees, case variants,
+    comments with tails, both modes, with and without ignoring
+    pseudo-classes. 20,000 examples agree; 3,100 of them have matches,
+    with over 700 each through `+`, `>` and `~`.
+  - A thread test shares a `Select` on the free-threaded build, using
+    `xml.etree`, as lxml enables the GIL there.
+- **Speed** on the synthetic 4.7k element chapter with 415 selectors:
+
+  | What | Time |
+  |---|---|
+  | `Select(root)` | 4.1 ms (target 3 ms) |
+  | the 415 selectors | 2.8 ms (target 10 ms) |
+  | both, with parsing | 4.8 ms |
+  | `css_selectors`, for comparison | about 290 ms |
+
+  The snapshot misses its target. lxml's own calls (`iter`, `tag`,
+  `items`, `getparent`) take 2.7 ms of it, so there is little left to gain
+  there. A cache of class attribute values made no measurable difference
+  and was left out.
+- **A serializer bug found** by the property tests, in both the C writer
+  and the Python reference. In `1e1e3`, `1e1` is the number and `e3` the
+  unit; rewriting the number as `10` gave `10e3`, which is a number. A unit
+  that starts like an exponent now keeps the number as written. The
+  writer's differential tests generate such units now.
 
 Notes from milestone 2:
 - **Queries** are on the tree (`ComplexSelector`) and on `Selector`:

@@ -31,6 +31,9 @@ dev = [
     "setuptools>=77",  # for tools/sanitize_tests.py, which builds the extension directly
     "ruff>=0.8",
     "mypy>=1.13",
+    # Select works on any ElementTree-style tree, the tests use lxml trees
+    "lxml>=5",
+    "lxml-stubs>=0.5",
 ]
 # Other CSS libraries, for comparison in bench/bench_parse.py
 bench = [

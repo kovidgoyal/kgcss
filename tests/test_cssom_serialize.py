@@ -393,3 +393,16 @@ def test_preserve_declaration_with_comment_left_open_by_eof() -> None:
     sheet.add('a { b: c }')
     text = serialize(sheet, SerializeOptions(style='preserve'))
     assert serialize(parse_stylesheet(text)) == serialize(sheet)
+
+
+@pytest.mark.parametrize(
+    ('value', 'expected'),
+    [('1e1e3', '1e1e3'), ('1.0e1E+2', '1.0e1E+2'), ('0.0e1e-5', '0.0e1e-5'), ('2e1em', '20em'), ('1e1e', '10e'),
+     ('1e1e-x', '10e-x'), ('1e1e\\33', '10e\\33 '), ('1e1e\u00b2', '10e\u00b2')],
+)  # fmt: skip
+def test_units_like_exponents(value: str, expected: str) -> None:
+    # Found by the property tests: 1e1e3 is the number 1e1 with the unit e3, rewriting the number as
+    # 10 gave 10e3, which is a number
+    text = parse_stylesheet(f'a {{ b: {value} }}').css_text
+    assert text == f'a {{\n  b: {expected};\n}}'
+    assert parse_stylesheet(text).css_text == text

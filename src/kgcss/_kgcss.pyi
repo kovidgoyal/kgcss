@@ -5,7 +5,7 @@
 
 from collections.abc import Iterator
 from types import NotImplementedType
-from typing import Any, Final, Literal, TypeVar, final
+from typing import Any, Final, Literal, Self, TypeVar, final
 from weakref import ReferenceType
 
 from kgcss.cssom.declarations import DeclarationBlock
@@ -29,6 +29,29 @@ def build_properties(
 def parse_selectors(text: str, nested: bool, /) -> tuple[CompiledSelector, ...]: ...
 
 class SelectorParseError(ValueError): ...
+class MatchError(ValueError): ...
+
+# An element of an ElementTree-style tree
+type _Element = Any
+
+class Snapshot:
+    def __new__(cls, root: _Element, quirks_mode: bool = False) -> Self: ...
+    @property
+    def count(self) -> int: ...
+    @property
+    def quirks_mode(self) -> bool: ...
+    def match(
+        self,
+        selectors: list[CompiledSelector],
+        ignore_inappropriate: bool,
+        scope: int,
+        root: int,
+        target: int,
+        first_only: bool,
+        /,
+    ) -> list[_Element] | bool: ...
+    def index_of(self, element: _Element, /) -> int: ...
+    def element(self, index: int, /) -> _Element: ...
 
 @final
 class CompiledSelector:

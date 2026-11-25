@@ -427,7 +427,16 @@ put_number(w_state *w, const kg_token *t, bool top_level) {
             PyMem_Free(r);
         }
     }
-    if (t->type == KG_TOK_DIMENSION && zero && top_level) {
+    if (t->type == KG_TOK_DIMENSION) {
+        /* A unit that starts like an exponent (1e1e3 is 1e1 with the unit e3) would join a rewritten
+         * number: 10e3 is a number. Keep the number as written then. */
+        const uint32_t u = t->vend, end = t->end;
+        const Py_UCS4 c0 = src_at(w, u), c1 = u + 1 < end ? src_at(w, u + 1) : 0, c2 = u + 2 < end ? src_at(w, u + 2) : 0;
+        if ((c0 == 'e' || c0 == 'E') && (kg_is_digit(c1) || ((c1 == '+' || c1 == '-') && kg_is_digit(c2)))) {
+            use_rep = true;
+        }
+    }
+    if (t->type == KG_TOK_DIMENSION && zero && top_level && !use_rep) {
         w_chars unit;
         if (!token_chars(w, t, t->vend, t->end, false, &unit)) return false;
         bool length = is_length_unit(&unit);

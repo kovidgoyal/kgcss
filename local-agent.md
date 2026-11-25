@@ -11,6 +11,7 @@ section before you implement a feature.
 | `src/kgcss/` | The Python package. The top level (`__init__.py`) exports the CSSOM API. The lower layers are only available as `kgcss.tokenizer` and `kgcss.syntax` |
 | `src/kgcss/cssom/` | The CSS object model (plan 02): `rules.py` (rule classes), `build.py` (syntax tree to CSSOM), `stylesheet.py`, `serializer.py`, `state.py` (per sheet lock, errors, sources), `declarations.py`, `values.py`, `selector_list.py`, `urls.py` (finding and rewriting URLs), `imports.py` (loading and inlining @import) |
 | `src/kgcss/selectors.py` | Parsed selectors (plan 03): the selector tree, `compile_selectors()` (the cached parse) and `build_tree()` |
+| `src/kgcss/matching.py` | `Select`: matching selectors against ElementTree-style trees (plan 03) |
 | `src/kgcss/escaping.py` | `serialize_string()` and `serialize_identifier()`, the CSSOM escaping idioms |
 | `src/kgcss/_kgcss.pyi` | Type stubs for the C extension. **Must** match `csrc/` exactly |
 | `csrc/` | C99 sources of the `kgcss._kgcss` extension module |
@@ -25,7 +26,8 @@ section before you implement a feature.
 | `csrc/writer.c` | C port of the CSSOM token writer (`TokenWriter`, `write_values()`) and `write_declarations()` |
 | `csrc/urls.c` | C port of `find_urls()` in `kgcss/cssom/urls.py` |
 | `csrc/properties.c` | `PropertyData`, the C base of `Property` holding its fields, and `build_properties()` |
-| `csrc/selectors.c` | The selector parser, `CompiledSelector` (a flat array of nodes) and specificity |
+| `csrc/selectors.c` | The selector parser, `CompiledSelector` (a flat array of nodes) and specificity. `selectors.h` has the node layout |
+| `csrc/select.c` | `Snapshot`, the matcher's view of a tree, and matching |
 | `fuzz/` | libFuzzer harnesses, run with `tools/fuzz.py` |
 | `src/kgcss/decode.py` | Decoding stylesheet bytes: BOM, protocol/`@charset`/environment encodings, WHATWG decoders |
 | `src/kgcss/_encodings.py` | **Generated** by `tools/generate_encodings.py` from WHATWG data. Do not edit by hand. Any new generated file must also be marked `linguist-generated` in `.gitattributes` |
@@ -139,7 +141,9 @@ uv run --no-project -p 3.14t --isolated --with pytest --with pytest-xdist --with
 ```
 
 `test_importing_does_not_enable_gil` fails if the module ever re-enables the
-GIL.
+GIL. lxml re-enables it on free-threaded builds, so tests that need lxml skip
+themselves when it is not installed, as in the command above, and thread
+tests use the standard library's ElementTree.
 
 ### Sanitizers and fuzzing
 
@@ -179,6 +183,10 @@ the C version must give exactly the same results:
 - The C versions return `NotImplemented` for rare cases that they leave to
   Python, for example a comment dropped from a selector, where deciding on a
   separator needs the tokenizer.
+- The C matcher (`csrc/select.c`) has a reference too, used only by the
+  tests: the naive matcher in `tests/selector_oracle.py`. Change both when
+  the rules of matching change, and keep the oracle obviously right rather
+  than fast.
 - Properties created by `build_properties()` are not tracked by the garbage
   collector. That is only safe while a `Property` cannot be part of a
   reference cycle: `Property.parent` is a weak reference, and nothing else a

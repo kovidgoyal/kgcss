@@ -64,6 +64,7 @@ from kgcss.cssom import (
 )
 from kgcss.decode import decode_stylesheet, lookup_encoding
 from kgcss.escaping import serialize_identifier, serialize_string
+from kgcss.matching import Select
 from kgcss.selectors import INAPPROPRIATE_PSEUDO_CLASSES, rename_classes, rename_ids
 from kgcss.tokenizer import ParseError
 
@@ -100,6 +101,7 @@ __all__ = [
     'RuleList',
     'RuleType',
     'ScopeRule',
+    'Select',
     'Selector',
     'SelectorError',
     'SelectorList',
