@@ -13,6 +13,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 
 import kgcss
+import kgcss.grammar
 import kgcss.media
 import kgcss.selectors
 import kgcss.syntax
@@ -395,6 +396,25 @@ def test_media_queries_concurrently() -> None:
             if [q.to_css() for q in kgcss.parse_media_queries(texts[i])] != expected[i]:
                 return False
             kgcss.parse_media_queries(f'(x: {idx}-{k})')
+        return True
+
+    assert all(run_concurrently(work))
+
+
+def test_grammar_concurrently() -> None:
+    values = [f'{i}px' for i in range(50)] + ['solid', 'red', 'rgb(1 2 3)', 'inherit', 'var(--x)', 'bold']
+    names = sorted(kgcss.grammar.PROPERTIES)
+    expected = {(n, v): kgcss.matches(n, v) for n in names for v in values}
+    kgcss.grammar.matches_text.cache_clear()
+
+    def work(idx: int) -> bool:
+        check_gil()
+        for k in range(20 * STRESS):
+            for n in names[idx % 3 :: 3]:
+                for v in values:
+                    if kgcss.matches(n, v) is not expected[n, v]:
+                        return False
+            kgcss.matches('font-size', f'{idx}.{k}em')  # new entries, which evict others
         return True
 
     assert all(run_concurrently(work))
