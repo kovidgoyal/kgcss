@@ -2,8 +2,6 @@
 
 """kgcss: fast and comprehensive CSS handling with a C99 backend."""
 
-from __future__ import annotations
-
 from kgcss._version import __version__
 from kgcss.serialize import serialize_identifier, serialize_string
 

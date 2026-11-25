@@ -4,8 +4,6 @@ All project metadata lives in pyproject.toml, this file only describes the
 native extension module, which cannot be fully expressed declaratively.
 """
 
-from __future__ import annotations
-
 import os
 import sys
 from pathlib import Path

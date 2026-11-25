@@ -9,12 +9,14 @@ readme = "README.md"
 license = "GPL-3.0-only"
 license-files = ["LICENSE"]
 authors = [{ name = "Kovid Goyal", email = "kovid@kovidgoyal.net" }]
-requires-python = ">=3.10"
+requires-python = ">=3.14"
 dynamic = ["version"]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Programming Language :: C",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.14",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Free Threading :: 2 - Beta",
     "Topic :: Text Processing :: Markup",
@@ -58,7 +60,7 @@ markers = [
 # ---------------------------------------------------------------------------
 [tool.ruff]
 line-length = 120
-target-version = "py310"
+target-version = "py314"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
@@ -91,7 +93,7 @@ quote-style = "single"
 # mypy
 # ---------------------------------------------------------------------------
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.14"
 strict = true
 files = ["src", "tests"]
 mypy_path = "src"

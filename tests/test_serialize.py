@@ -1,7 +1,5 @@
 # License: GPLv3 Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
-from __future__ import annotations
-
 from collections.abc import Callable
 
 import pytest

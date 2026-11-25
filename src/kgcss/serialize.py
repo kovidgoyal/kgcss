@@ -5,8 +5,6 @@
 See https://drafts.csswg.org/cssom/#common-serializing-idioms
 """
 
-from __future__ import annotations
-
 from kgcss import _kgcss
 
 

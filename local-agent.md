@@ -42,9 +42,10 @@ Before you report work as done, all of the following must pass:
 
 ## Python rules
 
-- Supported Python: 3.10 and later. Do not use syntax or stdlib APIs newer
-  than 3.10 without a version guard. Start every module with
-  `from __future__ import annotations`.
+- Supported Python: 3.14 and later only. Use modern syntax and stdlib
+  freely, and do not add compatibility code for older versions. Do not use
+  `from __future__ import annotations`: annotations are already evaluated
+  lazily in 3.14 (PEP 649/749).
 - Any new public function or class must be fully annotated and have a
   docstring. It must also be exported from `kgcss/__init__.py` and listed in
   `__all__`.
@@ -93,12 +94,11 @@ correct in that case:
 - `str`, `bytes` and `tuple` objects are immutable, so reading them without
   locking is safe.
 - Do not use borrowed-reference APIs on objects that other threads can
-  mutate. Use `PyList_GetItemRef` and `PyDict_GetItemRef` (3.13+, add compat
-  shims in `kgcss.h` for older versions) instead of `PyList_GET_ITEM` and
-  `PyDict_GetItem`. Or hold `KG_BEGIN_CRITICAL_SECTION(obj)` /
-  `KG_END_CRITICAL_SECTION()` around the access.
+  mutate. Use `PyList_GetItemRef` and `PyDict_GetItemRef` instead of `PyList_GET_ITEM` and
+  `PyDict_GetItem`. Or hold `Py_BEGIN_CRITICAL_SECTION(obj)` /
+  `Py_END_CRITICAL_SECTION()` around the access.
 - Our own mutable objects must protect their internal state with
-  `KG_BEGIN_CRITICAL_SECTION(self)` in every method that reads or writes it.
+  `Py_BEGIN_CRITICAL_SECTION(self)` in every method that reads or writes it.
 - If a long-running pure-C section touches no Python objects, release the
   GIL around it with `Py_BEGIN_ALLOW_THREADS` (this is harmless on
   free-threaded builds).

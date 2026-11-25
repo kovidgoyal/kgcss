@@ -1,15 +1,12 @@
 # License: GPLv3 Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
-from __future__ import annotations
-
 import sys
 
 import pytest
 
 
 def gil_enabled() -> bool:
-    is_enabled = getattr(sys, '_is_gil_enabled', None)
-    return True if is_enabled is None else bool(is_enabled())
+    return sys._is_gil_enabled()
 
 
 def pytest_report_header(config: pytest.Config) -> list[str]:

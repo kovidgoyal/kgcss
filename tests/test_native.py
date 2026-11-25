@@ -2,8 +2,6 @@
 
 """Tests for the C extension module itself: loading, GIL and threading."""
 
-from __future__ import annotations
-
 import sysconfig
 from concurrent.futures import ThreadPoolExecutor
 

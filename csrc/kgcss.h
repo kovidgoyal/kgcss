@@ -25,20 +25,12 @@
  *   - Treat str, bytes and tuple arguments as immutable, they are safe to read.
  *   - When reading/mutating mutable containers (list, dict) or our own mutable
  *     objects, either use the strong-reference APIs (PyList_GetItemRef,
- *     PyDict_GetItemRef) or wrap the access in KG_BEGIN_CRITICAL_SECTION.
- * The macros below compile to nothing on builds with a GIL and older Pythons.
+ *     PyDict_GetItemRef) or wrap the access in Py_BEGIN_CRITICAL_SECTION /
+ *     Py_END_CRITICAL_SECTION (these compile to nothing on builds with a GIL).
  * ------------------------------------------------------------------------- */
 
-#if PY_VERSION_HEX >= 0x030D0000
-#define KG_BEGIN_CRITICAL_SECTION(obj) Py_BEGIN_CRITICAL_SECTION(obj)
-#define KG_END_CRITICAL_SECTION() Py_END_CRITICAL_SECTION()
-#define KG_BEGIN_CRITICAL_SECTION2(a, b) Py_BEGIN_CRITICAL_SECTION2(a, b)
-#define KG_END_CRITICAL_SECTION2() Py_END_CRITICAL_SECTION2()
-#else
-#define KG_BEGIN_CRITICAL_SECTION(obj) {
-#define KG_END_CRITICAL_SECTION() }
-#define KG_BEGIN_CRITICAL_SECTION2(a, b) {
-#define KG_END_CRITICAL_SECTION2() }
+#if PY_VERSION_HEX < 0x030E0000
+#error "kgcss requires Python 3.14 or newer"
 #endif
 
 #ifdef Py_GIL_DISABLED
