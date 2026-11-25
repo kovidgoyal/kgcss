@@ -180,7 +180,7 @@ from kgcss import (
 
 ## 5. Milestones
 
-Status: planned.
+Status: decided, not started.
 
 1. **Font helpers.** `kgcss.fonts`, the fonts3 tests, the differential
    test against tinycss, round trips, benchmarks.
@@ -210,7 +210,9 @@ declaration, not per element, so these leave them far from mattering.
 
 ## 7. Decisions
 
-| # | Question | Recommendation |
+Decided on 2026-11-25, as recommended.
+
+| # | Question | Decision |
 |---|---|---|
 | D1 | `parse_font`: keep the dict of tinycss, or return a dataclass? | Keep the dict, typed as a `TypedDict`: calibre merges it into style maps keyed by property name |
 | D2 | `serialize_font_family` quotes names that start with `and`, a workaround for css_parser | Drop it: quote only what CSS needs, plus the CSS-wide keywords and `default`, which unquoted would mean something else |
