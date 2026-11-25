@@ -58,6 +58,12 @@ Before you report work as done, all of the following must pass:
   freely, and do not add compatibility code for older versions. Do not use
   `from __future__ import annotations`: annotations are already evaluated
   lazily in 3.14 (PEP 649/749).
+- The public API follows Pythonic conventions, not DOM/CSSOM ones:
+  `snake_case` for functions, methods, attributes and keyword arguments
+  (`css_text`, `selector_text`, `get_value()`), `CapWords` classes and
+  `UPPER_CASE` constants. Use enums rather than integer constants, Python
+  container protocols, and keyword-only options. Any camelCase
+  compatibility belongs only in a separate facade module.
 - Any new public function or class must be fully annotated and have a
   docstring. It must also be exported from `kgcss/__init__.py` and listed in
   `__all__`.
