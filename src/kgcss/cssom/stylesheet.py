@@ -21,6 +21,8 @@ from kgcss.syntax import parse_stylesheet as parse_syntax_tree
 from kgcss.tokenizer import ParseError
 
 if TYPE_CHECKING:
+    from kgcss.cssom.imports import ImportFetcher
+    from kgcss.cssom.rules import ImportRule
     from kgcss.cssom.serializer import SerializeOptions
 
 
@@ -71,12 +73,22 @@ class NamespaceMap(MutableMapping[str, str]):
 class Stylesheet:
     """A parsed or constructed stylesheet: an ordered list of rules."""
 
-    __slots__ = ('_dirty', '_source', '_state', 'encoding', 'href', 'rules')
+    __slots__ = (
+        '_dirty', '_eager_imports', '_import_chain', '_source', '_state', 'encoding', 'fetcher', 'href',
+        'owner_rule', 'rules',
+    )  # fmt: skip
 
-    def __init__(self, *, href: str | None = None) -> None:
+    def __init__(self, *, href: str | None = None, fetcher: ImportFetcher | None = None) -> None:
         self.rules = RuleList(owner=self)
         self.href = href
         self.encoding: str | None = None
+        # The @import rule this sheet was imported by, None for a sheet that was not imported
+        self.owner_rule: ImportRule | None = None
+        # Loads the sheets of @import rules, see parse_stylesheet()
+        self.fetcher = fetcher
+        # The URLs of the sheets that import this one, directly or not, to detect import loops
+        self._import_chain: frozenset[str] = frozenset()
+        self._eager_imports = False
         self._state = SheetState(None, href)
         self._source: Source | None = None
         # True once anything in the sheet was modified, so its source text is stale
@@ -140,13 +152,17 @@ class Stylesheet:
                         index = i + 1
         return insert_into(rules, rule, index, Context.TOP)
 
-    def iter_rules(self, *types: RuleType, recursive: bool = True) -> Iterator[Rule]:
+    def iter_rules(self, *types: RuleType, recursive: bool = True, follow_imports: bool = False) -> Iterator[Rule]:
         """All rules in document order, optionally only of the given types.
 
         With recursive=True this includes rules nested in grouping rules (such
         as @media and @supports), in style rules (CSS nesting) and in @page
-        rules, at any depth.
+        rules, at any depth. With follow_imports=True the rules of imported
+        sheets follow their @import rule, loading them if needed; their
+        parent_style_sheet is the imported sheet.
         """
+        from kgcss.cssom.rules import ImportRule
+
         stack: list[Iterator[Rule]] = [iter(self.rules)]
         while stack:
             rule = next(stack[-1], None)
@@ -157,6 +173,8 @@ class Stylesheet:
                 yield rule
             if recursive and (children := rule.child_rules()) is not None:
                 stack.append(iter(children))
+            elif follow_imports and isinstance(rule, ImportRule) and (imported := rule.style_sheet) is not None:
+                stack.append(iter(imported.rules))
 
     def browser_index_path(self, rule: Rule) -> tuple[int, ...]:
         """The path of indices to rule in the browser CSSOM (cssRules at each level).
@@ -199,6 +217,8 @@ class Stylesheet:
     def css_text(self, text: str) -> None:
         new = parse_stylesheet(text, href=self.href, log=self._state.log)
         self._take_over(new)
+        if self._eager_imports:
+            load_all(self)
 
     def _take_over(self, new: Stylesheet) -> None:
         for rule in self.rules:
@@ -219,8 +239,12 @@ class Stylesheet:
             text = self._source.source_text
         else:
             text = serialize(self, SerializeOptions(style='preserve', drop_empty_rules=False))
-        new = parse_stylesheet(text, href=self.href, log=self._state.log)
+        new = parse_stylesheet(text, href=self.href, log=self._state.log, fetcher=self.fetcher)
         new.encoding = self.encoding
+        new._import_chain = self._import_chain
+        if self._eager_imports:
+            new._eager_imports = True
+            load_all(new)
         return new
 
     def __deepcopy__(self, memo: dict[int, object]) -> Stylesheet:
@@ -246,6 +270,9 @@ def parse_stylesheet(
     protocol_encoding: str | None = None,
     environment_encoding: str | None = None,
     log: ErrorHandler | None = None,
+    fetcher: ImportFetcher | None = None,
+    eager_imports: bool = False,
+    resolve_imports: bool = False,
 ) -> Stylesheet:
     """Parse a stylesheet into the CSS object model.
 
@@ -254,16 +281,38 @@ def parse_stylesheet(
     Stylesheet.errors and sent to log, which is a callable taking a
     ParseError or a logging.Logger. Declaration blocks are parsed when first
     accessed, and problems found then are reported the same way.
+
+    fetcher loads the sheets of @import rules (requirements P10). It is
+    called with the URL of the import, resolved against href, and returns
+    (encoding, text) where text is str or bytes (decoded with encoding as
+    the protocol encoding), or None if there is no such sheet. Imported
+    sheets are loaded when ImportRule.style_sheet is first accessed, or
+    during parsing with eager_imports. With resolve_imports the result is
+    resolve_imports() of the sheet: the imported rules inlined in place of
+    the @import rules (requirements P11).
     """
     from kgcss.cssom.build import build_top_level
+    from kgcss.cssom.imports import resolve_imports as inline_imports
 
     nodes = parse_syntax_tree(source, protocol_encoding=protocol_encoding, environment_encoding=environment_encoding)
-    sheet = Stylesheet(href=href)
+    sheet = Stylesheet(href=href, fetcher=fetcher)
     sheet.encoding = nodes.encoding
     sheet._state.log = log
     sheet._source = Source(nodes.stream, 0, len(nodes.stream.source))
     sheet.rules = RuleList(build_top_level(nodes, sheet), sheet)
+    if eager_imports:
+        sheet._eager_imports = True
+        load_all(sheet)
+    if resolve_imports:
+        return inline_imports(sheet)
     return sheet
+
+
+def load_all(sheet: Stylesheet) -> None:
+    from kgcss.cssom.imports import load_all as load
+
+    if sheet.fetcher is not None:
+        load(sheet)
 
 
 def parse_rule(text: str, *, log: ErrorHandler | None = None) -> Rule:

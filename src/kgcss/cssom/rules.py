@@ -801,9 +801,8 @@ class LayerStatementRule(Rule):
 class ImportRule(Rule):
     """An @import rule."""
 
-    __slots__ = ('_href', '_href_is_string', '_layer', '_supports', 'media')
+    __slots__ = ('_href', '_href_is_string', '_layer', '_loaded', '_supports', 'media')
     type = RuleType.IMPORT
-    href = Tracked[str]()
     # None if no layer was given, '' for an anonymous layer
     layer = Tracked[str | None]()
     supports = Tracked[str | None]()
@@ -818,9 +817,41 @@ class ImportRule(Rule):
         self._supports = supports
         # @import "a" is written back as a string, @import url(a) as url()
         self._href_is_string = False
+        # (sheet it was loaded for, imported sheet), None until loaded
+        self._loaded: tuple[Stylesheet, Stylesheet | None] | None = None
+
+    @property
+    def href(self) -> str:
+        """The URL of the imported sheet, as written. Changing it unloads any loaded sheet."""
+        return self._href
+
+    @href.setter
+    def href(self, value: str) -> None:
+        self._href = value
+        self._loaded = None
+        self._changed()
+
+    @property
+    def style_sheet(self) -> Stylesheet | None:
+        """The imported sheet, fetched and parsed on first access with the fetcher of the sheet this
+        rule is in (requirements P10). None if there is no fetcher, or the sheet cannot be loaded, in
+        which case the problem is reported to the sheet's errors and log handler. It is loaded once,
+        even by concurrent threads, and again if href changes or the rule moves to another sheet."""
+        sheet = self.parent_style_sheet
+        if sheet is None:
+            return None
+        loaded = self._loaded
+        if loaded is not None and loaded[0] is sheet:
+            return loaded[1]
+        with sheet._state.lock:
+            loaded = self._loaded
+            if loaded is None or loaded[0] is not sheet:
+                loaded = self._loaded = (sheet, _imports.load_import(self))
+        return loaded[1]
 
     def _adopt_contents(self) -> None:
         self.media._owner = self
+        self._loaded = None
 
     def _repr_detail(self) -> str:
         return f' {self.href!r}'
@@ -975,3 +1006,4 @@ class UnknownAtRule(Rule):
 # At the end, since build imports this module. Used through the module object, so
 # it works whichever of the two modules is imported first.
 import kgcss.cssom.build as _build  # noqa: E402
+import kgcss.cssom.imports as _imports  # noqa: E402

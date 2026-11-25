@@ -3,6 +3,7 @@
 """Property based tests of the CSSOM."""
 
 import contextlib
+from collections.abc import Iterable
 
 from hypothesis import given
 from hypothesis import strategies as st
@@ -24,6 +25,8 @@ from kgcss import (
     serialize,
 )
 from kgcss.cssom.declarations import normalize_name
+from kgcss.cssom.exceptions import CSSSyntaxError
+from kgcss.cssom.selector_list import check_selector_list
 from kgcss.cssom.serializer import source_is_complete
 from kgcss.cssom.values import Function, Other, Separator, SimpleBlock, UnicodeRange
 
@@ -290,3 +293,55 @@ def test_url_rewriting_changes_only_urls(css: str) -> None:
     assert list(iter_urls(parse_stylesheet(out))) == [mapped(u) for u in urls]
     replace_urls(sheet, mapped)
     assert list(iter_urls(sheet)) == [mapped(u) for u in urls]
+
+
+import_lines = st.sampled_from((
+    '@import "a.css";', '@import url(b.css) print;', '@import "c.css" layer(x) supports(display: grid) screen;',
+    '@import "missing.css";', '@import "main.css";', '@import "a.css" layer;', '@charset "utf-8";',
+    '@namespace svg url(http://svg);', '@layer p, q;', '/* c */',
+))  # fmt: skip
+sheet_text = st.builds(lambda head, body: ' '.join(head) + body, st.lists(import_lines, max_size=6), css_text)
+
+
+@given(sheet_text, sheet_text, sheet_text, sheet_text)
+def test_resolve_imports_gives_a_valid_sheet(main: str, a: str, b: str, c: str) -> None:
+    # Whatever the sheets contain, the result has every rule in a valid place and fetching terminates
+    from kgcss import resolve_imports
+
+    files = {'http://x/main.css': main, 'http://x/a.css': a, 'http://x/b.css': b, 'http://x/c.css': c}
+    calls: list[str] = []
+
+    def fetch(url: str) -> tuple[None, str] | None:
+        calls.append(url)
+        return (None, files[url]) if url in files else None
+
+    sheet = parse_stylesheet(main, href='http://x/main.css', fetcher=fetch)
+    out = resolve_imports(sheet)
+    text = serialize(out, SerializeOptions(style='preserve', drop_empty_rules=False))
+    again = parse_stylesheet(text)
+    assert not [e for e in again.errors if e.kind == 'misplaced-rule'], text
+    assert len(calls) <= 64
+
+    # Style rules with invalid selectors, such as a;@media x {}, can parse differently once nested,
+    # and browsers ignore them and their contents
+    def valid(rule: Rule | None) -> bool:
+        while rule is not None:
+            if isinstance(rule, StyleRule) and not valid_selector(rule.selector_text):
+                return False
+            rule = rule.parent_rule
+        return True
+
+    def valid_styles(rules: Iterable[Rule]) -> int:
+        return sum(1 for r in rules if isinstance(r, StyleRule) and valid(r))
+
+    assert valid_styles(sheet.iter_rules(follow_imports=True)) == valid_styles(again.iter_rules())
+
+
+def valid_selector(text: str) -> bool:
+    # A coarse check: selectors are not parsed yet (plan 03). A selector cannot end with a colon,
+    # and nested, a:{b} is a declaration.
+    try:
+        check_selector_list(text)
+    except CSSSyntaxError:
+        return False
+    return not text.rstrip().endswith(':')

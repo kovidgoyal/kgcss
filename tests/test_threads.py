@@ -242,3 +242,34 @@ def test_cssom_lazy_selectors_race() -> None:
         results = run_concurrently(work)
         assert all(r == results[0] for r in results)
     check_gil()
+
+
+def test_cssom_import_fetched_once() -> None:
+    css = ''.join(f'@import "s{i}.css";\n' for i in range(50))
+    barrier = threading.Barrier(THREADS)
+    for _ in range(3 * STRESS):
+        calls: list[str] = []
+        lock = threading.Lock()
+
+        def fetch(url: str, calls: list[str] = calls, lock: threading.Lock = lock) -> tuple[str | None, str]:
+            with lock:
+                calls.append(url)
+            return None, f'a {{ b: {url} }}'
+
+        sheet = kgcss.parse_stylesheet(css, href='http://x/', fetcher=fetch)
+
+        def work(idx: int, sheet: kgcss.Stylesheet = sheet) -> list[int]:
+            barrier.wait()
+            rules = list(sheet.rules)
+            if idx % 2:
+                rules.reverse()
+            out = {}
+            for rule in rules:
+                assert isinstance(rule, kgcss.ImportRule)
+                out[rule.href] = id(rule.style_sheet)
+            return [out[f's{i}.css'] for i in range(50)]
+
+        results = run_concurrently(work)
+        assert all(r == results[0] for r in results)
+        assert sorted(calls) == sorted(f'http://x/s{i}.css' for i in range(50))
+    check_gil()

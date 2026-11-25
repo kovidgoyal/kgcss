@@ -468,7 +468,75 @@ class SerializeOptions:
 
 ## 8. Milestones
 
-Status: milestones 1 to 6 are done.
+Status: milestones 1 to 7 are done.
+
+Notes from milestone 7:
+- **`kgcss.cssom.imports`** has the loading and inlining. `resolve_imports`
+  and the `ImportFetcher` type are exported at the top level.
+- **Fetching (P10).**
+  - `parse_stylesheet` takes `fetcher`, `eager_imports` and
+    `resolve_imports`. `Stylesheet.fetcher` is public; `copy()` and assigning
+    `css_text` keep it.
+  - `ImportRule.style_sheet` loads on first access, once, under the sheet
+    lock, so concurrent readers get the same object (thread test). The
+    result is cached together with the sheet it was loaded for: changing
+    `href`, assigning `css_text` or moving the rule to another sheet loads
+    it again.
+  - Bytes are decoded with the fetcher's encoding as the protocol encoding
+    and the importing sheet's encoding as the environment encoding.
+    Encoding labels are WHATWG labels: `latin-1` is not one, `iso-8859-1`
+    is.
+  - Imported sheets get the fetcher, the log handler and `owner_rule`.
+- **Recursion guard.** Every sheet keeps the frozenset of URLs of the
+  sheets that led to it, including its own href. Importing one of them is
+  reported as `import-loop`, without fetching. Each sheet is fetched only
+  once per chain, so eager loading always terminates.
+- **Errors (L1, L2).**
+  - Fetcher exceptions are caught and reported as `import-failed`, since
+    parsing must not raise. `None` or a `None` text is `import-not-found`.
+  - Both carry the position of the `@import` rule and go to the importing
+    sheet's errors and log handler.
+  - Errors in an imported sheet go to that sheet's errors and to the same
+    handler.
+- **`resolve_imports` (P11)** returns a new sheet and leaves the original
+  unchanged.
+  - Wrappers are `@layer`, then `@media`, then `@supports (cond)`, with
+    `@supports` outermost. `supports(x)` holds a declaration or a
+    condition, both valid inside parentheses.
+  - `/* START @import url */` and `/* END ... */` comments use the
+    resolved URL, with `*/` escaped as `*%2F`.
+  - Decisions not in the plan, all needed for the result to be a valid
+    sheet that means the same:
+    - relative URLs in imported rules are rebased: relative to the main
+      sheet's href when on the same host, otherwise absolute. Hrefs
+      relative to an unknown place, like paths in a book, are resolved
+      against a deep placeholder root, so `../` survives;
+    - imports that cannot be loaded stay as `@import` rules with rebased
+      URLs, inserted after the leading `@charset`, `@layer` statements and
+      comments. A nested one loses the conditions of the imports that led
+      to it;
+    - looping imports are dropped, since browsers ignore them;
+    - the main sheet's `@namespace` rules move before the inlined rules,
+      the only place they are valid, so they also apply to imported
+      selectors. The `@charset` and `@namespace` rules of imported sheets
+      are dropped;
+    - rules that would parse differently once nested in a wrapper are
+      dropped with an `invalid-rule` error. Examples: a style rule whose
+      prelude contains `;` or `}`, and `a:{b}`, which is a declaration when
+      nested. Browsers ignore these rules anyway. The check reparses the
+      rule as block contents and requires one node covering the whole
+      text;
+    - the result's errors are those of the main sheet, then of the
+      imported sheets with positions in their own sheets, then those of
+      resolving.
+- **`iter_rules(follow_imports=True)`** walks into imported sheets after
+  each `@import` rule, loading them, both with and without `recursive`.
+- **Bugs found by the new property test** (random sheets importing each
+  other, checking that the result reparses with no misplaced rules and the
+  same valid style rules):
+  - namespaces hoisted before `@charset`;
+  - the main sheet's `@namespace` left after inlined rules;
+  - rules that change meaning when nested.
 
 Notes from milestone 6:
 - **`kgcss.cssom.urls`** has `iter_urls()`, `replace_urls()`,

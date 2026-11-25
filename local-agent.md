@@ -9,7 +9,7 @@ section before you implement a feature.
 | Path | Contents |
 |---|---|
 | `src/kgcss/` | The Python package. The top level (`__init__.py`) exports the CSSOM API. The lower layers are only available as `kgcss.tokenizer` and `kgcss.syntax` |
-| `src/kgcss/cssom/` | The CSS object model (plan 02): `rules.py` (rule classes), `build.py` (syntax tree to CSSOM), `stylesheet.py`, `serializer.py`, `state.py` (per sheet lock, errors, sources) |
+| `src/kgcss/cssom/` | The CSS object model (plan 02): `rules.py` (rule classes), `build.py` (syntax tree to CSSOM), `stylesheet.py`, `serializer.py`, `state.py` (per sheet lock, errors, sources), `declarations.py`, `values.py`, `selector_list.py`, `urls.py` (finding and rewriting URLs), `imports.py` (loading and inlining @import) |
 | `src/kgcss/escaping.py` | `serialize_string()` and `serialize_identifier()`, the CSSOM escaping idioms |
 | `src/kgcss/_kgcss.pyi` | Type stubs for the C extension. **Must** match `csrc/` exactly |
 | `csrc/` | C99 sources of the `kgcss._kgcss` extension module |

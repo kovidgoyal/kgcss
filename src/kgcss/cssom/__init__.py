@@ -8,6 +8,7 @@ kgcss.syntax. Blocks are parsed on first access, under a per-sheet lock.
 
 from kgcss.cssom.declarations import DeclarationBlock, DeclarationList, Property, parse_style
 from kgcss.cssom.exceptions import CSSSyntaxError, InvalidValueError
+from kgcss.cssom.imports import ImportFetcher, resolve_imports
 from kgcss.cssom.rules import (
     CharsetRule,
     Comment,
@@ -52,6 +53,7 @@ __all__ = [
     'ErrorHandler',
     'FontFaceRule',
     'GroupingRule',
+    'ImportFetcher',
     'ImportRule',
     'InvalidValueError',
     'LayerBlockRule',
@@ -85,5 +87,6 @@ __all__ = [
     'remove_url_values',
     'replace_urls',
     'replace_urls_in_text',
+    'resolve_imports',
     'serialize',
 ]

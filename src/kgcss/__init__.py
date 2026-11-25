@@ -20,6 +20,7 @@ from kgcss.cssom import (
     ErrorHandler,
     FontFaceRule,
     GroupingRule,
+    ImportFetcher,
     ImportRule,
     InvalidValueError,
     LayerBlockRule,
@@ -53,6 +54,7 @@ from kgcss.cssom import (
     remove_url_values,
     replace_urls,
     replace_urls_in_text,
+    resolve_imports,
     serialize,
 )
 from kgcss.decode import decode_stylesheet, lookup_encoding
@@ -71,6 +73,7 @@ __all__ = [
     'ErrorHandler',
     'FontFaceRule',
     'GroupingRule',
+    'ImportFetcher',
     'ImportRule',
     'InvalidValueError',
     'LayerBlockRule',
@@ -108,6 +111,7 @@ __all__ = [
     'remove_url_values',
     'replace_urls',
     'replace_urls_in_text',
+    'resolve_imports',
     'serialize',
     'serialize_identifier',
     'serialize_string',
