@@ -102,6 +102,16 @@ typedef struct {
 bool kg_tokenize(int kind, const void *data, uint32_t len, bool keep_comments, kg_token_array *out);
 void kg_token_array_free(kg_token_array *arr);
 
+/* Character classes for code points below 256, see kg_char_class. NUL is
+ * not in KG_CC_IDENT since it needs processing (it becomes U+FFFD). */
+enum {
+    KG_CC_IDENT = 1u << 0,          /* ident code point: letter, digit, _, - or >= 0x80 */
+    KG_CC_WS = 1u << 1,             /* whitespace */
+    KG_CC_STRING_SPECIAL = 1u << 2, /* ends the fast path in strings: quotes, \, newlines, NUL */
+    KG_CC_DIGIT = 1u << 3,
+};
+extern const uint8_t kg_char_class[256];
+
 /* Characters */
 #define KG_EOF ((uint32_t)0xFFFFFFFFu)
 #define KG_REPLACEMENT_CHAR ((uint32_t)0xFFFD)
@@ -145,4 +155,4 @@ bool kg_build_line_table(int kind, const void *data, uint32_t len, uint32_t **li
 int kg_types_init(PyObject *module);
 int kg_types_traverse(PyObject *module, visitproc visit, void *arg);
 void kg_types_clear(PyObject *module);
-PyObject *kg_tokenize_py(PyObject *module, PyObject *args, PyObject *kwds);
+PyObject *kg_tokenize_py(PyObject *module, PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames);

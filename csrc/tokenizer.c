@@ -21,6 +21,22 @@ typedef struct {
     uint32_t depth, stack_capacity;
 } kg_tokenizer;
 
+#define CC(c) ((uint8_t)( \
+    ((((c) >= 'a' && (c) <= 'z') || ((c) >= 'A' && (c) <= 'Z') || ((c) >= '0' && (c) <= '9') || \
+      (c) == '_' || (c) == '-' || (c) >= 0x80) ? KG_CC_IDENT : 0) | \
+    (((c) == ' ' || (c) == '\t' || (c) == '\n' || (c) == '\r' || (c) == '\f') ? KG_CC_WS : 0) | \
+    (((c) == '"' || (c) == '\'' || (c) == '\\' || (c) == '\n' || (c) == '\r' || (c) == '\f' || (c) == 0) \
+        ? KG_CC_STRING_SPECIAL : 0) | \
+    (((c) >= '0' && (c) <= '9') ? KG_CC_DIGIT : 0)))
+#define R4(b) CC(b), CC((b) + 1), CC((b) + 2), CC((b) + 3)
+#define R16(b) R4(b), R4((b) + 4), R4((b) + 8), R4((b) + 12)
+#define R64(b) R16(b), R16((b) + 16), R16((b) + 32), R16((b) + 48)
+const uint8_t kg_char_class[256] = {R64(0), R64(64), R64(128), R64(192)};
+#undef R64
+#undef R16
+#undef R4
+#undef CC
+
 static bool
 grow(void **buf, uint32_t *capacity, size_t item_size, uint32_t min_capacity) {
     uint64_t cap = *capacity ? *capacity : 16;

@@ -43,7 +43,7 @@ typedef struct {
 typedef struct {
     PyObject_HEAD
     kg_TokenStream *stream;
-    PyObject *items;    /* tuple */
+    PyObject *items;    /* list, never mutated after creation */
     PyObject *errors;   /* tuple of ParseError */
     PyObject *encoding; /* str or None */
 } kg_NodeList;
@@ -418,6 +418,7 @@ compare_errors(const void *a, const void *b) {
 static PyObject *
 collect_errors(kg_parser *p, uint32_t pos, uint32_t end) {
     const kg_token_array *a = &p->ts->arr;
+    if (a->error_count == 0 && p->error_count == 0) return PyTuple_New(0);
     uint32_t n = 0, seq = 0;
     sortable_error *all = PyMem_Malloc(((size_t)a->error_count + p->error_count + 1) * sizeof(sortable_error));
     if (all == NULL) return PyErr_NoMemory();
@@ -445,8 +446,9 @@ make_node_list(kg_parser *p, uint32_t pos, uint32_t end, PyObject *encoding) {
     if (self == NULL) return NULL;
     self->stream = (kg_TokenStream *)Py_NewRef(p->ts);
     self->encoding = Py_NewRef(encoding);
-    self->items = PyList_AsTuple(p->nodes);
-    self->errors = self->items ? collect_errors(p, pos, end) : NULL;
+    /* The list is only reachable through this NodeList, which never mutates it */
+    self->items = Py_NewRef(p->nodes);
+    self->errors = collect_errors(p, pos, end);
     if (self->errors == NULL) { Py_DECREF(self); return NULL; }
     return (PyObject *)self;
 }
@@ -462,22 +464,15 @@ typedef struct {
 } parse_input;
 
 /* Accept str, or a Block if allow_block, as the input to parse. With
- * with_encoding the format has an extra keyword only "encoding" argument. */
+ * with_encoding there is also a keyword only "encoding" argument. */
 static bool
-get_input(PyObject *module, PyObject *args, PyObject *kwds, const char *fmt, bool allow_block, bool with_encoding,
+get_input(PyObject *module, PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames, const char *fname, bool allow_block, bool with_encoding,
           parse_input *in) {
-    static char *kwlist[] = {"", "comments", NULL};
-    static char *kwlist_with_encoding[] = {"", "comments", "encoding", NULL};
     PyObject *source;
-    int comments = 1;
+    bool comments;
     in->encoding = Py_None;
-    if (with_encoding) {
-        if (!PyArg_ParseTupleAndKeywords(args, kwds, fmt, kwlist_with_encoding, &source, &comments, &in->encoding)) return false;
-        if (in->encoding != Py_None && !PyUnicode_Check(in->encoding)) {
-            PyErr_SetString(PyExc_TypeError, "encoding must be a str or None");
-            return false;
-        }
-    } else if (!PyArg_ParseTupleAndKeywords(args, kwds, fmt, kwlist, &source, &comments)) return false;
+    if (!kg_parse_source_args(args, nargs, kwnames, fname, &source, &comments, with_encoding ? &in->encoding : NULL))
+        return false;
     kg_module_state *state = kg_get_module_state(module);
     if (allow_block && Py_IS_TYPE(source, state->Block_type)) {
         kg_Group *b = (kg_Group *)source;
@@ -493,7 +488,7 @@ get_input(PyObject *module, PyObject *args, PyObject *kwds, const char *fmt, boo
         PyErr_Format(PyExc_TypeError, "expected str%s, got %.200s", allow_block ? " or Block" : "", Py_TYPE(source)->tp_name);
         return false;
     }
-    in->ts = kg_tokenize_to_stream(module, source, comments != 0);
+    in->ts = kg_tokenize_to_stream(module, source, comments);
     if (in->ts == NULL) return false;
     in->first = 0;
     in->last = in->ts->arr.count;
@@ -512,9 +507,9 @@ parser_init(kg_parser *p, PyObject *module, kg_TokenStream *ts) {
 }
 
 static PyObject *
-parse_list(PyObject *module, PyObject *args, PyObject *kwds, const char *fmt, int mode) {
+parse_list(PyObject *module, PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames, const char *fname, int mode) {
     parse_input in;
-    if (!get_input(module, args, kwds, fmt, mode != 0, mode == 0, &in)) return NULL;
+    if (!get_input(module, args, nargs, kwnames, fname, mode != 0, mode == 0, &in)) return NULL;
     kg_parser p;
     PyObject *ans = NULL;
     if (parser_init(&p, module, in.ts)) {
@@ -528,24 +523,24 @@ parse_list(PyObject *module, PyObject *args, PyObject *kwds, const char *fmt, in
 }
 
 PyObject *
-kg_parse_stylesheet(PyObject *module, PyObject *args, PyObject *kwds) {
-    return parse_list(module, args, kwds, "O|$pO:parse_stylesheet", 0);
+kg_parse_stylesheet(PyObject *module, PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames) {
+    return parse_list(module, args, nargs, kwnames, "parse_stylesheet", 0);
 }
 
 PyObject *
-kg_parse_rule_list(PyObject *module, PyObject *args, PyObject *kwds) {
-    return parse_list(module, args, kwds, "O|$p:parse_rule_list", 1);
+kg_parse_rule_list(PyObject *module, PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames) {
+    return parse_list(module, args, nargs, kwnames, "parse_rule_list", 1);
 }
 
 PyObject *
-kg_parse_block_contents(PyObject *module, PyObject *args, PyObject *kwds) {
-    return parse_list(module, args, kwds, "O|$p:parse_block_contents", 2);
+kg_parse_block_contents(PyObject *module, PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames) {
+    return parse_list(module, args, nargs, kwnames, "parse_block_contents", 2);
 }
 
 PyObject *
-kg_parse_one_rule(PyObject *module, PyObject *args, PyObject *kwds) {
+kg_parse_one_rule(PyObject *module, PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames) {
     parse_input in;
-    if (!get_input(module, args, kwds, "O|$p:parse_one_rule", false, false, &in)) return NULL;
+    if (!get_input(module, args, nargs, kwnames, "parse_one_rule", false, false, &in)) return NULL;
     kg_parser p;
     PyObject *ans = NULL;
     kg_TokenStream *ts = in.ts;
@@ -574,9 +569,9 @@ kg_parse_one_rule(PyObject *module, PyObject *args, PyObject *kwds) {
 }
 
 PyObject *
-kg_parse_one_declaration(PyObject *module, PyObject *args, PyObject *kwds) {
+kg_parse_one_declaration(PyObject *module, PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames) {
     parse_input in;
-    if (!get_input(module, args, kwds, "O|$p:parse_one_declaration", false, false, &in)) return NULL;
+    if (!get_input(module, args, nargs, kwnames, "parse_one_declaration", false, false, &in)) return NULL;
     kg_parser p;
     PyObject *ans = NULL;
     kg_TokenStream *ts = in.ts;
@@ -750,22 +745,22 @@ NodeList_dealloc(PyObject *o) {
 }
 
 static Py_ssize_t
-NodeList_len(PyObject *o) { return PyTuple_GET_SIZE(((kg_NodeList *)o)->items); }
+NodeList_len(PyObject *o) { return PyList_GET_SIZE(((kg_NodeList *)o)->items); }
 
 static PyObject *
 NodeList_item(PyObject *o, Py_ssize_t i) {
     kg_NodeList *self = (kg_NodeList *)o;
-    if (i < 0 || i >= PyTuple_GET_SIZE(self->items)) {
+    if (i < 0 || i >= PyList_GET_SIZE(self->items)) {
         PyErr_SetString(PyExc_IndexError, "node index out of range");
         return NULL;
     }
-    return Py_NewRef(PyTuple_GET_ITEM(self->items, i));
+    return Py_NewRef(PyList_GET_ITEM(self->items, i));
 }
 
 static PyObject *
 NodeList_repr(PyObject *o) {
     kg_NodeList *self = (kg_NodeList *)o;
-    return PyUnicode_FromFormat("<NodeList of %zd nodes and %zd errors>", PyTuple_GET_SIZE(self->items),
+    return PyUnicode_FromFormat("<NodeList of %zd nodes and %zd errors>", PyList_GET_SIZE(self->items),
                                 PyTuple_GET_SIZE(self->errors));
 }
 

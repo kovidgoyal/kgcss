@@ -175,6 +175,19 @@ If the fuzzer finds a crash, add the input as a regression test in
 - Back performance claims with measurements, before and after.
 - Parsing must stay roughly linear in input size. Do not use quadratic
   string building in Python or C.
+- `bench/bench_parse.py` compares kgcss with calibre's tinycss, tinycss2
+  and css_parser on a real and synthetic corpus. Run `prepare` once, then
+  `run`. It needs `uv run --group bench`.
+- Use `bench/ab_compare.py --base HEAD` to judge an optimization. It builds
+  both versions and alternates rounds between them. Timings on this machine
+  are noisy (other load, SMT siblings, and the `powersave` governor, which
+  needs a warm-up). Comparing numbers from separate runs is not reliable:
+  differences of 20-30% in either direction have come from noise alone.
+  Use more `--rounds` and `--repeat` for files that parse in under a
+  millisecond.
+- `perf stat -e instructions` counts are a steadier signal than time.
+  `perf record -g` with `python -X perf` attributes time to C and Python
+  frames.
 
 ## Commits
 

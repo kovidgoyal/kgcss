@@ -309,3 +309,39 @@ def test_random_input_invariants() -> None:
                     assert n.pos <= n.value.pos <= n.value.end <= n.end
             offsets = [e.offset for e in nodes.errors]
             assert offsets == sorted(offsets)
+
+
+def test_argument_handling() -> None:
+    import kgcss
+    from kgcss import _kgcss
+
+    parsers = (
+        kgcss.tokenize,
+        kgcss.parse_component_value_list,
+        kgcss.parse_one_component_value,
+        _kgcss.parse_stylesheet,
+        parse_rule_list,
+        parse_block_contents,
+        parse_one_rule,
+        parse_one_declaration,
+    )
+    for fn in parsers:
+        name = fn.__name__
+        with pytest.raises(TypeError, match=r'takes exactly one positional argument \(0 given\)'):
+            fn()  # type: ignore[call-arg]
+        with pytest.raises(TypeError, match='takes exactly one positional argument'):
+            fn('a', True)  # type: ignore[call-arg]
+        with pytest.raises(TypeError, match=f"{name}\\(\\) got an unexpected keyword argument 'bogus'"):
+            fn('a', bogus=1)  # type: ignore[call-arg]
+        with pytest.raises(TypeError):
+            fn(b'a')  # type: ignore[arg-type]
+        # comments takes any truth value
+        fn('/* c */ a', comments=0)  # type: ignore[arg-type]
+        fn('/* c */ a', comments=[])  # type: ignore[arg-type]
+    assert len(kgcss.tokenize('/* c */', comments=0)) == 0  # type: ignore[arg-type]
+    assert len(kgcss.tokenize('/* c */', comments='yes')) == 1  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="unexpected keyword argument 'encoding'"):
+        parse_rule_list('a', encoding='utf-8')  # type: ignore[call-arg]
+    with pytest.raises(TypeError, match='encoding must be a str or None'):
+        _kgcss.parse_stylesheet('a', encoding=1)  # type: ignore[arg-type]
+    assert _kgcss.parse_stylesheet('a{}', encoding='x', comments=False).encoding == 'x'

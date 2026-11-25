@@ -294,7 +294,115 @@ bench/
 
 ## 5. Milestones
 
-Status: milestones 1 to 5 are done.
+Status: all six milestones are done.
+
+Notes from milestone 6:
+- **Corpus:** Bootstrap 5.3.3 (it has one em dash, so it is UCS-2),
+  Tailwind 2.2.19 (3.6 MB of ASCII), and three synthetic sheets in the style
+  of calibre conversion output (15000 `.calibreN` rules, with `@font-face`,
+  `@media` and comments), in ASCII, CJK (UCS-2) and emoji (UCS-4)
+  variants. `bench/bench_parse.py prepare` downloads the pinned and
+  checksummed files and calibre's tinycss (at a pinned calibre commit), then
+  builds its C tokenizer with two small shims for calibre's `polyglot`.
+- **Results**, `taskset -c 0-2`, best of several runs. "full" means parse,
+  then read every declaration's name, value text and priority at every
+  depth. Numbers vary by about ±10% between runs on this machine.
+
+  ### bootstrap-5.3.3.css: 0.28 MB, ucs2
+
+  | library | tokenize ms | parse ms | full ms | full MB/s | declarations |
+  |---|---:|---:|---:|---:|---:|
+  | kgcss | 0.6 | 0.7 | 5.3 | 53.1 | 5542 |
+  | tinycss (calibre, C) | 128.5 | 157.6 | 162.7 | 1.7 | 2458 |
+  | tinycss2 | 82.9 | 86.2 | 134.9 | 2.1 | 5542 |
+  | css_parser | 90.2 | 742.8 | 783.7 | 0.4 | 3490 |
+
+  ### calibre-style-cjk.css: 1.56 MB, ucs2
+
+  | library | tokenize ms | parse ms | full ms | full MB/s | declarations |
+  |---|---:|---:|---:|---:|---:|
+  | kgcss | 3.7 | 6.6 | 51.5 | 30.4 | 52554 |
+  | tinycss (calibre, C) | 803.8 | 1025.6 | 1100.6 | 1.4 | 52235 |
+  | tinycss2 | 590.6 | 638.7 | 1270.4 | 1.2 | 52554 |
+  | css_parser | 460.1 | 7151.1 | 8709.6 | 0.2 | 52554 |
+
+  ### calibre-style-emoji.css: 1.57 MB, ucs4
+
+  | library | tokenize ms | parse ms | full ms | full MB/s | declarations |
+  |---|---:|---:|---:|---:|---:|
+  | kgcss | 4.1 | 6.6 | 56.1 | 28.0 | 52942 |
+  | tinycss (calibre, C) | 808.1 | 1040.1 | 1142.2 | 1.4 | 52650 |
+  | tinycss2 | 612.3 | 661.7 | 1296.9 | 1.2 | 52942 |
+  | css_parser | 472.4 | 6926.7 | 7321.1 | 0.2 | 52942 |
+
+  ### calibre-style.css: 1.55 MB, ucs1
+
+  | library | tokenize ms | parse ms | full ms | full MB/s | declarations |
+  |---|---:|---:|---:|---:|---:|
+  | kgcss | 3.3 | 6.0 | 51.2 | 30.3 | 53073 |
+  | tinycss (calibre, C) | 765.5 | 1004.3 | 1071.8 | 1.4 | 52782 |
+  | tinycss2 | 583.8 | 644.4 | 1273.1 | 1.2 | 53073 |
+  | css_parser | 461.9 | 7040.9 | 7427.1 | 0.2 | 53073 |
+
+  ### tailwind-2.2.19.css: 3.64 MB, ucs1
+
+  | library | tokenize ms | parse ms | full ms | full MB/s | declarations |
+  |---|---:|---:|---:|---:|---:|
+  | kgcss | 5.3 | 8.3 | 64.4 | 56.6 | 58266 |
+  | tinycss (calibre, C) | 1729.4 | 1961.3 | 2036.4 | 1.8 | 5067 |
+  | tinycss2 | 1585.7 | 1596.2 | 2851.1 | 1.3 | 58266 |
+  | css_parser | 1159.0 | 8616.0 | 8654.8 | 0.4 | 18943 |
+
+  For the full workload, kgcss is 20-30x faster than calibre's tinycss,
+  20-45x faster than tinycss2, and about 140x faster than css_parser. The
+  tokenize column is not like for like: the other libraries build a Python
+  object per token, while kgcss only fills its C array. The declaration
+  counts also show how much the others drop. calibre's tinycss finds 2458
+  of Bootstrap's 5542 declarations and 5067 of Tailwind's 58266, because it
+  drops custom properties, `var()` values and `@supports` (requirements
+  P6, P15). css_parser drops custom properties and `var()`.
+- **Tuning**, each step measured with `bench/ab_compare.py` (alternating
+  A/B rounds):
+  - A 256-entry character class table, and local copies of the position and
+    data pointer in the hot loops (ident sequences, whitespace, digits,
+    strings). Before, `s->pos` was written back to memory on every
+    character.
+  - `memchr` to find the end of a comment in UCS-1 text.
+  - Vectorcall (`METH_FASTCALL | METH_KEYWORDS`) with a small shared
+    argument parser instead of `PyArg_ParseTupleAndKeywords`.
+  - No error collection when there are no errors, and no list to tuple
+    copy in `NodeList`.
+
+  Against the milestone 5 commit:
+
+  | workload | change |
+  |---|---|
+  | tokenize, UCS-1 and UCS-2 | 9-28% faster |
+  | tokenize, UCS-4 | about 5% faster |
+  | parse | 6-16% faster |
+  | full | 0-8% faster |
+  | `parse_block_contents()`, one declaration | 234 to 179 ns |
+  | `tokenize("a")` | 131 to 97 ns |
+- **GIL release threshold:** lowered from 64 KiB to 16 KiB. Measured after a
+  warm-up, tokenizing costs a flat ~2 us/KB with no step at the threshold,
+  so releasing the GIL costs nothing measurable. GIL builds can now
+  tokenize medium sized sheets in parallel too.
+- **Interning, not done:** the plan suggested interning repeated idents
+  per parse. Names are created per block parse (`parse_block_contents()`
+  on one block), and names rarely repeat within one block. Interning across
+  a whole sheet would need shared mutable state on the stream. Not worth it.
+- **Where the time goes now:** in the full workload, about 70% is CPython
+  itself (the caller's loop, attribute access and object lifetimes). In
+  `parse`, about 20% is the second pass over prelude tokens in
+  `consume_qualified_rule`. That is mostly cache misses on the 24-byte
+  token records, about 10 MB for a 1.5 MB sheet. Avoiding the second pass
+  would mean fusing the parser into the tokenizer, which is not worth it at
+  this point.
+- **Benchmarking lessons:** this machine runs other load, CPUs 8-10 are SMT
+  siblings of the fast cores, and the governor is `powersave`. Without a
+  warm-up, the first milliseconds of a run were 50% slower. Comparing
+  numbers from separate runs gave ±25% swings in both directions. Hence
+  `ab_compare.py`, and warm-ups in both benchmark scripts.
 
 Notes from milestone 5:
 - **Property tests** are in `tests/test_properties.py`, using hypothesis

@@ -73,13 +73,17 @@ PyObject *kg_make_token(kg_TokenStream *ts, uint32_t idx);
 PyObject *kg_make_parse_error(kg_TokenStream *ts, uint32_t offset, kg_error_kind kind);
 PyObject *kg_range_value(kg_TokenStream *ts, const kg_token *t, uint32_t start, uint32_t end, bool in_string);
 kg_TokenStream *kg_tokenize_to_stream(PyObject *module, PyObject *source, bool comments);
+/* Parse the arguments (source, /, *, comments=True) for METH_FASTCALL | METH_KEYWORDS
+ * functions, plus a keyword only encoding=None if encoding is not NULL */
+bool kg_parse_source_args(PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames, const char *fname,
+                          PyObject **source, bool *comments, PyObject **encoding);
 
 /* values.c */
 int kg_values_init(PyObject *module);
 int kg_values_traverse(PyObject *module, visitproc visit, void *arg);
 void kg_values_clear(PyObject *module);
-PyObject *kg_parse_component_value_list(PyObject *module, PyObject *args, PyObject *kwds);
-PyObject *kg_parse_one_component_value(PyObject *module, PyObject *args, PyObject *kwds);
+PyObject *kg_parse_component_value_list(PyObject *module, PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames);
+PyObject *kg_parse_one_component_value(PyObject *module, PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames);
 PyObject *kg_cvl_new(kg_TokenStream *ts, uint32_t first, uint32_t last, uint32_t pos, uint32_t end);
 PyObject *kg_make_item(kg_TokenStream *ts, uint32_t idx);
 PyObject *kg_group_new(kg_TokenStream *ts, uint32_t idx);
@@ -88,8 +92,8 @@ PyObject *kg_group_new(kg_TokenStream *ts, uint32_t idx);
 int kg_syntax_init(PyObject *module);
 int kg_syntax_traverse(PyObject *module, visitproc visit, void *arg);
 void kg_syntax_clear(PyObject *module);
-PyObject *kg_parse_stylesheet(PyObject *module, PyObject *args, PyObject *kwds);
-PyObject *kg_parse_rule_list(PyObject *module, PyObject *args, PyObject *kwds);
-PyObject *kg_parse_one_rule(PyObject *module, PyObject *args, PyObject *kwds);
-PyObject *kg_parse_block_contents(PyObject *module, PyObject *args, PyObject *kwds);
-PyObject *kg_parse_one_declaration(PyObject *module, PyObject *args, PyObject *kwds);
+PyObject *kg_parse_stylesheet(PyObject *module, PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames);
+PyObject *kg_parse_rule_list(PyObject *module, PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames);
+PyObject *kg_parse_one_rule(PyObject *module, PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames);
+PyObject *kg_parse_block_contents(PyObject *module, PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames);
+PyObject *kg_parse_one_declaration(PyObject *module, PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames);

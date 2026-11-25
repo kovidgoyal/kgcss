@@ -21,32 +21,32 @@ static PyMethodDef module_methods[] = {
      "serialize_identifier(text: str) -> str\n\n"
      "Serialize text as a CSS identifier, escaping characters as needed, "
      "following the CSSOM 'serialize an identifier' algorithm."},
-    {"tokenize", (PyCFunction)(void (*)(void))kg_tokenize_py, METH_VARARGS | METH_KEYWORDS,
+    {"tokenize", (PyCFunction)(void (*)(void))kg_tokenize_py, METH_FASTCALL | METH_KEYWORDS,
      "tokenize(source: str, /, *, comments: bool = True) -> TokenStream\n\n"
      "Tokenize source following CSS Syntax Level 3. Never raises for bad CSS, errors are recorded "
      "in TokenStream.errors. With comments=False, comment tokens are left out."},
     {"parse_component_value_list", (PyCFunction)(void (*)(void))kg_parse_component_value_list,
-     METH_VARARGS | METH_KEYWORDS,
+     METH_FASTCALL | METH_KEYWORDS,
      "parse_component_value_list(source: str, /, *, comments: bool = True) -> ComponentValueList\n\n"
      "Parse source into a list of component values (CSS Syntax 'parse a list of component values')."},
     {"parse_one_component_value", (PyCFunction)(void (*)(void))kg_parse_one_component_value,
-     METH_VARARGS | METH_KEYWORDS,
+     METH_FASTCALL | METH_KEYWORDS,
      "parse_one_component_value(source: str, /, *, comments: bool = True) -> Token | Block | Function | ParseError\n\n"
      "Parse source as exactly one component value, ignoring surrounding whitespace and comments. "
      "Returns a ParseError of kind 'empty' or 'extra-input' if there is not exactly one."},
-    {"parse_stylesheet", (PyCFunction)(void (*)(void))kg_parse_stylesheet, METH_VARARGS | METH_KEYWORDS,
+    {"parse_stylesheet", (PyCFunction)(void (*)(void))kg_parse_stylesheet, METH_FASTCALL | METH_KEYWORDS,
      "parse_stylesheet(source: str, /, *, comments: bool = True, encoding: str | None = None) -> NodeList\n\n"
      "Parse a stylesheet into at-rules and qualified rules (CSS Syntax 'parse a stylesheet'). CDO/CDC are ignored between rules. With comments=True, top level comments are included as COMMENT tokens. encoding is recorded as NodeList.encoding; use kgcss.parse_stylesheet() to parse bytes."},
-    {"parse_rule_list", (PyCFunction)(void (*)(void))kg_parse_rule_list, METH_VARARGS | METH_KEYWORDS,
+    {"parse_rule_list", (PyCFunction)(void (*)(void))kg_parse_rule_list, METH_FASTCALL | METH_KEYWORDS,
      "parse_rule_list(source: str | Block, /, *, comments: bool = True) -> NodeList\n\n"
      "Parse a list of rules. Like parse_stylesheet() but CDO/CDC are not special (CSS Syntax 2021 'parse a list of rules')."},
-    {"parse_block_contents", (PyCFunction)(void (*)(void))kg_parse_block_contents, METH_VARARGS | METH_KEYWORDS,
+    {"parse_block_contents", (PyCFunction)(void (*)(void))kg_parse_block_contents, METH_FASTCALL | METH_KEYWORDS,
      "parse_block_contents(source: str | Block, /, *, comments: bool = True) -> NodeList\n\n"
      "Parse declarations and nested rules, as in a style rule's block or a style attribute (CSS Syntax 'parse a block\'s contents'). A top level } ends the input."},
-    {"parse_one_rule", (PyCFunction)(void (*)(void))kg_parse_one_rule, METH_VARARGS | METH_KEYWORDS,
+    {"parse_one_rule", (PyCFunction)(void (*)(void))kg_parse_one_rule, METH_FASTCALL | METH_KEYWORDS,
      "parse_one_rule(source: str, /, *, comments: bool = True) -> AtRule | QualifiedRule | ParseError\n\n"
      "Parse exactly one rule, surrounded by optional whitespace and comments."},
-    {"parse_one_declaration", (PyCFunction)(void (*)(void))kg_parse_one_declaration, METH_VARARGS | METH_KEYWORDS,
+    {"parse_one_declaration", (PyCFunction)(void (*)(void))kg_parse_one_declaration, METH_FASTCALL | METH_KEYWORDS,
      "parse_one_declaration(source: str, /, *, comments: bool = True) -> Declaration | ParseError\n\n"
      "Parse one declaration (CSS Syntax 'parse a declaration'). Input after a top level ; is ignored."},
     {NULL, NULL, 0, NULL}

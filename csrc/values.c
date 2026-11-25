@@ -311,17 +311,20 @@ static PyType_Spec CVL_spec = {
  * ------------------------------------------------------------------------- */
 
 static kg_TokenStream *
-parse_args(PyObject *module, PyObject *args, PyObject *kwds, const char *fmt) {
-    static char *kwlist[] = {"", "comments", NULL};
+parse_args(PyObject *module, PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames, const char *fname) {
     PyObject *source;
-    int comments = 1;
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, fmt, kwlist, &source, &comments)) return NULL;
-    return kg_tokenize_to_stream(module, source, comments != 0);
+    bool comments;
+    if (!kg_parse_source_args(args, nargs, kwnames, fname, &source, &comments, NULL)) return NULL;
+    if (!PyUnicode_Check(source)) {
+        PyErr_Format(PyExc_TypeError, "%s() argument must be str, not %.200s", fname, Py_TYPE(source)->tp_name);
+        return NULL;
+    }
+    return kg_tokenize_to_stream(module, source, comments);
 }
 
 PyObject *
-kg_parse_component_value_list(PyObject *module, PyObject *args, PyObject *kwds) {
-    kg_TokenStream *ts = parse_args(module, args, kwds, "U|$p:parse_component_value_list");
+kg_parse_component_value_list(PyObject *module, PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames) {
+    kg_TokenStream *ts = parse_args(module, args, nargs, kwnames, "parse_component_value_list");
     if (ts == NULL) return NULL;
     PyObject *ans = kg_cvl_new(ts, 0, ts->arr.count, 0, ts->len);
     Py_DECREF(ts);
@@ -329,8 +332,8 @@ kg_parse_component_value_list(PyObject *module, PyObject *args, PyObject *kwds) 
 }
 
 PyObject *
-kg_parse_one_component_value(PyObject *module, PyObject *args, PyObject *kwds) {
-    kg_TokenStream *ts = parse_args(module, args, kwds, "U|$p:parse_one_component_value");
+kg_parse_one_component_value(PyObject *module, PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames) {
+    kg_TokenStream *ts = parse_args(module, args, nargs, kwnames, "parse_one_component_value");
     if (ts == NULL) return NULL;
     const uint32_t count = ts->arr.count;
     PyObject *ans;

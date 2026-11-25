@@ -32,6 +32,11 @@ dev = [
     "ruff>=0.8",
     "mypy>=1.13",
 ]
+# Other CSS libraries, for comparison in bench/bench_parse.py
+bench = [
+    "tinycss2>=1.4",
+    "css-parser>=1.0",
+]
 
 [tool.uv]
 # Rebuild the extension when any of these change, not just pyproject.toml
@@ -108,6 +113,6 @@ quote-style = "single"
 [tool.mypy]
 python_version = "3.14"
 strict = true
-files = ["src", "tests", "tools"]
+files = ["src", "tests", "tools", "bench"]
 mypy_path = "src"
 warn_unreachable = true

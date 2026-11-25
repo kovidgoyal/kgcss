@@ -21,7 +21,7 @@ typedef char kg_assert_uint_is_32_bits[sizeof(unsigned int) == sizeof(uint32_t) 
 /* Inputs are limited so that offsets fit in uint32_t with room for lookahead */
 #define KG_MAX_INPUT_LENGTH ((Py_ssize_t)UINT32_MAX - 16)
 /* Above this many code points, tokenize with the GIL released */
-#define KG_RELEASE_GIL_THRESHOLD (64 * 1024)
+#define KG_RELEASE_GIL_THRESHOLD (16 * 1024)
 
 static const char *token_type_names[KG_TOK__COUNT] = {
     [KG_TOK_IDENT] = "IDENT",
@@ -512,13 +512,47 @@ kg_tokenize_to_stream(PyObject *module, PyObject *source, bool comments) {
     return self;
 }
 
+bool
+kg_parse_source_args(PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames, const char *fname,
+                     PyObject **source, bool *comments, PyObject **encoding) {
+    if (nargs != 1) {
+        PyErr_Format(PyExc_TypeError, "%s() takes exactly one positional argument (%zd given)", fname, nargs);
+        return false;
+    }
+    *source = args[0];
+    *comments = true;
+    if (encoding != NULL) *encoding = Py_None;
+    const Py_ssize_t nkw = kwnames == NULL ? 0 : PyTuple_GET_SIZE(kwnames);
+    for (Py_ssize_t i = 0; i < nkw; i++) {
+        PyObject *key = PyTuple_GET_ITEM(kwnames, i), *value = args[nargs + i];
+        if (PyUnicode_EqualToUTF8(key, "comments")) {
+            int truth = PyObject_IsTrue(value);
+            if (truth < 0) return false;
+            *comments = truth != 0;
+        } else if (encoding != NULL && PyUnicode_EqualToUTF8(key, "encoding")) {
+            if (value != Py_None && !PyUnicode_Check(value)) {
+                PyErr_SetString(PyExc_TypeError, "encoding must be a str or None");
+                return false;
+            }
+            *encoding = value;
+        } else {
+            PyErr_Format(PyExc_TypeError, "%s() got an unexpected keyword argument '%U'", fname, key);
+            return false;
+        }
+    }
+    return true;
+}
+
 PyObject *
-kg_tokenize_py(PyObject *module, PyObject *args, PyObject *kwds) {
-    static char *kwlist[] = {"", "comments", NULL};
+kg_tokenize_py(PyObject *module, PyObject *const *args, Py_ssize_t nargs, PyObject *kwnames) {
     PyObject *source;
-    int comments = 1;
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "U|$p:tokenize", kwlist, &source, &comments)) return NULL;
-    return (PyObject *)kg_tokenize_to_stream(module, source, comments != 0);
+    bool comments;
+    if (!kg_parse_source_args(args, nargs, kwnames, "tokenize", &source, &comments, NULL)) return NULL;
+    if (!PyUnicode_Check(source)) {
+        PyErr_Format(PyExc_TypeError, "tokenize() argument must be str, not %.200s", Py_TYPE(source)->tp_name);
+        return NULL;
+    }
+    return (PyObject *)kg_tokenize_to_stream(module, source, comments);
 }
 
 /* ---------------------------------------------------------------------------

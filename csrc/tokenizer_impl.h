@@ -31,6 +31,15 @@ FN(needs_processing)(uint32_t c) {
     return c == 0 || (sizeof(CHAR_T) > 1 && kg_is_surrogate(c));
 }
 
+/* Character class (KG_CC_*) of a code point from the input. Surrogates are
+ * only KG_CC_STRING_SPECIAL, so that hot loops send them, like NUL, to their
+ * slow path, where they are marked as needing processing. */
+static inline uint8_t
+FN(cc)(uint32_t c) {
+    if (sizeof(CHAR_T) == 1 || c < 256) return kg_char_class[c & 0xff];
+    return kg_is_surrogate(c) ? KG_CC_STRING_SPECIAL : KG_CC_IDENT;
+}
+
 /* Length of the whitespace at pos + n, treating CRLF as one unit. 0 if none. */
 static inline uint32_t
 FN(ws_len)(const kg_tokenizer *s, uint32_t n) {
@@ -67,9 +76,25 @@ FN(starts_number_at)(const kg_tokenizer *s, uint32_t n) {
     return kg_is_digit(c);
 }
 
+/* Hot loops work on local copies of the position and data pointer: writing
+ * s->pos through the pointer on every iteration is measurably slower. */
+
 static inline void
 FN(consume_whitespace)(kg_tokenizer *s) {
-    while (s->pos < s->len && kg_is_whitespace(DATA[s->pos])) s->pos++;
+    const CHAR_T *d = DATA;
+    const uint32_t len = s->len;
+    uint32_t pos = s->pos;
+    while (pos < len && (FN(cc)(d[pos]) & KG_CC_WS)) pos++;
+    s->pos = pos;
+}
+
+static inline void
+FN(consume_digits)(kg_tokenizer *s) {
+    const CHAR_T *d = DATA;
+    const uint32_t len = s->len;
+    uint32_t pos = s->pos;
+    while (pos < len && (FN(cc)(d[pos]) & KG_CC_DIGIT)) pos++;
+    s->pos = pos;
 }
 
 /* Called with pos just after a backslash that starts a valid escape. */
@@ -87,17 +112,24 @@ FN(consume_escape)(kg_tokenizer *s) {
 
 static void
 FN(consume_ident_sequence)(kg_tokenizer *s, uint8_t *flags) {
-    while (s->pos < s->len) {
-        uint32_t c = DATA[s->pos];
-        if (kg_is_ident_char(c)) {
-            if (FN(needs_processing)(c)) *flags |= KG_TF_NEEDS_PROCESSING;
-            s->pos++;
-        } else if (c == '\\' && !kg_is_newline(FN(peek)(s, 1))) {
-            s->pos++;
+    const CHAR_T *d = DATA;
+    const uint32_t len = s->len;
+    uint32_t pos = s->pos;
+    while (pos < len) {
+        const uint32_t c = d[pos];
+        if (FN(cc)(c) & KG_CC_IDENT) { pos++; continue; }
+        /* Slow path: NUL and surrogates are ident code points that need processing */
+        if (FN(needs_processing)(c)) {
+            *flags |= KG_TF_NEEDS_PROCESSING;
+            pos++;
+        } else if (c == '\\' && !(pos + 1 < len && kg_is_newline(d[pos + 1]))) {
+            s->pos = pos + 1;
             FN(consume_escape)(s);
+            pos = s->pos;
             *flags |= KG_TF_NEEDS_PROCESSING;
         } else break;
     }
+    s->pos = pos;
 }
 
 /* Decode the code point at *i in [*, end), advancing *i. Returns KG_EOF for
@@ -174,35 +206,43 @@ FN(name_is_url)(const CHAR_T *d, uint32_t start, uint32_t end) {
 static void
 FN(consume_string)(kg_tokenizer *s, uint32_t start, uint32_t quote) {
     uint8_t flags = 0;
+    const CHAR_T *d = DATA;
+    const uint32_t len = s->len;
     const uint32_t vstart = s->pos;
+    uint32_t pos = s->pos;
     while (true) {
-        if (s->pos >= s->len) {
-            kg_add_error(s, s->pos, KG_ERR_EOF_IN_STRING);
-            kg_add_token(s, KG_TOK_STRING, start, s->pos, vstart, s->pos, flags | KG_TF_UNCLOSED);
+        /* Fast path: skip everything that cannot end the string or need processing */
+        while (pos < len && !(FN(cc)(d[pos]) & KG_CC_STRING_SPECIAL)) pos++;
+        if (pos >= len) {
+            s->pos = pos;
+            kg_add_error(s, pos, KG_ERR_EOF_IN_STRING);
+            kg_add_token(s, KG_TOK_STRING, start, pos, vstart, pos, flags | KG_TF_UNCLOSED);
             return;
         }
-        uint32_t c = DATA[s->pos];
+        const uint32_t c = d[pos];
         if (c == quote) {
-            s->pos++;
-            kg_add_token(s, KG_TOK_STRING, start, s->pos, vstart, s->pos - 1, flags);
+            s->pos = pos + 1;
+            kg_add_token(s, KG_TOK_STRING, start, pos + 1, vstart, pos, flags);
             return;
         }
         if (kg_is_newline(c)) {
-            kg_add_error(s, s->pos, KG_ERR_NEWLINE_IN_STRING);
-            kg_add_token(s, KG_TOK_BAD_STRING, start, s->pos, vstart, s->pos, flags);
+            s->pos = pos;
+            kg_add_error(s, pos, KG_ERR_NEWLINE_IN_STRING);
+            kg_add_token(s, KG_TOK_BAD_STRING, start, pos, vstart, pos, flags);
             return;
         }
         if (c == '\\') {
             flags |= KG_TF_NEEDS_PROCESSING;
-            s->pos++;
-            uint32_t n = FN(peek)(s, 0);
-            if (n == KG_EOF) continue;
-            if (kg_is_newline(n)) s->pos += FN(ws_len)(s, 0);
+            s->pos = ++pos;
+            if (pos >= len) continue;
+            if (kg_is_newline(d[pos])) s->pos += FN(ws_len)(s, 0);
             else FN(consume_escape)(s);
+            pos = s->pos;
             continue;
         }
+        /* The other quote character, NUL or a surrogate */
         if (FN(needs_processing)(c)) flags |= KG_TF_NEEDS_PROCESSING;
-        s->pos++;
+        pos++;
     }
 }
 
@@ -211,10 +251,10 @@ FN(consume_numeric)(kg_tokenizer *s, uint32_t start) {
     uint8_t flags = KG_TF_IS_INTEGER;
     uint32_t c = FN(peek)(s, 0);
     if (c == '+' || c == '-') s->pos++;
-    while (kg_is_digit(FN(peek)(s, 0))) s->pos++;
+    FN(consume_digits)(s);
     if (FN(peek)(s, 0) == '.' && kg_is_digit(FN(peek)(s, 1))) {
         s->pos += 2;
-        while (kg_is_digit(FN(peek)(s, 0))) s->pos++;
+        FN(consume_digits)(s);
         flags &= (uint8_t)~KG_TF_IS_INTEGER;
     }
     c = FN(peek)(s, 0);
@@ -225,7 +265,7 @@ FN(consume_numeric)(kg_tokenizer *s, uint32_t start) {
         else if ((c1 == '+' || c1 == '-') && kg_is_digit(FN(peek)(s, 2))) skip = 3;
         if (skip) {
             s->pos += skip;
-            while (kg_is_digit(FN(peek)(s, 0))) s->pos++;
+            FN(consume_digits)(s);
             flags &= (uint8_t)~KG_TF_IS_INTEGER;
         }
     }
@@ -336,15 +376,23 @@ FN(consume_ident_like)(kg_tokenizer *s, uint32_t start) {
 
 static void
 FN(consume_comment)(kg_tokenizer *s, uint32_t start) {
-    s->pos += 2;
-    const uint32_t vstart = s->pos;
-    while (s->pos + 1 < s->len) {
-        if (DATA[s->pos] == '*' && DATA[s->pos + 1] == '/') {
-            s->pos += 2;
-            if (s->keep_comments) kg_add_token(s, KG_TOK_COMMENT, start, s->pos, vstart, s->pos - 2, 0);
+    const CHAR_T *d = DATA;
+    const uint32_t len = s->len;
+    const uint32_t vstart = start + 2;
+    uint32_t pos = vstart;
+    while (pos + 1 < len) {
+        if (sizeof(CHAR_T) == 1) {
+            /* A '*' that could be followed by '/' is at most at len - 2 */
+            const CHAR_T *star = memchr(d + pos, '*', len - 1 - pos);
+            if (star == NULL) break;
+            pos = (uint32_t)(star - d);
+        }
+        if (d[pos] == '*' && d[pos + 1] == '/') {
+            s->pos = pos + 2;
+            if (s->keep_comments) kg_add_token(s, KG_TOK_COMMENT, start, pos + 2, vstart, pos, 0);
             return;
         }
-        s->pos++;
+        pos++;
     }
     s->pos = s->len;
     kg_add_error(s, start, KG_ERR_EOF_IN_COMMENT);

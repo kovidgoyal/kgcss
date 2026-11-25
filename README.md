@@ -41,6 +41,14 @@ HYPOTHESIS_PROFILE=thorough uv run pytest -n auto  # many more property based ex
 KGCSS_STRESS=10 uv run pytest tests/test_threads.py  # longer concurrency stress tests
 ```
 
+Benchmarks (pin to fast cores, see `bench/`):
+
+```sh
+uv run --group bench python bench/bench_parse.py prepare   # download corpus, build calibre's tinycss
+taskset -c 0-2 uv run --group bench python bench/bench_parse.py run
+taskset -c 0-2 uv run --group bench python bench/ab_compare.py --base HEAD   # A/B against a revision
+```
+
 ## License
 
 GPL-3.0. See [LICENSE](LICENSE).
