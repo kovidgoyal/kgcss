@@ -302,9 +302,12 @@ Level 4 rules:
   selector of S;
 - pseudo-elements, including the legacy single-colon ones, count as types,
   so `A:first-letter` is `(0, 0, 2)`;
-- `&` counts as the most specific selector of the parent rule, or as
-  `:scope`, `(0, 1, 0)`, in a selector that is not attached to a nested
-  rule.
+- in a nested rule, the specificity is that of `resolved()` (§4.5).
+  CSS Nesting defines `&` as `:is()` of the parent rule's selectors,
+  specificity included, and implies `&` before selectors that start with a
+  combinator or have none. So `> a` in `.p, #q` is `(1, 0, 1)`. In a
+  selector that is not in a nested rule, `&` counts as `:scope`,
+  `(0, 1, 0)`.
 
 Specificity is computed in C while parsing and is cached on the
 `Selector`.
@@ -499,7 +502,45 @@ the selectors that match. Decide in milestone 5, from measurements (D9).
 
 ## 8. Milestones
 
-Status: milestone 1 is done.
+Status: milestones 1 and 2 are done.
+
+Notes from milestone 2:
+- **Queries** are on the tree (`ComplexSelector`) and on `Selector`:
+  - `class_names()`, `ids()`, `pseudo_classes()` and `pseudo_elements()`
+    give sets of names at any depth;
+  - `has_pseudo(names)` compares ASCII case-insensitively.
+    `INAPPROPRIATE_PSEUDO_CLASSES` is exported now, so
+    `selector.has_pseudo(INAPPROPRIATE_PSEUDO_CLASSES)` replaces calibre's
+    regexes;
+  - the legacy pseudo-elements (`:first-line`) count as pseudo-elements.
+- **Renames.**
+  - `rename_classes(text, mapping)` and `rename_ids(text, mapping)` take a
+    mapping or a function, and replace only the spans of the class or id
+    selectors. New names are written with `serialize_identifier`, whose hex
+    escapes end with a space, so they never absorb what follows.
+  - `Selector.rename_classes()`/`rename_ids()` change the selector in place
+    and raise for a selector that is not valid.
+    `SelectorList.rename_classes()`/`rename_ids()` leave invalid selectors
+    as they are, since browsers ignore them. Both return whether anything
+    changed.
+  - A property test checks that a rename changes only the class names, and
+    that the text outside the class selectors is the same.
+- **`resolved()`** follows CSS Nesting. `&` becomes
+  `:is(<the parent's resolved selectors>)`. A selector that starts with a
+  combinator, or has no `&`, gets `:is(...)` and a space in front.
+  Selectors outside nested rules resolve to themselves.
+- **Specificity of nested selectors, a fix to milestone 1.** It was
+  computed directly, which missed the implied `&`: `> a` in `.p, #q` gave
+  `(0, 0, 1)` instead of `(1, 0, 1)`. It is now the specificity of
+  `resolved()`. That is exactly CSS Nesting's definition: `&` is `:is()`,
+  whose forgiving list drops parent selectors that are not valid in its
+  place, such as one with `:has()` when `&` is inside `:has()`, or one with
+  a pseudo-element. A property test on random nested sheets checks it, and
+  that every resolved selector is a valid top-level one.
+- Resolved selectors grow with the product of the selector list sizes at
+  each nesting level, as `:is()` repeats every parent selector. The matcher
+  of milestone 3 can handle `&` natively rather than through the text, if
+  deep nesting turns out to matter.
 
 Notes from milestone 1:
 - **The parser** is `csrc/selectors.c`, about 1000 lines.

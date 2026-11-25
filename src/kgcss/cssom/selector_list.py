@@ -12,7 +12,17 @@ from typing import TYPE_CHECKING, overload
 
 from kgcss.cssom.exceptions import SelectorSyntaxError
 from kgcss.cssom.serializer import normalize_selector
-from kgcss.selectors import ComplexSelector, PseudoElement, SimpleSelector, build_tree, compile_selectors
+from kgcss.selectors import (
+    ComplexSelector,
+    NameMap,
+    NestingSelector,
+    PseudoElement,
+    SimpleSelector,
+    build_tree,
+    compile_selectors,
+    rename_classes,
+    rename_ids,
+)
 from kgcss.syntax import Block, Function, parse_component_value_list
 from kgcss.tokenizer import TokenType
 
@@ -150,23 +160,90 @@ class Selector:
     @property
     def specificity(self) -> tuple[int, int, int]:
         """The specificity (a, b, c) of Selectors Level 4. Raises SelectorSyntaxError if the text is not a
-        valid selector. & counts as the most specific selector of the parent style rule, or as :scope
-        when the selector is not in a nested rule."""
-        compiled = self._compiled_selector()
-        if not compiled.has_nesting:
-            return compiled.specificity()
-        return compiled.specificity(self._nesting_specificity())
+        valid selector.
 
-    def _nesting_specificity(self) -> tuple[int, int, int]:
+        For a selector of a nested style rule, it is the specificity of resolved(): CSS Nesting defines
+        & as :is() of the parent rule's selectors, including for specificity, and implies & before
+        selectors that start with a combinator or have none. Elsewhere & counts as :scope.
+        """
+        compiled = self._compiled_selector()
+        if self._parent_style_rule() is None:
+            return compiled.specificity()
+        return self.resolved()._compiled_selector().specificity()
+
+    def _parent_style_rule(self) -> StyleRule | None:
+        """The style rule this selector's rule is nested in, if any."""
         from kgcss.cssom.rules import StyleRule
 
         rule = self._rule()
         parent = None if rule is None else rule.parent_rule
         while parent is not None and not isinstance(parent, StyleRule):
             parent = parent.parent_rule
+        return parent
+
+    def resolved(self) -> Selector:
+        """For a selector of a nested style rule, the equivalent selector outside of it, as CSS Nesting
+        defines it: & is replaced by :is() of the parent rule's selectors, resolved in turn. A selector
+        that starts with a combinator or has no & is relative to the parent: & is implied before it, so
+        > a becomes :is(.p) > a, and a becomes :is(.p) a. For any other selector, the selector itself.
+        Raises SelectorSyntaxError if this selector or one of the parent rule is not valid."""
+        parent = self._parent_style_rule()
         if parent is None:
-            return (0, 1, 0)
-        return max((s.specificity for s in parent.selectors), default=(0, 0, 0))
+            return self
+        compiled = self._compiled_selector()
+        replacement = f':is({", ".join(s.resolved().text for s in parent.selectors)})'
+        text = self._text
+        if compiled.has_nesting:
+            spans = sorted(s.span for s in self.parsed.walk() if isinstance(s, NestingSelector))
+            parts = []
+            pos = 0
+            for start, end in spans:
+                parts.append(text[pos:start])
+                parts.append(replacement)
+                pos = end
+            parts.append(text[pos:])
+            text = ''.join(parts)
+        if compiled.relative or not compiled.has_nesting:
+            text = f'{replacement} {text}'
+        return Selector(text)
+
+    def class_names(self) -> set[str]:
+        """The class names, at any depth (including inside :is(), :not(), :has() and 'of S')."""
+        return self.parsed.class_names()
+
+    def ids(self) -> set[str]:
+        """The IDs, at any depth."""
+        return self.parsed.ids()
+
+    def pseudo_classes(self) -> set[str]:
+        """The names of the pseudo-classes, at any depth, lowercased."""
+        return self.parsed.pseudo_classes()
+
+    def pseudo_elements(self) -> set[str]:
+        """The names of the pseudo-elements, lowercased, including the legacy ones such as :before."""
+        return self.parsed.pseudo_elements()
+
+    def has_pseudo(self, names: Iterable[str]) -> bool:
+        """Whether a pseudo-class or pseudo-element of this selector, at any depth, has one of these names.
+        For example has_pseudo(INAPPROPRIATE_PSEUDO_CLASSES) says whether it depends on user interaction
+        or generated content."""
+        return self.parsed.has_pseudo(names)
+
+    def rename_classes(self, mapping: NameMap) -> bool:
+        """Rename classes, at any depth, by a mapping of old names to new ones or a function, changing only
+        the renamed class selectors in the text (see kgcss.selectors.rename_classes). Returns True if
+        anything changed. Raises SelectorSyntaxError if the selector is not valid."""
+        return self._set_renamed(rename_classes(self._text, mapping, nested=self._is_nested()))
+
+    def rename_ids(self, mapping: NameMap) -> bool:
+        """Like rename_classes(), for IDs."""
+        return self._set_renamed(rename_ids(self._text, mapping, nested=self._is_nested()))
+
+    def _set_renamed(self, text: str) -> bool:
+        if text == self._text:
+            return False
+        self.text = text
+        return True
 
     @property
     def pseudo_element(self) -> PseudoElement | None:
@@ -268,6 +345,24 @@ class SelectorList(MutableSequence[Selector]):
     def insert(self, index: int, value: Selector) -> None:
         self._items.insert(index, self._adopt(value))
         self._changed()
+
+    def rename_classes(self, mapping: NameMap) -> bool:
+        """Rename classes in every selector, see Selector.rename_classes(). Selectors that are not valid,
+        which browsers ignore, are left as they are. Returns True if anything changed."""
+        return self._rename(Selector.rename_classes, mapping)
+
+    def rename_ids(self, mapping: NameMap) -> bool:
+        """Like rename_classes(), for IDs."""
+        return self._rename(Selector.rename_ids, mapping)
+
+    def _rename(self, method: Callable[[Selector, NameMap], bool], mapping: NameMap) -> bool:
+        changed = False
+        for selector in list(self._items):
+            try:
+                changed = method(selector, mapping) or changed
+            except SelectorSyntaxError:
+                continue
+        return changed
 
     def sort(self, *, key: Callable[[Selector], SupportsRichComparison] | None = None, reverse: bool = False) -> None:
         """Sort the selectors, by default by their text."""

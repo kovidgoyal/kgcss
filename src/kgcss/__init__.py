@@ -64,9 +64,11 @@ from kgcss.cssom import (
 )
 from kgcss.decode import decode_stylesheet, lookup_encoding
 from kgcss.escaping import serialize_identifier, serialize_string
+from kgcss.selectors import INAPPROPRIATE_PSEUDO_CLASSES, rename_classes, rename_ids
 from kgcss.tokenizer import ParseError
 
 __all__ = [
+    'INAPPROPRIATE_PSEUDO_CLASSES',
     'CSSSyntaxError',
     'CharsetRule',
     'Comment',
@@ -119,6 +121,8 @@ __all__ = [
     'parse_stylesheet',
     'parse_value',
     'remove_url_values',
+    'rename_classes',
+    'rename_ids',
     'replace_urls',
     'replace_urls_in_text',
     'resolve_imports',

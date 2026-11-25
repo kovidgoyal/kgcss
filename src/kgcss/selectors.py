@@ -9,7 +9,7 @@ can change parts of the text and keep the rest exactly as written. Spans
 are not compared when nodes are compared.
 """
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from enum import Enum, IntEnum, unique
 from functools import lru_cache
@@ -20,6 +20,7 @@ from kgcss.cssom.exceptions import SelectorSyntaxError
 from kgcss.escaping import serialize_identifier, serialize_string
 
 __all__ = [
+    'INAPPROPRIATE_PSEUDO_CLASSES',
     'AttributeSelector',
     'ClassSelector',
     'Combinator',
@@ -36,6 +37,8 @@ __all__ = [
     'SimpleSelector',
     'TypeSelector',
     'compile_selectors',
+    'rename_classes',
+    'rename_ids',
 ]
 
 
@@ -287,6 +290,35 @@ class ComplexSelector:
             elif isinstance(s, PseudoElement):
                 stack.append(iter(s.pseudo_classes))
 
+    def class_names(self) -> set[str]:
+        """The class names, at any depth."""
+        return {s.name for s in self.walk() if isinstance(s, ClassSelector)}
+
+    def ids(self) -> set[str]:
+        """The IDs, at any depth."""
+        return {s.name for s in self.walk() if isinstance(s, IdSelector)}
+
+    def pseudo_classes(self) -> set[str]:
+        """The names of the pseudo-classes, at any depth, lowercased: hover, not, nth-child, lang..."""
+        names = set()
+        for s in self.walk():
+            if isinstance(s, LangPseudoClass):
+                names.add('lang')
+            elif isinstance(s, PseudoClass | SelectorPseudoClass | NthPseudoClass | FunctionalPseudoClass):
+                names.add(s.name)
+        return names
+
+    def pseudo_elements(self) -> set[str]:
+        """The names of the pseudo-elements, lowercased, including the legacy ones such as :before."""
+        return {s.name for s in self.walk() if isinstance(s, PseudoElement)}
+
+    def has_pseudo(self, names: Iterable[str]) -> bool:
+        """Whether any of the pseudo-classes or pseudo-elements of this selector, at any depth, has one of
+        these names (compared ASCII case-insensitively). For example has_pseudo(INAPPROPRIATE_PSEUDO_CLASSES)
+        says whether the selector depends on user interaction or generated content."""
+        wanted = {_ascii_lower(n) for n in names}
+        return not wanted.isdisjoint(self.pseudo_classes()) or not wanted.isdisjoint(self.pseudo_elements())
+
     def _simple(self) -> Iterator[SimpleSelector]:
         for _, compound in self.parts:
             yield from compound
@@ -313,6 +345,68 @@ def _simple_of_all(selectors: tuple[ComplexSelector, ...]) -> Iterator[SimpleSel
 
 def _ident(name: str) -> str:
     return serialize_identifier(name)
+
+
+def _ascii_lower(text: str) -> str:
+    return text.lower() if text.isascii() else ''.join(c.lower() if c.isascii() else c for c in text)
+
+
+# Pseudo-classes and pseudo-elements that depend on user interaction or rendering, so they cannot
+# be matched against a document. The same set as css_selectors.
+INAPPROPRIATE_PSEUDO_CLASSES = frozenset((
+    'active', 'after', 'disabled', 'visited', 'link', 'before', 'focus', 'first-letter', 'enabled', 'first-line',
+    'hover', 'checked', 'target', 'focus-within', 'focus-visible', 'target-within',
+))  # fmt: skip
+
+
+# ---------------------------------------------------------------------------
+# Renaming
+# ---------------------------------------------------------------------------
+
+type NameMap = Mapping[str, str] | Callable[[str], str]
+
+
+def _mapper(mapping: NameMap) -> Callable[[str], str]:
+    if isinstance(mapping, Mapping):
+        return lambda name: mapping.get(name, name)
+    return mapping
+
+
+def _rename(text: str, kind: type[ClassSelector | IdSelector], mapping: NameMap, nested: bool) -> str:
+    fn = _mapper(mapping)
+    prefix = '.' if kind is ClassSelector else '#'
+    edits: list[tuple[int, int, str]] = []
+    for compiled in compile_selectors(text, nested):
+        for s in build_tree(compiled).walk():
+            if type(s) is kind and (new := fn(s.name)) != s.name:
+                if not new:
+                    raise ValueError(f'Cannot rename {prefix}{s.name} to an empty name')
+                start, end = compiled.start + s.span[0], compiled.start + s.span[1]
+                edits.append((start, end, prefix + serialize_identifier(new)))
+    if not edits:
+        return text
+    parts = []
+    pos = 0
+    for start, end, replacement in sorted(edits):
+        parts.append(text[pos:start])
+        parts.append(replacement)
+        pos = end
+    parts.append(text[pos:])
+    return ''.join(parts)
+
+
+def rename_classes(text: str, mapping: NameMap, *, nested: bool = True) -> str:
+    """The selector list text with class names renamed, at any depth, by a mapping of old names to new
+    ones or a function. Only the renamed class selectors change, everything else stays exactly as
+    written. Names are unescaped: rename {'1a': 'b'} turns .\\31 a into .b. Raises
+    SelectorSyntaxError if the text is not a selector list. With nested, the selectors may start with a
+    combinator, as in nested style rules."""
+    return _rename(text, ClassSelector, mapping, nested)
+
+
+def rename_ids(text: str, mapping: NameMap, *, nested: bool = True) -> str:
+    """Like rename_classes(), for IDs."""
+    return _rename(text, IdSelector, mapping, nested)
 
 
 # ---------------------------------------------------------------------------

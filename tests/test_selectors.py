@@ -13,12 +13,15 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from kgcss import (
+    INAPPROPRIATE_PSEUDO_CLASSES,
     CSSSyntaxError,
     SelectorSyntaxError,
     StyleRule,
     invalid_selectors,
     parse_selectors,
     parse_stylesheet,
+    rename_classes,
+    rename_ids,
 )
 from kgcss.selectors import (
     AttributeSelector,
@@ -652,9 +655,10 @@ def test_nested_rules() -> None:
     assert isinstance(child, StyleRule)
     assert isinstance(nest, StyleRule)
     assert child.selectors[0].parsed.parts[0][0] is Combinator.CHILD
-    # & counts as the most specific parent selector, here #q
+    # & counts as the most specific parent selector, here #q, and so does the & implied before
+    # > a (CSS Nesting)
     assert nest.selectors[0].specificity == (1, 1, 0)
-    assert child.selectors[0].specificity == (0, 0, 1)
+    assert child.selectors[0].specificity == (1, 0, 1)
     children = media.child_rules()
     assert children is not None
     inner = children[0]
@@ -666,6 +670,101 @@ def test_nested_rules() -> None:
         outer.selector_text = '> d'
     # & outside a nested rule is :scope
     assert parse_selectors('&.x')[0].specificity == (0, 2, 0)
+
+
+def test_queries() -> None:
+    s = parse_selectors('a.b#c:is(.d, :not(#e)):nth-child(2 of .f):lang(fr):dir(rtl)::before:HOVER')[0]
+    assert s.class_names() == {'b', 'd', 'f'}
+    assert s.ids() == {'c', 'e'}
+    assert s.pseudo_classes() == {'is', 'not', 'nth-child', 'lang', 'dir', 'hover'}
+    assert s.pseudo_elements() == {'before'}
+    assert s.has_pseudo(INAPPROPRIATE_PSEUDO_CLASSES)
+    assert s.has_pseudo(['Before'])
+    assert not s.has_pseudo(['first-letter', 'focus'])
+    # Escapes are resolved, case is kept
+    assert parse_selectors('.\\31 x.Y')[0].class_names() == {'1x', 'Y'}
+    # The legacy pseudo-elements count as pseudo-elements, not pseudo-classes
+    legacy = parse_selectors('p:first-line')[0]
+    assert legacy.pseudo_elements() == {'first-line'}
+    assert legacy.pseudo_classes() == set()
+    assert legacy.has_pseudo(INAPPROPRIATE_PSEUDO_CLASSES)
+    assert not parse_selectors('p:first-child > a')[0].has_pseudo(INAPPROPRIATE_PSEUDO_CLASSES)
+
+
+def test_rename_text() -> None:
+    # Only the renamed class selectors change, escapes, comments and spacing elsewhere are kept
+    text = 'a.x  >  .\\79 /* c */ , :not(.x, #x):has(> .x) .xx'
+    assert rename_classes(text, {'x': 'new', 'y': 'w'}) == 'a.new  >  .w/* c */ , :not(.new, #x):has(> .new) .xx'
+    assert rename_ids(text, {'x': 'i'}) == 'a.x  >  .\\79 /* c */ , :not(.x, #i):has(> .x) .xx'
+    assert rename_classes(text, {'zzz': 'q'}) is text
+    # New names are escaped as needed, and the escape cannot absorb what follows
+    assert rename_classes('.a.b', {'a': '1a'}) == '.\\31 a.b'
+    assert rename_classes('.a .b', {'a': '1'}) == '.\\31  .b'
+    assert compile_selectors(rename_classes('.a .b', {'a': '1'}))[0].specificity() == (0, 2, 0)
+    assert rename_ids('#a', {'a': 'b c'}) == '#b\\ c'
+    assert rename_classes('.a', str.upper) == '.A'
+    with pytest.raises(ValueError, match='empty'):
+        rename_classes('.a', {'a': ''})
+    with pytest.raises(SelectorSyntaxError):
+        rename_classes('.a!', {'a': 'b'})
+    # Relative selectors are fine by default, as in nested rules
+    assert rename_classes('> .a', {'a': 'b'}) == '> .b'
+
+
+def test_rename_selectors() -> None:
+    sheet = parse_stylesheet('.a, .b!, .a.c { x: y } .d { x: y }')
+    rule = sheet.rules[0]
+    assert isinstance(rule, StyleRule)
+    # In a list, selectors that are not valid are left as they are
+    assert rule.selectors.rename_classes({'a': 'z'})
+    assert rule.selector_text == '.z, .b!, .z.c'
+    assert not rule.selectors.rename_classes({'a': 'z'})
+    first = rule.selectors[0]
+    assert first.rename_ids({}) is False
+    assert first.rename_classes(lambda n: n * 2)
+    assert rule.selector_text == '.zz, .b!, .z.c'
+    with pytest.raises(SelectorSyntaxError):
+        rule.selectors[1].rename_classes({'b': 'q'})
+    assert sheet.css_text.startswith('.zz, .b!, .z.c {')
+
+
+def test_resolved() -> None:
+    sheet = parse_stylesheet(
+        '.p, #q { > a { x: y } & .b, .c& { x: y } d { x: y } :not(&) { x: y } '
+        '@media print { + e { x: y } f & { g { x: y } } } }'
+    )
+    outer = sheet.rules[0]
+    assert isinstance(outer, StyleRule)
+    child, nest, plain, negated, media = outer.rules
+    assert outer.selectors[0].resolved() is outer.selectors[0]
+    texts = {
+        'child': [s.resolved().text for s in child.selectors],  # type: ignore[attr-defined]
+        'nest': [s.resolved().text for s in nest.selectors],  # type: ignore[attr-defined]
+        'plain': [s.resolved().text for s in plain.selectors],  # type: ignore[attr-defined]
+        'negated': [s.resolved().text for s in negated.selectors],  # type: ignore[attr-defined]
+    }
+    assert texts == {
+        'child': [':is(.p, #q) > a'],
+        'nest': [':is(.p, #q) .b', '.c:is(.p, #q)'],
+        'plain': [':is(.p, #q) d'],
+        'negated': [':not(:is(.p, #q))'],
+    }
+    children = media.child_rules()
+    assert children is not None
+    sibling, deeper = children
+    assert isinstance(sibling, StyleRule)
+    assert isinstance(deeper, StyleRule)
+    assert sibling.selectors[0].resolved().text == ':is(.p, #q) + e'
+    assert deeper.selectors[0].resolved().text == 'f :is(.p, #q)'
+    g = deeper.rules[0]
+    assert isinstance(g, StyleRule)
+    assert g.selectors[0].resolved().text == ':is(f :is(.p, #q)) g'
+    # The specificity of a nested selector is that of its resolved form
+    for rule in sheet.iter_rules():
+        if isinstance(rule, StyleRule):
+            for s in rule.selectors:
+                assert s.specificity == s.resolved().specificity, s.text
+    assert g.selectors[0].specificity == (1, 0, 2)
 
 
 def test_compile_cache() -> None:
@@ -767,3 +866,81 @@ def test_any_text(css: str) -> None:
             tree = build_tree(c)
             check_spans(tree, css[c.start : c.end])
             assert build_tree(compile_selectors(tree.to_css(), nested)[0]) == tree
+
+
+def shapes(tree: ComplexSelector, mapping: dict[str, str] | None = None) -> list[object]:
+    """The simple selectors of tree in order, at any depth, with the class names renamed. Selectors that
+    contain others are reduced to their own fields, as walk() visits what they contain."""
+    out: list[object] = []
+    for s in tree.walk():
+        match s:
+            case ClassSelector():
+                out.append(('class', (mapping or {}).get(s.name, s.name)))
+            case SelectorPseudoClass():
+                out.append(('selector-pseudo', s.name, len(s.selectors)))
+            case NthPseudoClass():
+                out.append(('nth', s.name, s.a, s.b, None if s.of is None else len(s.of)))
+            case PseudoElement():
+                out.append(('pseudo-element', s.name, s.arguments, s.legacy, len(s.pseudo_classes)))
+            case _:
+                out.append(s)
+    return out
+
+
+@given(selector_list(), st.dictionaries(st.sampled_from(('a', 'P', 'é', 'x-y', '1x', '_z')), idents, max_size=3))
+def test_rename_classes_changes_only_class_selectors(css: str, mapping: dict[str, str]) -> None:
+    try:
+        before = [build_tree(c) for c in compile_selectors(css)]
+    except SelectorSyntaxError:
+        before = []
+    if not before:
+        return
+    renamed = rename_classes(css, mapping)
+    after = [build_tree(c) for c in compile_selectors(renamed)]
+    # The same selectors, with the classes renamed
+    assert [shapes(t, mapping) for t in before] == [shapes(t) for t in after]
+    assert [[c for c, _ in t.parts] for t in before] == [[c for c, _ in t.parts] for t in after]
+
+    # Outside the class selectors, the text is the same
+    def without_classes(text: str) -> str:
+        spans = sorted(
+            (c.start + s.span[0], c.start + s.span[1])
+            for c in compile_selectors(text)
+            for s in build_tree(c).walk()
+            if isinstance(s, ClassSelector)
+        )
+        parts, pos = [], 0
+        for start, end in spans:
+            parts.append(text[pos:start])
+            pos = end
+        parts.append(text[pos:])
+        return '|'.join(parts)
+
+    assert without_classes(css) == without_classes(renamed)
+
+
+@given(
+    selector_list(),
+    st.lists(
+        # Resolved selectors grow with the product of the list sizes at each level, so keep it small
+        st.tuples(st.sampled_from(('', '> ', '+ ', '~ ', '& ', '&', ':is(&) ')), selector_list(1)),
+        min_size=1,
+        max_size=2,
+    ),
+)
+def test_resolved_matches_nested_specificity(outer: str, levels: list[tuple[str, str]]) -> None:
+    # Each level is nested in the one before, with or without & and leading combinators
+    css = outer + ''.join(' { ' + prefix + inner for prefix, inner in levels) + ' { x: y }' + ' }' * len(levels)
+    for rule in parse_stylesheet(css).iter_rules():
+        if not isinstance(rule, StyleRule):
+            continue
+        for s in rule.selectors:
+            try:
+                spec = s.specificity
+                resolved = s.resolved()
+            except SelectorSyntaxError:
+                # Not valid here, or a parent is not
+                continue
+            assert resolved.specificity == spec, (s.text, resolved.text)
+            # The resolved selector is a top level one
+            assert not compile_selectors(resolved.text, False)[0].relative
