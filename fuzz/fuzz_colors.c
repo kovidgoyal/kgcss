@@ -8,8 +8,9 @@
  * with tools/fuzz.py --target colors. The whole extension is compiled into
  * the fuzzer and registered as the built-in module kgcss._kgcss. Each input,
  * decoded as UTF-8, must give None, 'currentColor' or an RGBA of four floats
- * in 0..1. ASCII input must give the same result in upper case, since
- * everything in a color is ASCII case-insensitive. Anything else aborts.
+ * in 0..1, and the same as converting the result of parse_color_raw(). ASCII
+ * input must give the same result in upper case, since everything in a
+ * color is ASCII case-insensitive. Anything else aborts.
  */
 
 #include "kgcss.h"
@@ -25,7 +26,7 @@ PyMODINIT_FUNC PyInit__kgcss(void);
 int LLVMFuzzerInitialize(int *argc, char ***argv);
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size);
 
-static PyObject *parse_rgba, *rgba_type;
+static PyObject *parse_rgba, *rgba_type, *parse_color_raw, *color_to_rgba;
 
 int
 LLVMFuzzerInitialize(int *argc, char ***argv) {
@@ -40,7 +41,9 @@ LLVMFuzzerInitialize(int *argc, char ***argv) {
     PyErr_Clear();
     parse_rgba = PyObject_GetAttrString(m, "parse_rgba");
     rgba_type = PyObject_GetAttrString(m, "RGBA");
-    CHECK(parse_rgba != NULL && rgba_type != NULL);
+    parse_color_raw = PyObject_GetAttrString(m, "parse_color_raw");
+    color_to_rgba = PyObject_GetAttrString(m, "color_to_rgba");
+    CHECK(parse_rgba != NULL && rgba_type != NULL && parse_color_raw != NULL && color_to_rgba != NULL);
     Py_DECREF(m);
     return 0;
 }
@@ -49,11 +52,19 @@ static PyObject *
 check(PyObject *text) {
     PyObject *ans = PyObject_CallOneArg(parse_rgba, text);
     CHECK(ans != NULL);
-    if (ans == Py_None) return ans;
-    if (PyUnicode_Check(ans)) {
-        CHECK(PyUnicode_CompareWithASCIIString(ans, "currentColor") == 0);
+    PyObject *raw = PyObject_CallOneArg(parse_color_raw, text);
+    CHECK(raw != NULL);
+    if (ans == Py_None || PyUnicode_Check(ans)) {
+        CHECK(PyObject_RichCompareBool(ans, raw, Py_EQ) == 1);
+        Py_DECREF(raw);
+        if (PyUnicode_Check(ans)) CHECK(PyUnicode_CompareWithASCIIString(ans, "currentColor") == 0);
         return ans;
     }
+    CHECK(PyTuple_Check(raw) && PyTuple_GET_SIZE(raw) == 5);
+    PyObject *converted = PyObject_Call(color_to_rgba, raw, NULL);
+    CHECK(converted != NULL && PyObject_RichCompareBool(ans, converted, Py_EQ) == 1);
+    Py_DECREF(converted);
+    Py_DECREF(raw);
     CHECK(Py_IS_TYPE(ans, (PyTypeObject *)rgba_type) && PyTuple_GET_SIZE(ans) == 4);
     for (Py_ssize_t i = 0; i < 4; i++) {
         PyObject *f = PyTuple_GET_ITEM(ans, i);

@@ -386,6 +386,15 @@ resolve(const color_arg *a, arg_kind kind, double pct_ref, bool allow_none, doub
 static inline double clip01(double x) { return fmin(1, fmax(0, x)); }
 static inline double clamp(double x, double lo, double hi) { return fmin(hi, fmax(lo, x)); }
 
+/* A hue in degrees, in [0, 360) */
+static double
+normalized_hue(double h) {
+    h = fmod(h, 360);
+    if (h < 0) h += 360;
+    /* -0 and the rounding of a tiny negative h to 360 */
+    return h == 0 || h >= 360 ? 0 : h;
+}
+
 /* ---------------------------------------------------------------------------
  * hsl() and hwb(), to sRGB
  * ------------------------------------------------------------------------- */
@@ -531,7 +540,7 @@ parse_function(scanner *p, color_function func, kg_color *out) {
             /* A negative saturation is clamped to zero */
             double rgb[3];
             hsl_to_rgb(c[0], fmax(0, c[1]) / 100, c[2] / 100, rgb);
-            for (unsigned i = 0; i < 3; i++) c[i] = rgb[i] * 255;
+            for (unsigned i = 0; i < 3; i++) c[i] = clamp(rgb[i] * 255, 0, 255);
             out->space = KG_CS_RGB;
         } break;
         case F_HWB: {
@@ -540,7 +549,7 @@ parse_function(scanner *p, color_function func, kg_color *out) {
             R(2, PERCENT_OR_NUMBER, 100);
             double rgb[3];
             hwb_to_rgb(c[0], c[1] / 100, c[2] / 100, rgb);
-            for (unsigned i = 0; i < 3; i++) c[i] = rgb[i] * 255;
+            for (unsigned i = 0; i < 3; i++) c[i] = clamp(rgb[i] * 255, 0, 255);
             out->space = KG_CS_RGB;
         } break;
         case F_LAB:
@@ -556,6 +565,7 @@ parse_function(scanner *p, color_function func, kg_color *out) {
             R(2, HUE, 0);
             c[0] = clamp(c[0], 0, 100);
             c[1] = fmax(0, c[1]);
+            if (!(out->none & 4)) c[2] = normalized_hue(c[2]);
             out->space = KG_CS_LCH;
             break;
         case F_OKLAB:
@@ -571,6 +581,7 @@ parse_function(scanner *p, color_function func, kg_color *out) {
             R(2, HUE, 0);
             c[0] = clip01(c[0]);
             c[1] = fmax(0, c[1]);
+            if (!(out->none & 4)) c[2] = normalized_hue(c[2]);
             out->space = KG_CS_OKLCH;
             break;
         case F_COLOR:
@@ -941,6 +952,8 @@ static PyStructSequence_Desc RGBA_desc = {
     .n_in_sequence = 4,
 };
 
+static PyObject *new_rgba(kg_module_state *state, const kg_color *k);
+
 PyObject *
 kg_parse_rgba(PyObject *module, PyObject *src) {
     if (!PyUnicode_Check(src)) {
@@ -954,9 +967,19 @@ kg_parse_rgba(PyObject *module, PyObject *src) {
         case KG_COLOR_CURRENT: return Py_NewRef(kg_get_module_state(module)->str_currentColor);
         default: break;
     }
-    kg_module_state *state = kg_get_module_state(module);
+    return new_rgba(kg_get_module_state(module), &k);
+}
+
+/* The names of the color spaces, as Color.space, in the order of kg_color_space */
+static const char *space_names[] = {
+    "rgb", "lab", "lch", "oklab", "oklch", "srgb", "srgb-linear", "display-p3", "a98-rgb", "prophoto-rgb", "rec2020",
+    "xyz-d50", "xyz-d65",
+};
+
+static PyObject *
+new_rgba(kg_module_state *state, const kg_color *k) {
     double rgba[4];
-    to_srgb(&k, rgba);
+    to_srgb(k, rgba);
     /* Not PyStructSequence_New(), which looks up the field counts in the type's dict on every call. All
      * four fields are in the sequence, so the object is exactly a tuple of size 4. */
     PyObject *ans = state->RGBA_type->tp_alloc(state->RGBA_type, 4);
@@ -969,6 +992,74 @@ kg_parse_rgba(PyObject *module, PyObject *src) {
     return ans;
 }
 
+/* parse_color_raw(text) -> (space, c0, c1, c2, alpha) | 'currentColor' | None, with None for none */
+PyObject *
+kg_parse_color_raw(PyObject *module, PyObject *src) {
+    if (!PyUnicode_Check(src)) {
+        PyErr_Format(PyExc_TypeError, "parse_color() argument must be str, not %T", src);
+        return NULL;
+    }
+    kg_color k;
+    switch (parse_color(src, &k)) {
+        case -1: return NULL;
+        case KG_COLOR_INVALID: Py_RETURN_NONE;
+        case KG_COLOR_CURRENT: return Py_NewRef(kg_get_module_state(module)->str_currentColor);
+        default: break;
+    }
+    kg_module_state *state = kg_get_module_state(module);
+    PyObject *ans = PyTuple_New(5);
+    if (ans == NULL) return NULL;
+    PyTuple_SET_ITEM(ans, 0, Py_NewRef(PyTuple_GET_ITEM(state->color_space_names, k.space)));
+    for (unsigned i = 0; i < 4; i++) {
+        PyObject *v = (k.none & (1u << i)) ? Py_NewRef(Py_None) : PyFloat_FromDouble(i < 3 ? k.c[i] : k.alpha);
+        if (v == NULL) { Py_DECREF(ans); return NULL; }
+        PyTuple_SET_ITEM(ans, i + 1, v);
+    }
+    return ans;
+}
+
+static bool
+as_channel(PyObject *o, double *ans, unsigned bit, unsigned *none) {
+    if (o == Py_None) {
+        *ans = 0;
+        *none |= bit;
+        return true;
+    }
+    *ans = PyFloat_AsDouble(o);
+    if (*ans == -1.0 && PyErr_Occurred()) return false;
+    if (!isfinite(*ans)) {
+        PyErr_SetString(PyExc_ValueError, "color channels must be finite");
+        return false;
+    }
+    return true;
+}
+
+/* color_to_rgba(space, c0, c1, c2, alpha) -> RGBA. None is none, which counts as 0. */
+PyObject *
+kg_color_to_rgba(PyObject *module, PyObject *const *args, Py_ssize_t nargs) {
+    if (nargs != 5 || !PyUnicode_Check(args[0])) {
+        PyErr_SetString(PyExc_TypeError, "color_to_rgba(space: str, c0, c1, c2, alpha)");
+        return NULL;
+    }
+    kg_module_state *state = kg_get_module_state(module);
+    kg_color k = {.none = 0};
+    bool found = false;
+    for (Py_ssize_t i = 0; i < PyTuple_GET_SIZE(state->color_space_names) && !found; i++) {
+        if (PyUnicode_Compare(args[0], PyTuple_GET_ITEM(state->color_space_names, i)) == 0) {
+            k.space = (kg_color_space)i;
+            found = true;
+        }
+    }
+    if (!found) {
+        PyErr_Format(PyExc_ValueError, "unknown color space: %R", args[0]);
+        return NULL;
+    }
+    for (unsigned i = 0; i < 4; i++) {
+        if (!as_channel(args[i + 1], i < 3 ? k.c + i : &k.alpha, 1u << i, &k.none)) return NULL;
+    }
+    return new_rgba(state, &k);
+}
+
 int
 kg_color_init(PyObject *module) {
     kg_module_state *state = kg_get_module_state(module);
@@ -976,7 +1067,15 @@ kg_color_init(PyObject *module) {
     if (state->RGBA_type == NULL) return -1;
     if (PyModule_AddObjectRef(module, "RGBA", (PyObject *)state->RGBA_type) != 0) return -1;
     state->str_currentColor = PyUnicode_InternFromString("currentColor");
-    return state->str_currentColor == NULL ? -1 : 0;
+    if (state->str_currentColor == NULL) return -1;
+    state->color_space_names = PyTuple_New(arraysz(space_names));
+    if (state->color_space_names == NULL) return -1;
+    for (Py_ssize_t i = 0; i < (Py_ssize_t)arraysz(space_names); i++) {
+        PyObject *name = PyUnicode_InternFromString(space_names[i]);
+        if (name == NULL) return -1;
+        PyTuple_SET_ITEM(state->color_space_names, i, name);
+    }
+    return 0;
 }
 
 int
@@ -984,6 +1083,7 @@ kg_color_traverse(PyObject *module, visitproc visit, void *arg) {
     kg_module_state *state = kg_get_module_state(module);
     Py_VISIT(state->RGBA_type);
     Py_VISIT(state->str_currentColor);
+    Py_VISIT(state->color_space_names);
     return 0;
 }
 
@@ -992,4 +1092,5 @@ kg_color_clear(PyObject *module) {
     kg_module_state *state = kg_get_module_state(module);
     Py_CLEAR(state->RGBA_type);
     Py_CLEAR(state->str_currentColor);
+    Py_CLEAR(state->color_space_names);
 }

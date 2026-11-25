@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # License: GPLv3 Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
-"""Benchmark color parsing: kgcss.parse_rgba against calibre's C parser.
+"""Benchmark color parsing: kgcss.parse_rgba and parse_color against calibre's C parser.
 
     uv run --group bench python bench/bench_parse.py prepare
     taskset -c 0-2 uv run --group bench python bench/bench_color.py
@@ -58,7 +58,7 @@ def corpus_texts() -> tuple[tuple[str, ...], tuple[str, ...]]:
 def parsers() -> dict[str, Parser]:
     import kgcss
 
-    ans: dict[str, Parser] = {'kgcss': kgcss.parse_rgba}
+    ans: dict[str, Parser] = {'kgcss': kgcss.parse_rgba, 'kgcss parse_color': kgcss.parse_color}
     sys.path.insert(0, str(CALIBRE))
     try:
         from calibre_extensions.tokenizer import parse_css4_color_string  # type: ignore[import-not-found]

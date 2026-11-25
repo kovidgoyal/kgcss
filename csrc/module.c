@@ -70,6 +70,12 @@ static PyMethodDef module_methods[] = {
     {"parse_rgba", kg_parse_rgba, METH_O,
      "parse_rgba(text: str, /) -> RGBA | Literal['currentColor'] | None\n\n"
      "A CSS color as sRGB, clipped to 0..1. 'currentColor' for currentColor in any case, None if text is not a color."},
+    {"parse_color_raw", kg_parse_color_raw, METH_O,
+     "parse_color_raw(text: str, /) -> tuple[str, float | None, float | None, float | None, float | None] | Literal['currentColor'] | None\n\n"
+     "A CSS color as specified: the color space, the three channels and the alpha, None for none. Use kgcss.parse_color()."},
+    {"color_to_rgba", (PyCFunction)(void (*)(void))kg_color_to_rgba, METH_FASTCALL,
+     "color_to_rgba(space: str, c0, c1, c2, alpha, /) -> RGBA\n\n"
+     "A color in one of the spaces of parse_color_raw() as sRGB, clipped. None counts as 0."},
     {NULL, NULL, 0, NULL}
 };
 

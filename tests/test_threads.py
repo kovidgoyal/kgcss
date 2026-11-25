@@ -368,10 +368,12 @@ def test_select_shared() -> None:
 def test_colors_concurrently() -> None:
     # The parser keeps no state; the escape fallback allocates, so mix in escaped input
     inputs = ['red', 'rgb(1 2 3 / 50%)', 'oklch(0.7 0.1 200)', 'r\\65 d', 'red /* é */', 'currentColor', 'x', '#abc']
-    expected = [kgcss.parse_rgba(s) for s in inputs]
+    expected = [(kgcss.parse_rgba(s), kgcss.parse_color(s)) for s in inputs]
 
     def work(idx: int) -> bool:
         check_gil()
-        return all([kgcss.parse_rgba(s) for s in inputs] == expected for _ in range(2000 * STRESS))
+        return all(
+            [(kgcss.parse_rgba(s), kgcss.parse_color(s)) for s in inputs] == expected for _ in range(1000 * STRESS)
+        )
 
     assert all(run_concurrently(work))

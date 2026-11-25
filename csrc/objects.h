@@ -144,6 +144,8 @@ int kg_color_init(PyObject *module);
 int kg_color_traverse(PyObject *module, visitproc visit, void *arg);
 void kg_color_clear(PyObject *module);
 PyObject *kg_parse_rgba(PyObject *module, PyObject *src);
+PyObject *kg_parse_color_raw(PyObject *module, PyObject *src);
+PyObject *kg_color_to_rgba(PyObject *module, PyObject *const *args, Py_ssize_t nargs);
 
 /* urls.c */
 PyObject *kg_find_urls(PyObject *module, PyObject *const *args, Py_ssize_t nargs);

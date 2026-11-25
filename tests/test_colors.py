@@ -1,14 +1,16 @@
 # License: GPLv3 Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
-"""parse_rgba(): CSS Color 4 colors as sRGB (docs/plan-04-media-colors.md, §4).
+"""parse_rgba() and parse_color(): CSS Color 4 colors (docs/plan-04-media-colors.md, §4).
 
 The cases come from calibre's tinycss color4 tests and its callers' tests, the
-CSS 3 keywords of the CSS parsing suite, and a differential test against
+color files of the CSS parsing suite, and a differential test against
 calibre's C parser, from the benchmark cache.
 """
 
+import dataclasses
 import doctest
 import importlib
+import math
 import pickle
 import re
 import sys
@@ -20,7 +22,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 import kgcss.colors
-from kgcss import RGBA, parse_rgba
+from kgcss import RGBA, Color, parse_color, parse_rgba
 
 from .suite import load_cases
 
@@ -486,3 +488,176 @@ def test_same_as_calibre(pieces: Pieces) -> None:
         assert ans == pytest.approx(expected, abs=1e-12), css
     else:
         assert ans == expected, css
+
+
+# The suite's color files, through parse_color().to_css()
+
+SUITE_FILES = (
+    'color_keywords_3.json', 'color_keywords_4.json', 'color_hexadecimal_3.json', 'color_hexadecimal_4.json',
+    'color_hsl_3.json', 'color_hsl_4.json', 'color_hwb_4.json', 'color_lab_4.json', 'color_lch_4.json',
+    'color_oklab_4.json', 'color_oklch_4.json', 'color_function_4.json',
+)  # fmt: skip
+# The lightness range of each function and whether it has a chroma, for the clamping below
+FUNCTION_RANGES = {'lab': (100, False), 'lch': (100, True), 'oklab': (1, False), 'oklch': (1, True)}
+TOKEN = re.compile(r'none|[a-z][a-z0-9-]*|[-+]?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?|[,/]')
+
+
+def css_parts(text: str) -> tuple[str, list[str | float]]:
+    m = re.fullmatch(r'([a-z-]+)\((.*)\)', text)
+    assert m is not None, text
+    tokens: list[str | float] = []
+    for t in TOKEN.findall(m.group(2)):
+        try:
+            tokens.append(float(t))
+        except ValueError:
+            tokens.append(t)
+    return m.group(1), tokens
+
+
+def spec_expected(text: str) -> tuple[str, list[str | float]]:
+    """The suite's expected serialization, with the clamping that CSS Color 4 does at parsed-value time:
+    lightness to its range and negative chroma to 0. The suite keeps them as written."""
+    name, tokens = css_parts(text)
+    if name in FUNCTION_RANGES:
+        top, chroma = FUNCTION_RANGES[name]
+        if isinstance(tokens[0], float):
+            tokens[0] = min(top, max(0.0, tokens[0]))
+        if chroma and isinstance(tokens[1], float):
+            tokens[1] = max(0.0, tokens[1])
+    return name, tokens
+
+
+def same_parts(a: tuple[str, list[str | float]], b: tuple[str, list[str | float]]) -> bool:
+    if a[0] != b[0] or len(a[1]) != len(b[1]):
+        return False
+    for x, y in zip(a[1], b[1], strict=True):
+        if isinstance(x, float) and isinstance(y, float):
+            if not math.isclose(x, y, rel_tol=1e-6, abs_tol=1e-6):
+                return False
+        elif x != y:
+            return False
+    return True
+
+
+@pytest.mark.parametrize('name', SUITE_FILES)
+def test_suite(name: str) -> None:
+    failures: list[tuple[str, object, object]] = []
+    for css, expected in load_cases(name):
+        ans = parse_color(css)
+        if expected is None or ans is None:
+            if ans != expected:
+                failures.append((css, expected, ans))
+        elif ans == 'currentColor':
+            if expected != 'currentcolor':
+                failures.append((css, expected, ans))
+        else:
+            assert isinstance(expected, str)
+            got = ans.to_css()
+            if not same_parts(css_parts(got), spec_expected(expected)):
+                failures.append((css, expected, got))
+            # parse_rgba() is parse_color().to_rgba()
+            assert parse_rgba(css) == ans.to_rgba(), css
+    assert not failures, f'{len(failures)} failures, the first: {failures[:5]}'
+
+
+def test_suite_level_5() -> None:
+    # CSS Color 5 is out of scope (§1): device-cmyk(), light-dark() and custom spaces are not colors
+    for css, _ in load_cases('color_functions_5.json'):
+        assert parse_color(css) is None, css
+
+
+# The ranges of the channels of each space after parsing, for generated colors
+def channel(low: float, high: float) -> st.SearchStrategy[float]:
+    return st.floats(low, high, allow_nan=False, allow_infinity=False)
+
+
+HUE = channel(0, 359.999)
+SPACE_CHANNELS: dict[str, tuple[st.SearchStrategy[float], ...]] = {
+    'rgb': (channel(0, 255),) * 3,
+    'lab': (channel(0, 100), channel(-200, 200), channel(-200, 200)),
+    'lch': (channel(0, 100), channel(0, 250), HUE),
+    'oklab': (channel(0, 1), channel(-0.5, 0.5), channel(-0.5, 0.5)),
+    'oklch': (channel(0, 1), channel(0, 0.5), HUE),
+    **{space: (channel(-2, 3),) * 3 for space in ('srgb', 'srgb-linear', 'display-p3', 'a98-rgb', 'prophoto-rgb',
+                                                  'rec2020', 'xyz-d50', 'xyz-d65')},
+}  # fmt: skip
+
+
+@st.composite
+def colors(draw: st.DrawFn) -> Color:
+    space = draw(st.sampled_from(sorted(SPACE_CHANNELS)))
+    none = space != 'rgb'
+
+    def value(s: st.SearchStrategy[float]) -> float | None:
+        return None if none and draw(st.integers(0, 6)) == 0 else draw(s)
+
+    c0, c1, c2 = (value(s) for s in SPACE_CHANNELS[space])
+    return Color(space, (c0, c1, c2), value(st.sampled_from((1.0, 0.0)) | channel(0, 1)))  # type: ignore[arg-type]
+
+
+def close(a: float | None, b: float | None) -> bool:
+    return a is b or (a is not None and b is not None and math.isclose(a, b, abs_tol=1e-6))
+
+
+@given(colors())
+def test_to_css_round_trip(color: Color) -> None:
+    css = color.to_css()
+    again = parse_color(css)
+    assert isinstance(again, Color), css
+    assert again.to_css() == css
+    assert again.space == color.space
+    assert all(close(a, b) for a, b in zip((*again.channels, again.alpha), (*color.channels, color.alpha), strict=True))
+    assert again.to_rgba() == pytest.approx(color.to_rgba(), abs=1e-5), css
+
+
+@given(color_pieces())
+def test_parse_rgba_is_parse_color_to_rgba(pieces: Pieces) -> None:
+    css = render(pieces)
+    ans = parse_color(css)
+    assert parse_rgba(css) == (ans.to_rgba() if isinstance(ans, Color) else ans), css
+
+
+@given(st.text())
+def test_parse_color_any_text(text: str) -> None:
+    parse_color(text)
+
+
+def test_color_model() -> None:
+    c = parse_color('lch(150% -10 -30 / none)')
+    assert c == Color('lch', (100.0, 0.0, 330.0), None)
+    assert c.to_css() == 'lch(100 0 330 / none)'
+    assert parse_color('color(xyz 1 2 3)') == Color('xyz-d65', (1.0, 2.0, 3.0))
+    assert parse_color('rgb(none 300 -5 / 2)') == Color('rgb', (0.0, 255.0, 0.0))
+    assert parse_color('transparent') == Color('rgb', (0.0, 0.0, 0.0), 0.0)
+    assert parse_color('oklab(0.5 none 0.1)').to_css() == 'oklab(0.5 none 0.1)'  # type: ignore[union-attr]
+    assert parse_color('currentColor') == 'currentColor'
+    assert parse_color('rgb(var(--x))') is None
+    assert Color('rgb', (1, 2, 3), 0.9999999).to_css() == 'rgb(1, 2, 3)'
+    assert Color('srgb', (1.5, -0.25, 1 / 3), 0.5).to_css() == 'color(srgb 1.5 -0.25 0.333333 / 0.5)'
+    assert Color('srgb', (1.5, -0.25, 0)).to_rgba() == (1.0, 0.0, 0.0, 1.0)
+    with pytest.raises(TypeError):
+        parse_color(b'red')  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match='Unknown color space'):
+        Color('cmyk', (0, 0, 0))  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match='three channels'):
+        Color('lab', (0, 0))  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match='finite'):
+        Color('lab', (math.inf, 0, 0))
+    with pytest.raises(ValueError, match='no none'):
+        Color('rgb', (None, 0, 0))
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        c.alpha = 1  # type: ignore[misc]
+
+
+def test_components() -> None:
+    from kgcss import parse_value
+
+    value = parse_value('1px solid rgb(1 2 3) #fff red', property_name='border')
+    found = [parse_color(c) for c in value]
+    assert found == [
+        None,
+        None,
+        Color('rgb', (1.0, 2.0, 3.0)),
+        Color('rgb', (255.0,) * 3),
+        Color('rgb', (255.0, 0.0, 0.0)),
+    ]

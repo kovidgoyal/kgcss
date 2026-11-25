@@ -8,7 +8,7 @@ kgcss.syntax (component values and the generic CSS Syntax parse tree).
 """
 
 from kgcss._version import __version__
-from kgcss.colors import RGBA, parse_rgba
+from kgcss.colors import RGBA, Color, ColorSpace, parse_color, parse_rgba
 from kgcss.cssom import (
     CharsetRule,
     Comment,
@@ -74,6 +74,8 @@ __all__ = [
     'RGBA',
     'CSSSyntaxError',
     'CharsetRule',
+    'Color',
+    'ColorSpace',
     'Comment',
     'Component',
     'ContainerRule',
@@ -119,6 +121,7 @@ __all__ = [
     'invalid_selectors',
     'iter_urls',
     'lookup_encoding',
+    'parse_color',
     'parse_rgba',
     'parse_rule',
     'parse_selectors',

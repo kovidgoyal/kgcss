@@ -69,6 +69,8 @@ typedef struct {
     PyObject *MatchError;
     PyTypeObject *RGBA_type;
     PyObject *str_currentColor;
+    /* The names of the color spaces of color.c, a tuple of str */
+    PyObject *color_space_names;
     PyTypeObject *TokenStream_type, *Token_type, *ParseError_type;
     PyTypeObject *Block_type, *Function_type, *ComponentValueList_type;
     PyTypeObject *AtRule_type, *QualifiedRule_type, *Declaration_type, *NodeList_type;
