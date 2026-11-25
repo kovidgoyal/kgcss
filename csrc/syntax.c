@@ -639,6 +639,13 @@ Node_values(PyObject *o, void *closure) {
 }
 
 static PyObject *
+Node_values_text(PyObject *o, void *closure) {
+    KG_UNUSED(closure);
+    kg_Node *self = (kg_Node *)o;
+    return PyUnicode_Substring(self->stream->source, self->text_pos, self->text_end);
+}
+
+static PyObject *
 Node_block(PyObject *o, void *closure) {
     KG_UNUSED(closure);
     kg_Node *self = (kg_Node *)o;
@@ -718,6 +725,7 @@ static PyGetSetDef Declaration_getset[] = {
     COMMON_NODE_GETSET,
     {"value", Node_values, NULL,
      "The value as component values, without surrounding whitespace and comments and without !important", NULL},
+    {"value_text", Node_values_text, NULL, "The exact source text of the value, the same as value.text but faster", NULL},
     {NULL, NULL, NULL, NULL, NULL}
 };
 static PyType_Slot Declaration_slots[] = {

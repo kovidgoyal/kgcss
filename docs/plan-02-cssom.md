@@ -468,7 +468,59 @@ class SerializeOptions:
 
 ## 8. Milestones
 
-Status: milestone 1 is done.
+Status: milestones 1 and 2 are done.
+
+Notes from milestone 2:
+- **`DeclarationBlock`** has the effective view (iteration, `len`, `in`,
+  `[name]`, `keys()`, `get_value()`, `get_property()`) and the full view
+  (`items`, a `DeclarationList` of `Property` and `Comment` with parent
+  pointers). It also has `set()`, `set_property()`, `remove()`,
+  `remove_declaration()`, `replace_declaration()` and `copy()`. The
+  effective view is cached and invalidated on any change, including changes
+  made through a `Property`.
+- **`set()` follows the browser CSSOM:** it changes the effective
+  declaration in place and removes the other declarations of that name.
+  `remove()` removes all of them and returns the old effective value, or
+  `''`. `set_property()` uses a copy if the property belongs to another
+  block. Inserting into `items` a property owned elsewhere raises
+  `ValueError`: an explicit `copy()` is clearer at that level.
+- **`Property`** lowercases names, except custom properties and non-ASCII
+  names. The value is read from the syntax node on first access, through
+  the new C getter `Declaration.value_text`. `literal_priority` is found by
+  tokenizing the text between the value and the end of the declaration.
+  There are `line`, `column` and `copy()`.
+- **Values are always checked structurally** when set (`check_value()`).
+  This rejects:
+  - a top level `;`;
+  - a top level closing bracket;
+  - anything unclosed (brackets, strings, `url()`, comments);
+  - an embedded `!important`, which belongs in the priority.
+
+  So a value can never corrupt the text around it. `validate=True` also
+  rejects empty values and values with any tokenizer error, such as bad
+  strings and bad URLs (requirements 4.2). The error is `InvalidValueError`,
+  and `CSSSyntaxError` is defined for milestone 5.
+- **`style`** is built lazily under the sheet lock. It exists on style,
+  `@font-face`, `@page`, margin and nested-declarations rules. You can
+  assign text (`rule.style = ''` for Kobo) or a `DeclarationBlock`, which is
+  copied if another rule owns it. Errors in assigned text stay in the
+  block's `errors`, since their positions refer to that text and not to the
+  sheet.
+- **`parse_style()`** (P2) drops nested rules with an error. A top level `}`
+  ends the input (P5).
+- **Modifications** mark the rule, its ancestors and the sheet as modified.
+  `preserve` serialization then refuses those objects until milestone 4
+  provides pretty output. Unmodified siblings are still written from
+  source.
+- **Performance:**
+  - Parsing the 1.55 MB calibre-style sheet and reading the name, value and
+    priority of all 53k effective properties takes about 145 ms, against
+    about 50 ms for the same work on the syntax tree and 7.4 s for
+    css_parser.
+  - Two fixes got there: `MutableSequence` iteration (`__getitem__` once per
+    item) in the hot effective-view loop, and per-item adoption when blocks
+    are built.
+  - The plan's target of under 100 ms is left to milestone 8.
 
 Notes from milestone 1:
 - **Layout.** The package is `src/kgcss/cssom/`. Top-level `kgcss` exports

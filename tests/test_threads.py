@@ -200,3 +200,26 @@ def test_cssom_lazy_blocks_race() -> None:
         assert len(sheet.errors) == 200
         assert all(e.kind == 'invalid-rule' for e in sheet.errors)
     check_gil()
+
+
+def test_cssom_lazy_style_race() -> None:
+    css = ''.join(f'.r{i} {{ a: {i}; b: x !important; a: y }}\n' for i in range(300))
+    barrier = threading.Barrier(THREADS)
+    for _ in range(5 * STRESS):
+        sheet = kgcss.parse_stylesheet(css)
+
+        def work(idx: int, sheet: kgcss.Stylesheet = sheet) -> list[tuple[int, str]]:
+            barrier.wait()
+            rules = list(sheet.rules)
+            if idx % 2:
+                rules.reverse()
+            out = {}
+            for rule in rules:
+                assert isinstance(rule, kgcss.StyleRule)
+                out[rule.selector_text] = (id(rule.style), rule.style.get_value('a'))
+            return [out[f'.r{i}'] for i in range(300)]
+
+        results = run_concurrently(work)
+        assert all(r == results[0] for r in results)
+        assert {v for _, v in results[0]} == {'y'}
+    check_gil()

@@ -27,6 +27,6 @@ DEFAULT_OPTIONS = SerializeOptions()
 
 def serialize(obj: Stylesheet | Rule, options: SerializeOptions = DEFAULT_OPTIONS) -> str:
     """Serialize a stylesheet or rule to text."""
-    if options.style == 'preserve' and obj._source is not None:
+    if options.style == 'preserve' and obj._source is not None and not obj._dirty:
         return obj._source.source_text
     raise NotImplementedError('pretty serialization, and serialization of constructed objects, are milestone 4')

@@ -6,6 +6,7 @@ from collections.abc import Iterable, Iterator, Sequence
 from enum import Enum, unique
 from typing import TYPE_CHECKING, ClassVar, final, overload
 
+from kgcss.cssom.declarations import DeclarationBlock, block_from_nodes, parse_declarations
 from kgcss.cssom.state import SheetState, SourceLike
 from kgcss.syntax import AtRule, Declaration, QualifiedRule, Token
 
@@ -46,7 +47,7 @@ class RuleType(Enum):
 class Rule:
     """Base class of all rules."""
 
-    __slots__ = ('_source', '_state', 'parent_rule', 'parent_style_sheet')
+    __slots__ = ('_dirty', '_source', '_state', 'parent_rule', 'parent_style_sheet')
     type: ClassVar[RuleType]
 
     def __init__(self) -> None:
@@ -54,6 +55,19 @@ class Rule:
         self.parent_style_sheet: Stylesheet | None = None
         self._source: SourceLike | None = None
         self._state: SheetState | None = None
+        # True once this rule or anything in it was modified, so its source text is stale
+        self._dirty = False
+
+    def _changed(self) -> None:
+        """Mark this rule, its ancestors and its sheet as modified."""
+        rule: Rule | None = self
+        sheet = None
+        while rule is not None:
+            rule._dirty = True
+            sheet = rule.parent_style_sheet
+            rule = rule.parent_rule
+        if sheet is not None:
+            sheet._dirty = True
 
     @property
     def line(self) -> int | None:
@@ -158,10 +172,27 @@ class MediaList(Sequence[str]):
         return f'<MediaList {self.media_text!r}>'
 
 
+def adopt_block(rule: Rule, value: str | DeclarationBlock) -> DeclarationBlock:
+    """The block to use as rule.style: parsed from text, the block itself, or a copy if it belongs to another rule."""
+    if isinstance(value, str):
+        # Problems are positions in the assigned text, not in the sheet, so they
+        # stay with the block rather than going to the sheet's errors
+        block, errors = parse_declarations(value, rule, None)
+        block.errors = errors
+        return block
+    if value.parent_rule is not None and value.parent_rule is not rule:
+        value = value.copy()
+    value.parent_rule = rule
+    for item in value.items:
+        if isinstance(item, Comment):
+            item.parent_rule = rule
+    return value
+
+
 class LazyBlockRule(Rule):
     """A rule whose block (declarations and, for some rules, nested rules) is parsed on first access."""
 
-    __slots__ = ('_block_owner', '_declaration_items', '_rules')
+    __slots__ = ('_block_owner', '_declaration_items', '_rules', '_style')
 
     def __init__(self) -> None:
         super().__init__()
@@ -169,6 +200,28 @@ class LazyBlockRule(Rule):
         self._block_owner: QualifiedRule | AtRule | None = None
         self._declaration_items: list[Declaration | Token] = []
         self._rules: RuleList | None = None
+        self._style: DeclarationBlock | None = None
+
+    @property
+    def style(self) -> DeclarationBlock:
+        """The declarations, parsed on first access. Assign text or a DeclarationBlock to replace them."""
+        style = self._style
+        if style is not None:
+            return style
+        self._materialize()
+        if self._state is None:
+            self._style = style = DeclarationBlock(parent_rule=self)
+            return style
+        with self._state.lock:
+            if self._style is None:
+                self._style = block_from_nodes(self._declaration_items, self)
+            return self._style
+
+    @style.setter
+    def style(self, value: str | DeclarationBlock) -> None:
+        self._materialize()
+        self._style = adopt_block(self, value)
+        self._changed()
 
     def _materialize(self) -> RuleList:
         rules = self._rules
@@ -313,12 +366,32 @@ class DocumentRule(GroupingRule):
 class NestedDeclarationsRule(Rule):
     """Declarations that follow nested rules inside a style rule (CSS nesting)."""
 
-    __slots__ = ('_declaration_items',)
+    __slots__ = ('_declaration_items', '_style')
     type = RuleType.NESTED_DECLARATIONS
 
     def __init__(self) -> None:
         super().__init__()
         self._declaration_items: list[Declaration | Token] = []
+        self._style: DeclarationBlock | None = None
+
+    @property
+    def style(self) -> DeclarationBlock:
+        """The declarations."""
+        style = self._style
+        if style is not None:
+            return style
+        if self._state is None:
+            self._style = style = DeclarationBlock(parent_rule=self)
+            return style
+        with self._state.lock:
+            if self._style is None:
+                self._style = block_from_nodes(self._declaration_items, self)
+            return self._style
+
+    @style.setter
+    def style(self, value: str | DeclarationBlock) -> None:
+        self._style = adopt_block(self, value)
+        self._changed()
 
 
 @final

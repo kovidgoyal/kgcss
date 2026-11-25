@@ -14,7 +14,7 @@ from kgcss.tokenizer import ParseError
 class Stylesheet:
     """A parsed or constructed stylesheet: an ordered list of rules."""
 
-    __slots__ = ('_source', '_state', 'encoding', 'href', 'rules')
+    __slots__ = ('_dirty', '_source', '_state', 'encoding', 'href', 'rules')
 
     def __init__(self, *, href: str | None = None) -> None:
         self.rules = RuleList()
@@ -22,6 +22,8 @@ class Stylesheet:
         self.encoding: str | None = None
         self._state = SheetState(None, href)
         self._source: Source | None = None
+        # True once anything in the sheet was modified, so its source text is stale
+        self._dirty = False
 
     @property
     def errors(self) -> list[ParseError]:

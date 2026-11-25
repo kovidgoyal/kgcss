@@ -6,6 +6,8 @@ See docs/plan-02-cssom.md. The tree is built from the generic syntax tree of
 kgcss.syntax. Blocks are parsed on first access, under a per-sheet lock.
 """
 
+from kgcss.cssom.declarations import DeclarationBlock, DeclarationList, Property, parse_style
+from kgcss.cssom.exceptions import CSSSyntaxError, InvalidValueError
 from kgcss.cssom.rules import (
     CharsetRule,
     Comment,
@@ -36,14 +38,18 @@ from kgcss.cssom.state import ErrorHandler
 from kgcss.cssom.stylesheet import Stylesheet, parse_stylesheet
 
 __all__ = [
+    'CSSSyntaxError',
     'CharsetRule',
     'Comment',
     'ContainerRule',
+    'DeclarationBlock',
+    'DeclarationList',
     'DocumentRule',
     'ErrorHandler',
     'FontFaceRule',
     'GroupingRule',
     'ImportRule',
+    'InvalidValueError',
     'LayerBlockRule',
     'LayerStatementRule',
     'MarginRule',
@@ -52,6 +58,7 @@ __all__ = [
     'NamespaceRule',
     'NestedDeclarationsRule',
     'PageRule',
+    'Property',
     'Rule',
     'RuleList',
     'RuleType',
@@ -62,6 +69,7 @@ __all__ = [
     'Stylesheet',
     'SupportsRule',
     'UnknownAtRule',
+    'parse_style',
     'parse_stylesheet',
     'serialize',
 ]

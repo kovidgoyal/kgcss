@@ -346,3 +346,10 @@ def test_argument_handling() -> None:
     with pytest.raises(TypeError, match='encoding must be a str or None'):
         _kgcss.parse_stylesheet('a', encoding=1)  # type: ignore[arg-type]
     assert _kgcss.parse_stylesheet('a{}', encoding='x', comments=False).encoding == 'x'
+
+
+def test_declaration_value_text() -> None:
+    for css in ('a: b c /* d */ !important', 'a:', 'a: f(x) ; b', '--x:  { y }  '):
+        d = parse_one_declaration(css)
+        assert isinstance(d, Declaration)
+        assert d.value_text == d.value.text
