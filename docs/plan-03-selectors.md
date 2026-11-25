@@ -502,7 +502,61 @@ the selectors that match. Decide in milestone 5, from measurements (D9).
 
 ## 8. Milestones
 
-Status: milestones 1 to 4 are done.
+Status: milestones 1 to 5 are done.
+
+Notes from milestone 5:
+- **Results**, `bench/bench_select.py` pinned to the fast cores, best of
+  several runs:
+
+  | workload | kgcss ms | `css_selectors` ms |
+  |---|---:|---:|
+  | construct-1k | 0.93 | - |
+  | construct-10k | 10.7 | - |
+  | construct-50k | 63.7 | - |
+  | stylizer-calibre | 7.9 | 290.6 |
+  | stylizer-bootstrap | 6.1 | 37.8 |
+  | level4 | 0.53 | 3.98 |
+
+  - Construction is linear, at 1.1 to 1.3 µs per element. On the
+    synthetic chapter of 1,500 paragraphs (4.6k elements), it is 4.7 ms,
+    over the 3 ms target of §6. Most of that is lxml's: a bare walk with
+    `iter()` that reads the parent, tag, text, tail and attributes of each
+    element takes 2.7 ms.
+  - stylizer-calibre is 37 times faster than `css_selectors`, under the
+    10 ms target; it was 22.7 ms at the start of the milestone.
+  - `css_selectors` builds its caches lazily, so construction is not
+    compared on its own.
+- **Matching from the left.** The stylizer sheets are full of selectors
+  such as `.calibre5 > p`, whose last compound matches most of the
+  document while the left one matches almost nothing. Right-to-left
+  matching then tried every `p`: about 54 µs per selector. When the
+  candidates of the leftmost compound are fewer than a quarter of those of
+  the last one, `run()` now goes from the left: for each element that
+  matches the leftmost compound, it walks the elements related by the
+  combinator, children, descendants or siblings, and checks the rest of the
+  selector right to left from those. Ranges already covered by an earlier
+  candidate's descendants or subsequent siblings are skipped, so the work
+  stays linear. That selector now takes 0.94 µs. `match_complex()` became
+  `match_prefix()`, which matches the compounds up to a limit, so that the
+  failure memo serves both directions.
+- **Per-call overhead.** `select()` with a string calls the cached
+  compiler and `Snapshot.match` directly, without the generic list path:
+  a selector that matches nothing went from 1.61 µs to 0.91 µs a call.
+  The result bitset is scanned a word at a time; that did not change the
+  timings much, as the cost was in the candidate scan.
+- **D9: no `match_all()`.** On stylizer-bootstrap, the 3,000 selectors take
+  about 2 µs each, of which `Snapshot.match` is about 0.6 µs. A bulk call
+  would save the remaining Python overhead, under 1 µs a selector: at most
+  about 3 ms a document for a sheet of 3,000 selectors, small next to the
+  stylizer's own per-rule work in Python. It is not worth a second API.
+- **The GIL** is released around every match: the cost of releasing it is
+  tens of nanoseconds, small even for the cheapest calls, so there is no
+  size threshold.
+- **`ab_compare.py`** takes the select workloads with `--workload`; they
+  run once each instead of once per corpus file.
+- The comparison tests with `css_selectors` found one more difference: in a
+  tree whose root has no namespace, `css_selectors` does not strip
+  namespaces from attribute names. The generated trees avoid that case.
 
 Notes from milestone 4:
 - **The nth family.**
@@ -800,7 +854,7 @@ Decided on 2026-11-25.
 | D6 | The `!=` attribute operator, which parses today and then crashes when matched | A syntax error, since it is not CSS |
 | D7 | `:lang()` ignores `xml:lang` | Fix: `xml:lang`, then `lang`, inherited |
 | D8 | lxml as a dependency? | No. `Select` works on any ElementTree-style tree. lxml is in the dev and bench dependency groups for tests. |
-| D9 | A bulk `match_all()` for the stylizer | Only if milestone 5 measurements show that per-call overhead dominates |
+| D9 | A bulk `match_all()` for the stylizer | Only if milestone 5 measurements show that per-call overhead dominates. Milestone 5: not built, the overhead is under 1 µs a selector (§8, notes of milestone 5) |
 | D10 | A separate `css_selectors` compatibility module? | No. `Select`, the exceptions and `INAPPROPRIATE_PSEUDO_CLASSES` keep their names and call protocol at the top level of kgcss, so calibre's shim is an import plus `quirks_mode=True`. Code that walks the old parse tree (`classes_in_selector`, `live_css.py`) is ported to §4.2 and §4.4. |
 
 ---

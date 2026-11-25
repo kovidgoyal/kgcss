@@ -2,7 +2,7 @@
 
 """Matching selectors against element trees: Select (docs/plan-03-selectors.md, §5)."""
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from typing import Any
 
 from kgcss._kgcss import CompiledSelector, MatchError, Snapshot
@@ -67,9 +67,19 @@ class Select:
         and errors are raised then: SelectorSyntaxError for text that is not a selector list, and
         ExpressionError for selectors that cannot be matched against a document.
         """
-        compiled = self._compile(selector)
-        start = self._index(root)
-        found = self._match(compiled, start, -1, False)
+        # Hot: calibre's stylizer calls this for every selector of every sheet, for every document
+        compiled = compile_selectors(selector, False) if type(selector) is str else self._compile(selector)
+        try:
+            found = self._snapshot.match(
+                compiled,
+                self.ignore_inappropriate_pseudo_classes,
+                self._scope,
+                0 if root is None else self._index(root),
+                -1,
+                False,
+            )
+        except MatchError as e:
+            raise ExpressionError(str(e)) from None
         assert isinstance(found, list)
         yield from found
 
@@ -93,7 +103,7 @@ class Select:
             raise ValueError(f'{element!r} is not an element of the tree of this Select') from None
 
     def _match(
-        self, compiled: list[CompiledSelector], root: int, target: int, first_only: bool
+        self, compiled: Sequence[CompiledSelector], root: int, target: int, first_only: bool
     ) -> list[Element] | bool:
         try:
             return self._snapshot.match(
@@ -102,9 +112,9 @@ class Select:
         except MatchError as e:
             raise ExpressionError(str(e)) from None
 
-    def _compile(self, selector: SelectorArg) -> list[CompiledSelector]:
+    def _compile(self, selector: SelectorArg) -> Sequence[CompiledSelector]:
         if isinstance(selector, str):
-            return list(compile_selectors(selector, False))
+            return compile_selectors(selector, False)
         if isinstance(selector, Selector):
             selector = (selector,)
         ans = []

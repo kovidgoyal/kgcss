@@ -761,7 +761,10 @@ typedef struct {
     bool oom;
 } mctx;
 
-static bool match_complex(mctx *m, uint32_t x, uint32_t e, uint32_t anchor);
+static bool match_prefix(mctx *m, uint32_t x, uint32_t limit, uint32_t e, uint32_t anchor);
+
+static inline bool
+match_complex(mctx *m, uint32_t x, uint32_t e, uint32_t anchor) { return match_prefix(m, x, NONE, e, anchor); }
 
 static inline Py_UCS4
 uch(PyObject *u, Py_ssize_t i) { return PyUnicode_READ(PyUnicode_KIND(u), PyUnicode_DATA(u), i); }
@@ -853,7 +856,7 @@ subtags_equal(PyObject *a, Py_ssize_t as, Py_ssize_t ae, PyObject *b, Py_ssize_t
 static bool
 language_matches(PyObject *tag, PyObject *range) {
     if (!PyUnicode_GET_LENGTH(tag) || !PyUnicode_GET_LENGTH(range)) return false;
-    Py_ssize_t tp = 0, rp = 0, ts, te, rs, re;
+    Py_ssize_t tp = 0, rp = 0, ts = 0, te = 0, rs = 0, re = 0;
     subtag(tag, &tp, &ts, &te);
     subtag(range, &rp, &rs, &re);
     const bool wildcard = re - rs == 1 && uch(range, rs) == '*';
@@ -872,13 +875,12 @@ language_matches(PyObject *tag, PyObject *range) {
     return true;
 }
 
-/* The candidates for the complex selector at node x: from the index for the most selective part of its
- * last compound, in document order, or every element (*all) */
+/* The elements that can match the compound at node c: from the index for its most selective part, in
+ * document order, or every element (*all) */
 static void
-candidates(const kg_Snapshot *s, const prepared *p, uint32_t x, const uint32_t **items, uint32_t *count, bool *all) {
+compound_candidates(const kg_Snapshot *s, const prepared *p, uint32_t last, const uint32_t **items, uint32_t *count,
+                    bool *all) {
     const sn_node *nodes = p->c->nodes;
-    uint32_t last = x + 1;
-    for (uint32_t k = x + 1; k < nodes[x].subtree_end; k = nodes[k].subtree_end) last = k;
     const snap_index *best = NULL;
     uint32_t best_atom = 0, best_count = UINT32_MAX;
     *all = true;
@@ -900,6 +902,15 @@ candidates(const kg_Snapshot *s, const prepared *p, uint32_t x, const uint32_t *
     *all = false;
     *items = best->items + best->off[best_atom];
     *count = best_count;
+}
+
+/* The candidates for the complex selector at node x: those of its last compound */
+static void
+candidates(const kg_Snapshot *s, const prepared *p, uint32_t x, const uint32_t **items, uint32_t *count, bool *all) {
+    const sn_node *nodes = p->c->nodes;
+    uint32_t last = x + 1;
+    for (uint32_t k = x + 1; k < nodes[x].subtree_end; k = nodes[k].subtree_end) last = k;
+    compound_candidates(s, p, last, items, count, all);
 }
 
 /* Whether the relative selector at node x matches an element of which anchor is the subject of :has() */
@@ -1099,16 +1110,19 @@ related_to_anchor(const kg_Snapshot *s, uint8_t comb, uint32_t anchor, uint32_t 
     return true;
 }
 
-/* Whether the complex selector at node x matches element e. For a relative selector (in :has()),
- * anchor is the element its leftmost compound must relate to, otherwise NONE. */
+/* Whether the complex selector at node x matches element e: all its compounds, or with limit, only
+ * the first limit of them. For a relative selector (in :has()), anchor is the element its leftmost
+ * compound must relate to, otherwise NONE. */
 static bool
-match_complex(mctx *m, uint32_t x, uint32_t e, uint32_t anchor) {
+match_prefix(mctx *m, uint32_t x, uint32_t limit, uint32_t e, uint32_t anchor) {
     const sn_node *nodes = m->p->c->nodes;
     const kg_Snapshot *s = m->s;
     /* The compounds, left to right */
     uint32_t small_c[MAX_STACK_COMPOUNDS], small_f[MAX_STACK_COMPOUNDS];
     uint32_t *comp = small_c, *frames = small_f, K = 0;
     for (uint32_t k = x + 1; k < nodes[x].subtree_end; k = nodes[k].subtree_end) K++;
+    /* The memo is for all the compounds, whatever the limit, so that calls can share it */
+    const uint32_t all_compounds = K;
     if (K > MAX_STACK_COMPOUNDS) {
         comp = PyMem_RawMalloc(K * sizeof(uint32_t));
         frames = PyMem_RawMalloc(K * sizeof(uint32_t));
@@ -1116,6 +1130,7 @@ match_complex(mctx *m, uint32_t x, uint32_t e, uint32_t anchor) {
     }
     K = 0;
     for (uint32_t k = x + 1; k < nodes[x].subtree_end; k = nodes[k].subtree_end) comp[K++] = k;
+    if (limit < K) K = limit;
     bool ans = false;
     uint32_t k = K - 1;
     const uint8_t first_comb = nodes[comp[0]].op;
@@ -1131,7 +1146,7 @@ match_complex(mctx *m, uint32_t x, uint32_t e, uint32_t anchor) {
         if (comb == C_DESCENDANT || comb == C_SUBSEQUENT_SIBLING) backtracks = true;
     }
     if (backtracks && memo == NULL && anchor == NONE) {
-        memo = m->p->memo[x] = PyMem_RawCalloc(((size_t)K * s->n + 7) / 8, 1);
+        memo = m->p->memo[x] = PyMem_RawCalloc(((size_t)all_compounds * s->n + 7) / 8, 1);
         if (memo == NULL) { m->oom = true; goto done; }
     }
 #define MEMO_BIT(j, el) ((size_t)(j) * s->n + (el))
@@ -1163,15 +1178,81 @@ done:
     return ans;
 }
 
+/* The index of the lowest set bit of a non-zero word */
+static inline unsigned
+lowest_bit(uint64_t bits) {
+#if defined(__GNUC__) || defined(__clang__)
+    return (unsigned)__builtin_ctzll(bits);
+#else
+    unsigned n = 0;
+    while (!(bits & 1)) { bits >>= 1; n++; }
+    return n;
+#endif
+}
+
 typedef struct {
     kg_Snapshot *s;
     prepared *ps;
     Py_ssize_t count;
     uint32_t scope, lo, hi, target;  /* target: a single element to test, or NONE */
     bool first_only;
-    uint8_t *found;  /* bitset over elements */
+    uint64_t *found;  /* bitset over elements */
     bool oom, any;
 } run_args;
+
+static inline void
+found_if_matches(run_args *r, mctx *m, uint32_t compound, uint32_t y) {
+    if (y < r->lo || y >= r->hi || (r->found[y / 64] & ((uint64_t)1 << (y % 64)))) return;
+    if (match_compound(m, compound, y)) { r->found[y / 64] |= (uint64_t)1 << (y % 64); r->any = true; }
+}
+
+/* For selectors like .rare > p, whose last compound matches many elements while the one before it
+ * matches few: find what matches up to the last combinator, then test the elements it leads to.
+ * Returns false, doing nothing, when matching from the right is better. */
+static bool
+match_from_left(run_args *r, mctx *m) {
+    const kg_Snapshot *s = r->s;
+    const sn_node *nodes = m->p->c->nodes;
+    uint32_t K = 0, last = 0, before = 0;
+    for (uint32_t k = 1; k < nodes[0].subtree_end; k = nodes[k].subtree_end) { before = last; last = k; K++; }
+    if (K < 2) return false;
+    const uint8_t comb = nodes[last].op;
+    const uint32_t *right_items, *left_items;
+    uint32_t right_count, left_count;
+    bool right_all, left_all;
+    compound_candidates(s, m->p, last, &right_items, &right_count, &right_all);
+    compound_candidates(s, m->p, before, &left_items, &left_count, &left_all);
+    if (right_all) right_count = r->hi - r->lo;
+    if (left_all) left_count = s->n;
+    if ((uint64_t)left_count * 4 >= right_count) return false;
+    uint32_t covered_end = 0, sibling_parent = NONE;
+    for (uint32_t j = 0; j < left_count && !(r->first_only && r->any) && !m->oom; j++) {
+        const uint32_t a = left_all ? j : left_items[j];
+        if (!match_prefix(m, 0, K - 1, a, NONE)) continue;
+        const snap_el *el = s->els + a;
+        switch (comb) {
+            case C_CHILD:
+                for (uint32_t y = el->first_child; y != NONE; y = s->els[y].next) found_if_matches(r, m, last, y);
+                break;
+            case C_DESCENDANT:
+                /* The descendants of a are those of an ancestor already done */
+                if (a < covered_end) break;
+                for (uint32_t y = a + 1; y < el->subtree_end; y++) found_if_matches(r, m, last, y);
+                covered_end = el->subtree_end;
+                break;
+            case C_NEXT_SIBLING:
+                if (el->next != NONE) found_if_matches(r, m, last, el->next);
+                break;
+            case C_SUBSEQUENT_SIBLING:
+                /* The siblings after a are among those after an earlier sibling already done */
+                if (el->parent != NONE && el->parent == sibling_parent) break;
+                for (uint32_t y = el->next; y != NONE; y = s->els[y].next) found_if_matches(r, m, last, y);
+                sibling_parent = el->parent;
+                break;
+        }
+    }
+    return true;
+}
 
 static void
 run(run_args *r) {
@@ -1182,6 +1263,8 @@ run(run_args *r) {
         const uint32_t anchor = (r->ps[q].c->nodes[0].flags & F_RELATIVE) ? r->scope : NONE;
         if (r->target != NONE) {
             if (match_complex(&m, 0, r->target, anchor)) r->any = true;
+        } else if (anchor == NONE && match_from_left(r, &m)) {
+            /* Done */
         } else {
             const uint32_t *items = NULL;
             uint32_t count = 0;
@@ -1190,8 +1273,8 @@ run(run_args *r) {
             const uint32_t n = all ? r->hi - r->lo : count;
             for (uint32_t j = 0; j < n && !(r->first_only && r->any); j++) {
                 const uint32_t e = all ? r->lo + j : items[j];
-                if (e < r->lo || e >= r->hi || (r->found[e / 8] & (1u << (e % 8)))) continue;
-                if (match_complex(&m, 0, e, anchor)) { r->found[e / 8] |= (uint8_t)(1u << (e % 8)); r->any = true; }
+                if (e < r->lo || e >= r->hi || (r->found[e / 64] & ((uint64_t)1 << (e % 64)))) continue;
+                if (match_complex(&m, 0, e, anchor)) { r->found[e / 64] |= (uint64_t)1 << (e % 64); r->any = true; }
                 if (m.oom) break;
             }
         }
@@ -1246,7 +1329,7 @@ Snapshot_match(PyObject *o, PyObject *args) {
         .s = s, .ps = ps, .count = count, .scope = (uint32_t)scope, .lo = (uint32_t)root,
         .hi = s->els[root].subtree_end, .target = target < 0 ? NONE : (uint32_t)target, .first_only = first_only,
     };
-    r.found = PyMem_RawCalloc((s->n + 7) / 8, 1);
+    r.found = PyMem_RawCalloc((s->n + 63) / 64, sizeof(uint64_t));
     if (r.found == NULL) { PyErr_NoMemory(); goto end; }
     /* Matching only reads the snapshot, so other threads can run meanwhile */
     Py_BEGIN_ALLOW_THREADS
@@ -1256,8 +1339,12 @@ Snapshot_match(PyObject *o, PyObject *args) {
     else if (first_only || r.target != NONE) ans = Py_NewRef(r.any ? Py_True : Py_False);
     else {
         ans = PyList_New(0);
-        for (uint32_t e = r.lo; ans != NULL && e < r.hi; e++) {
-            if ((r.found[e / 8] & (1u << (e % 8))) && PyList_Append(ans, s->elements[e]) != 0) Py_CLEAR(ans);
+        /* A word at a time: usually few elements match */
+        for (uint32_t w = r.lo / 64; ans != NULL && r.any && w <= (r.hi - 1) / 64; w++) {
+            for (uint64_t bits = r.found[w]; bits && ans != NULL; bits &= bits - 1) {
+                const uint32_t e = w * 64 + (uint32_t)lowest_bit(bits);
+                if (e >= r.lo && e < r.hi && PyList_Append(ans, s->elements[e]) != 0) Py_CLEAR(ans);
+            }
         }
     }
     PyMem_RawFree(r.found);

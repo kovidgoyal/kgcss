@@ -236,6 +236,10 @@ the C version must give exactly the same results:
   millisecond.
 - `bench_parse.py run --suite cssom` measures the object model (parse, read
   everything, rewrite URLs, serialize) against css_parser.
+- `bench/bench_select.py` measures selector matching (`Select`
+  construction, whole sheets against a document as calibre's stylizer
+  does, and level 4 selectors) against calibre's css_selectors. Its
+  workloads also work with `ab_compare.py --workload`.
 - Garbage collection is a large part of the cost of creating many Python
   objects, as every collection walks the tracked objects. In hot paths,
   avoid allocating container objects you do not keep. Note that

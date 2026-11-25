@@ -765,3 +765,28 @@ def test_against_oracle(document: etree._Element, css: str, ignore: bool, quirks
 
 def iter_ids(elements: Iterator[etree._Element]) -> list[str | None]:
     return [e.get('id') for e in elements]
+
+
+@pytest.mark.parametrize(
+    'css',
+    [
+        '.x > p', '.x p', '.x + p', '.x ~ p', 'div.x p span', '.x .x p', '.x ~ .x ~ p', '#a > div > p',
+        '.x > :nth-child(2n)', '.x ~ p:has(span)', '.x p, .y + p', 'section .x > p',
+    ],
+)  # fmt: skip
+def test_matching_from_the_left(css: str) -> None:
+    # A rare compound before the last combinator and a common last one: matched from the left
+    parts = ['<root><section>']
+    for i in range(30):
+        cls = ' class="x"' if i % 9 == 0 else (' class="y"' if i % 7 == 0 else '')
+        ident = ' id="a"' if i == 10 else ''
+        parts.append(f'<div{cls}{ident}><p/><p><span/></p><div class="x"><p/></div></div><p/>')
+    parts.append('</section><p class="x"/><p/></root>')
+    document = etree.fromstring(''.join(parts))
+    expected = Oracle(document).select(build_tree(c) for c in compile_selectors(css))
+    select = Select(document)
+    assert list(select(css)) == expected
+    # Within a subtree too
+    section = document[0]
+    in_section = [e for e in expected if e is section or section in e.iterancestors()]
+    assert list(select(css, root=section)) == in_section

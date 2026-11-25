@@ -26,8 +26,9 @@ in the comparison (docs/plan-03-selectors.md, notes of milestones 3 and 4):
   div div. Select always raises, so those cases are not compared.
 - css_selectors does not always return elements in document order, so its
   results are sorted.
-- css_selectors strips namespaces from tags only when the root element has
-  one, so the wrapper is in the namespace of the tree.
+- css_selectors strips namespaces from tags and attribute names only when
+  the root element has one, so the wrapper is in the namespace of the tree,
+  and trees without a namespace have no namespaced attributes.
 """
 
 import sys
@@ -111,6 +112,11 @@ def wrapped(tree: etree._Element) -> etree._Element:
     # css_selectors counts comments as siblings for :first-child and :nth-child(), which Selectors does
     # not. Removing them keeps their tails as text, so :empty is the same.
     etree.strip_tags(tree, etree.Comment)
+    if not namespace:
+        # In a tree without a namespace, css_selectors does not strip namespaces from attribute names
+        for e in tree.iter():
+            for name in [k for k in e.attrib if str(k).startswith('{')]:
+                del e.attrib[name]
     wrapper = etree.Element(namespace + 'wrapper')
     wrapper.append(tree)
     return wrapper

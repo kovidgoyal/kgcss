@@ -3,7 +3,7 @@
 # Type stubs for the C extension module built from csrc/. Keep in sync with
 # the method tables, types and constants in csrc/module.c and csrc/types.c.
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from types import NotImplementedType
 from typing import Any, Final, Literal, Self, TypeVar, final
 from weakref import ReferenceType
@@ -42,7 +42,7 @@ class Snapshot:
     def quirks_mode(self) -> bool: ...
     def match(
         self,
-        selectors: list[CompiledSelector],
+        selectors: Sequence[CompiledSelector],
         ignore_inappropriate: bool,
         scope: int,
         root: int,

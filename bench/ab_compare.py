@@ -9,7 +9,8 @@ Both versions are built into temporary directories, then measured in
 alternating rounds, so that drift in CPU frequency or load affects both
 equally. Each round runs the workload in a fresh process and records its best
 time. The report shows the median of those per-round bests and the change.
-Run bench_parse.py prepare first, for the corpus.
+Run bench_parse.py prepare first, for the corpus. The selector matching
+workloads of bench_select.py run once each, not once per corpus file.
 """
 
 import argparse
@@ -23,13 +24,28 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 CORPUS = ROOT / 'bench' / '.cache' / 'corpus'
 
-CHILD = """
+# The selector matching workloads of bench_select.py, which have their own documents and ignore the corpus file
+SELECT_WORKLOADS = (
+    'construct-1k',
+    'construct-10k',
+    'construct-50k',
+    'stylizer-calibre',
+    'stylizer-bootstrap',
+    'level4',
+)
+
+CHILD = f"""
 import gc, sys, time
+SELECT_WORKLOADS = {SELECT_WORKLOADS!r}
 build, path, workload, repeat = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4])
 import kgcss
 assert kgcss.__file__.startswith(build), kgcss.__file__
-from bench_parse import kgcss_workloads
-fn = kgcss_workloads()[workload]
+if workload in SELECT_WORKLOADS:
+    from bench_select import kgcss_select_workloads
+    fn = kgcss_select_workloads()[workload]
+else:
+    from bench_parse import kgcss_workloads
+    fn = kgcss_workloads()[workload]
 css = open(path, encoding='utf-8').read()
 # Warm up: with the powersave governor the CPU needs time to reach full speed
 start = time.perf_counter()
@@ -79,7 +95,16 @@ def main() -> None:
     parser.add_argument(
         '--workload',
         action='append',
-        choices=('tokenize', 'parse', 'full', 'cssom-parse', 'cssom-full', 'cssom-urls', 'cssom-serialize'),
+        choices=(
+            'tokenize',
+            'parse',
+            'full',
+            'cssom-parse',
+            'cssom-full',
+            'cssom-urls',
+            'cssom-serialize',
+            *SELECT_WORKLOADS,
+        ),
     )
     parser.add_argument('--corpus', action='append', default=[], help='corpus files whose name contains this')
     args = parser.parse_args()
@@ -99,16 +124,18 @@ def main() -> None:
         build(ROOT, head)
         print(f'| file | workload | {args.base} ms | working tree ms | change |')
         print('|---|---|---:|---:|---:|')
-        for path in files:
-            for workload in workloads:
-                times: dict[Path, list[float]] = {base: [], head: []}
-                for i in range(args.rounds):
-                    order = (base, head) if i % 2 == 0 else (head, base)
-                    for variant in order:
-                        times[variant].append(measure(variant, path, workload, args.repeat))
-                a, b = statistics.median(times[base]), statistics.median(times[head])
-                print(f'| {path.name} | {workload} | {a * 1e3:.2f} | {b * 1e3:.2f} | {b / a - 1:+.1%} |')
-                sys.stdout.flush()
+        runs = [(path, w) for path in files for w in workloads if w not in SELECT_WORKLOADS]
+        runs += [(files[0], w) for w in workloads if w in SELECT_WORKLOADS]
+        for path, workload in runs:
+            times: dict[Path, list[float]] = {base: [], head: []}
+            for i in range(args.rounds):
+                order = (base, head) if i % 2 == 0 else (head, base)
+                for variant in order:
+                    times[variant].append(measure(variant, path, workload, args.repeat))
+            a, b = statistics.median(times[base]), statistics.median(times[head])
+            name = '-' if workload in SELECT_WORKLOADS else path.name
+            print(f'| {name} | {workload} | {a * 1e3:.2f} | {b * 1e3:.2f} | {b / a - 1:+.1%} |')
+            sys.stdout.flush()
 
 
 if __name__ == '__main__':
