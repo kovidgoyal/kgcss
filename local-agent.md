@@ -249,6 +249,8 @@ the C version must give exactly the same results:
   parser (`calibre_extensions.tokenizer.parse_css4_color_string`, which
   `prepare` downloads): single inputs in nanoseconds, and every color
   value and every ident, hash and function of the corpus.
+- `bench/bench_media.py` measures `parse_media_queries` (with and without
+  its cache) and `media_matches` against tinycss's media3 parser.
 - Garbage collection is a large part of the cost of creating many Python
   objects, as every collection walks the tracked objects. In hot paths,
   avoid allocating container objects you do not keep. Note that

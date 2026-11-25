@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from _typeshed import SupportsRichComparison
 
     from kgcss.cssom.stylesheet import Stylesheet
+    from kgcss.media import MediaFeature, MediaQuery
 
 CSS_WHITESPACE = ' \t\n\r\f'
 
@@ -467,6 +468,20 @@ class MediaList(MutableSequence[str]):
 
     def __repr__(self) -> str:
         return f'<MediaList {self._media_text!r}>'
+
+    @property
+    def queries(self) -> tuple[MediaQuery, ...]:
+        """The parsed queries (kgcss.media), cached by text. Queries that do not parse are kept, with
+        valid=False. Reading them does not change media_text."""
+        from kgcss.media import parse_media_queries
+
+        return parse_media_queries(self._media_text)
+
+    def matches(self, *, media_type: Callable[[str], bool], feature: Callable[[MediaFeature], bool | None]) -> bool:
+        """Whether the list matches, with the callbacks of kgcss.media.media_matches(). An empty list matches."""
+        from kgcss.media import media_matches
+
+        return media_matches(self._media_text, media_type=media_type, feature=feature)
 
 
 def adopt_block(rule: Rule, value: str | DeclarationBlock) -> DeclarationBlock:

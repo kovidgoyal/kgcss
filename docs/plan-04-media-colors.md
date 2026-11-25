@@ -303,8 +303,9 @@ false, unknown):
 - `media_type(name)` is asked for the type; `all` is always true;
 - `feature(f)` gives true, false or `None` for unknown;
 - `GeneralEnclosed` is unknown;
-- `not`, `and` and `or` follow Kleene logic; at the top level unknown is
-  false, then `not` before the type negates the result;
+- `not`, `and` and `or` follow Kleene logic, and so does the `not` before
+  the type: `not screen and (unknown)` is unknown. Only then is unknown
+  false (milestone 3 corrected this; the plan had the `not` after);
 - a malformed query is false.
 
 `parse_media_queries` is cached by text (an LRU cache of 1,024 entries),
@@ -362,7 +363,53 @@ corpus.
 
 ## 8. Milestones
 
-Status: milestones 1 and 2 are done.
+Status: milestones 1 to 3 are done.
+
+Notes from milestone 3:
+- **Results**, `bench/bench_media.py` pinned to the fast cores, against
+  the targets of §6 and tinycss's media3 parser:
+
+  | query | parse µs | cached µs | `media_matches` µs | tinycss µs |
+  |---|---:|---:|---:|---:|
+  | `screen` | 3.14 | 0.06 | 0.52 | 4.44 |
+  | `only screen and (min-width: 600px) and (max-width: 900px)` | 13.68 | 0.06 | 0.97 | 41.04 |
+  | `(width >= 600px) or ((color) and not (hover))` | 16.44 | 0.07 | 1.11 | 42.79 |
+
+  The 1,030 media lists of the corpus parse in 7.8 ms, against 19.7 ms
+  for tinycss. `media_matches` is with calibre's policy, as `media_ok()`
+  uses it.
+- **The parser** is in Python, over the token tree of the C tokenizer, as
+  §2.3 planned. A `(...)` is tried as a condition, then as a feature, and
+  is `GeneralEnclosed` if neither fits, so `(example, all,)` and
+  `((a) and not (b))` are valid and unknown, not malformed. Malformed
+  queries keep their text and an `error` message.
+- **The tinycss media3 tests** are ported in `tests/test_media.py`, with
+  three differences marked: the empty list has no queries rather than
+  `all` (it still matches); an empty query between commas is malformed
+  (D5); and `(example, all,)` is general-enclosed rather than malformed,
+  which matches nothing either way.
+- **calibre's `media_ok()`** is in the tests, on `media_matches()`, with
+  its tests and more: `SCREEN` now matches (the M3 quirk), ranges are
+  features like any other, and `not screen and (hover)` is false.
+- **Bugs found by the property tests:**
+  - `to_css()` wrote media types and feature names unescaped, so `\and`,
+    the identifier newline-n-d, came back as `nd`. They go through
+    `serialize_identifier()` now;
+  - a function left open by the end of the input (`(width >= calc(`) was
+    a feature value, which `to_css()` could not write back as it was. It
+    is general-enclosed now, which keeps the text;
+  - the differential color test met `lch()` with a 20-digit hue: since
+    milestone 2, kgcss normalizes hues exactly with `fmod()`, while
+    calibre passes the huge angle to `cos()`, so they differ. The test
+    skips those.
+- **The property tests:** generated queries round trip through `to_css()`;
+  evaluation agrees with an oracle that implements the three values as
+  min and max over false < unknown < true, on random conditions and
+  answers; random token soup gives canonical text that parses to itself;
+  any text parses without raising. A thread test hammers the shared cache
+  while other threads evict entries from it.
+- `MediaList` gained `queries` and `matches()`. `media_text` is untouched
+  by them.
 
 Notes from milestone 2:
 - **The suite's color files** (8,041 cases, all of them but the Level 5

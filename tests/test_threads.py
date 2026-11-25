@@ -13,6 +13,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 
 import kgcss
+import kgcss.media
 import kgcss.selectors
 import kgcss.syntax
 import kgcss.tokenizer
@@ -375,5 +376,25 @@ def test_colors_concurrently() -> None:
         return all(
             [(kgcss.parse_rgba(s), kgcss.parse_color(s)) for s in inputs] == expected for _ in range(1000 * STRESS)
         )
+
+    assert all(run_concurrently(work))
+
+
+def test_media_queries_concurrently() -> None:
+    # The cache is shared: threads parse the same texts at once, and new ones that evict others
+    texts = [
+        f'screen and (min-width: {i}px), not print and ((color) or (hover)), (400px < width < {i}em)' for i in range(64)
+    ]
+    expected = [[q.to_css() for q in kgcss.parse_media_queries(t)] for t in texts]
+    kgcss.media.parse_media_queries.cache_clear()
+
+    def work(idx: int) -> bool:
+        check_gil()
+        for k in range(200 * STRESS):
+            i = (idx + k) % len(texts)
+            if [q.to_css() for q in kgcss.parse_media_queries(texts[i])] != expected[i]:
+                return False
+            kgcss.parse_media_queries(f'(x: {idx}-{k})')
+        return True
 
     assert all(run_concurrently(work))

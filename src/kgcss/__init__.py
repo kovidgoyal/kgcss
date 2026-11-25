@@ -66,6 +66,7 @@ from kgcss.cssom import (
 from kgcss.decode import decode_stylesheet, lookup_encoding
 from kgcss.escaping import serialize_identifier, serialize_string
 from kgcss.matching import Select
+from kgcss.media import MediaFeature, MediaQuery, media_matches, parse_media_queries
 from kgcss.selectors import INAPPROPRIATE_PSEUDO_CLASSES, rename_classes, rename_ids
 from kgcss.tokenizer import ParseError
 
@@ -92,7 +93,9 @@ __all__ = [
     'LayerBlockRule',
     'LayerStatementRule',
     'MarginRule',
+    'MediaFeature',
     'MediaList',
+    'MediaQuery',
     'MediaRule',
     'NamespaceMap',
     'NamespaceRule',
@@ -121,7 +124,9 @@ __all__ = [
     'invalid_selectors',
     'iter_urls',
     'lookup_encoding',
+    'media_matches',
     'parse_color',
+    'parse_media_queries',
     'parse_rgba',
     'parse_rule',
     'parse_selectors',
