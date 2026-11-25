@@ -18,6 +18,7 @@ section before you implement a feature.
 | `csrc/objects.h` | Object layouts and functions shared between `types.c` and `values.c` |
 | `csrc/types.c` | Python heap types `TokenStream`, `Token`, `ParseError` and `tokenize()` |
 | `csrc/values.c` | `Block`, `Function`, `ComponentValueList` and the component value parse functions |
+| `csrc/syntax.c` | CSS Syntax parse algorithms: `AtRule`, `QualifiedRule`, `Declaration`, `NodeList` |
 | `src/kgcss/enums.py` | Enums shared with C (imported by the extension at init, so it must not import kgcss) |
 | `tests/css-parsing-tests/` | Vendored CC0 conformance suite. Do not edit; record differences in the runners |
 | `tests/` | pytest test suite |
@@ -28,7 +29,6 @@ section before you implement a feature.
 
 ```sh
 uv sync                                  # build + install into .venv
-uv sync --reinstall-package kgcss        # rebuild after changing C code
 uv run pytest -n auto                    # tests, in parallel
 uv run ruff check . && uv run ruff format --check .
 uv run mypy

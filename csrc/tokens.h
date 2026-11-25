@@ -78,6 +78,8 @@ typedef enum {
     /* Syntax level errors, not produced by the tokenizer */
     KG_ERR_EMPTY,
     KG_ERR_EXTRA_INPUT,
+    KG_ERR_INVALID_RULE,
+    KG_ERR_INVALID_DECLARATION,
     KG_ERR__COUNT
 } kg_error_kind;
 

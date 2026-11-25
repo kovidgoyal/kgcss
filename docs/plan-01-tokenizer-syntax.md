@@ -294,7 +294,35 @@ bench/
 
 ## 5. Milestones
 
-Status: milestones 1 and 2 are done. Every `component_value_list.json` and
+Status: milestones 1 to 3 are done.
+
+Notes from milestone 3:
+- Rule blocks stay raw (`Block`). What a block holds depends on the rule,
+  so callers parse it with `parse_block_contents()` (declarations and
+  nested rules) or `parse_rule_list()`. Both accept a `Block` or a `str`.
+  This matches tinycss2 and the conformance suite, and keeps unknown
+  at-rules exact (P6).
+- Errors are not mixed into the node list. `NodeList.errors` has the
+  tokenizer errors in the parsed range plus the syntax errors
+  (`invalid-rule`, `invalid-declaration`), ordered by offset. Single-item
+  parsers return a `ParseError` instead of a node.
+- Comments between rules and declarations are COMMENT `Token` nodes.
+  Comments at the ends of a value are outside `value` but inside the
+  declaration's `source_text`.
+- Following the ED, declaration values are trimmed of whitespace and
+  comments, `parse_one_declaration()` stops at `;`, and in nested mode a top
+  level `}` ends the input (P5). The suite follows the 2021 CR, so three
+  cases are recorded in `SYNTAX_DIFFERENCES`, and expected declaration
+  values are trimmed before comparing.
+- The suite passes on all three PEP 393 kinds: `stylesheet`, `rule_list`,
+  `one_rule`, `blocks_contents`, `declaration_list` and `one_declaration`.
+- Timings on the same 1.3 MB input (8000 rules, 32000 declarations):
+  `parse_stylesheet()` takes 4.8 ms (277 MB/s). Parsing every block and
+  reading every declaration's name, value text and important flag takes
+  22 ms. tinycss2 takes 1053 ms for the same work, so we are about 48x
+  faster.
+
+Status after milestone 2: milestones 1 and 2 were done. Every `component_value_list.json` and
 `one_component_value.json` case passes on all three PEP 393 kinds, except
 the unicode-range cases that differ by design. The suite now runs on the C
 grouping. The Python grouping in `tests/suite.py` is kept as an independent

@@ -34,6 +34,21 @@ static PyMethodDef module_methods[] = {
      "parse_one_component_value(source: str, /, *, comments: bool = True) -> Token | Block | Function | ParseError\n\n"
      "Parse source as exactly one component value, ignoring surrounding whitespace and comments. "
      "Returns a ParseError of kind 'empty' or 'extra-input' if there is not exactly one."},
+    {"parse_stylesheet", (PyCFunction)(void (*)(void))kg_parse_stylesheet, METH_VARARGS | METH_KEYWORDS,
+     "parse_stylesheet(source: str, /, *, comments: bool = True) -> NodeList\n\n"
+     "Parse a stylesheet into at-rules and qualified rules (CSS Syntax 'parse a stylesheet'). CDO/CDC are ignored between rules. With comments=True, top level comments are included as COMMENT tokens."},
+    {"parse_rule_list", (PyCFunction)(void (*)(void))kg_parse_rule_list, METH_VARARGS | METH_KEYWORDS,
+     "parse_rule_list(source: str | Block, /, *, comments: bool = True) -> NodeList\n\n"
+     "Parse a list of rules. Like parse_stylesheet() but CDO/CDC are not special (CSS Syntax 2021 'parse a list of rules')."},
+    {"parse_block_contents", (PyCFunction)(void (*)(void))kg_parse_block_contents, METH_VARARGS | METH_KEYWORDS,
+     "parse_block_contents(source: str | Block, /, *, comments: bool = True) -> NodeList\n\n"
+     "Parse declarations and nested rules, as in a style rule's block or a style attribute (CSS Syntax 'parse a block\'s contents'). A top level } ends the input."},
+    {"parse_one_rule", (PyCFunction)(void (*)(void))kg_parse_one_rule, METH_VARARGS | METH_KEYWORDS,
+     "parse_one_rule(source: str, /, *, comments: bool = True) -> AtRule | QualifiedRule | ParseError\n\n"
+     "Parse exactly one rule, surrounded by optional whitespace and comments."},
+    {"parse_one_declaration", (PyCFunction)(void (*)(void))kg_parse_one_declaration, METH_VARARGS | METH_KEYWORDS,
+     "parse_one_declaration(source: str, /, *, comments: bool = True) -> Declaration | ParseError\n\n"
+     "Parse one declaration (CSS Syntax 'parse a declaration'). Input after a top level ; is ignored."},
     {NULL, NULL, 0, NULL}
 };
 
@@ -44,7 +59,8 @@ module_exec(PyObject *module) {
     if (state->empty_string == NULL) return -1;
     if (PyModule_AddIntConstant(module, "GIL_DISABLED_BUILD", KG_GIL_DISABLED_BUILD) != 0) return -1;
     if (kg_types_init(module) != 0) return -1;
-    return kg_values_init(module);
+    if (kg_values_init(module) != 0) return -1;
+    return kg_syntax_init(module);
 }
 
 static int
@@ -52,7 +68,8 @@ module_traverse(PyObject *module, visitproc visit, void *arg) {
     kg_module_state *state = kg_get_module_state(module);
     Py_VISIT(state->empty_string);
     if (kg_types_traverse(module, visit, arg) != 0) return -1;
-    return kg_values_traverse(module, visit, arg);
+    if (kg_values_traverse(module, visit, arg) != 0) return -1;
+    return kg_syntax_traverse(module, visit, arg);
 }
 
 static int
@@ -61,6 +78,7 @@ module_clear(PyObject *module) {
     Py_CLEAR(state->empty_string);
     kg_types_clear(module);
     kg_values_clear(module);
+    kg_syntax_clear(module);
     return 0;
 }
 

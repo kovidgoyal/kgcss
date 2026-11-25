@@ -16,14 +16,6 @@
 #include <stddef.h>
 
 typedef struct {
-    PyObject_HEAD
-    kg_TokenStream *stream;
-    uint32_t idx;   /* index of the opening token ({ [ ( or FUNCTION) */
-    uint32_t end;   /* source offset just past the closing token, or the end of input */
-    PyObject *name; /* Function only: the unescaped name, NULL for Block */
-} kg_Group;
-
-typedef struct {
     PyObject_VAR_HEAD
     kg_TokenStream *stream;
     uint32_t pos, end; /* source range covered by this list */
@@ -34,22 +26,8 @@ typedef struct {
  * Helpers
  * ------------------------------------------------------------------------- */
 
-/* Index of the token after the component value starting at idx */
-static inline uint32_t
-next_sibling(const kg_TokenStream *ts, uint32_t idx) {
-    const kg_token *t = ts->arr.tokens + idx;
-    if (!kg_is_opener(t->type)) return idx + 1;
-    return (t->flags & KG_TF_UNCLOSED) ? ts->arr.count : t->match + 1;
-}
-
-static inline bool
-is_ignorable(const kg_TokenStream *ts, uint32_t idx) {
-    uint8_t type = ts->arr.tokens[idx].type;
-    return type == KG_TOK_WHITESPACE || type == KG_TOK_COMMENT;
-}
-
-static PyObject *
-group_new(kg_TokenStream *ts, uint32_t idx) {
+PyObject *
+kg_group_new(kg_TokenStream *ts, uint32_t idx) {
     kg_module_state *state = kg_state_for((PyObject *)ts);
     const kg_token *t = ts->arr.tokens + idx;
     const bool is_function = t->type == KG_TOK_FUNCTION;
@@ -67,26 +45,26 @@ group_new(kg_TokenStream *ts, uint32_t idx) {
 }
 
 /* Create the Token, Block or Function starting at token idx */
-static PyObject *
-make_item(kg_TokenStream *ts, uint32_t idx) {
-    if (kg_is_opener(ts->arr.tokens[idx].type)) return group_new(ts, idx);
+PyObject *
+kg_make_item(kg_TokenStream *ts, uint32_t idx) {
+    if (kg_is_opener(ts->arr.tokens[idx].type)) return kg_group_new(ts, idx);
     return kg_make_token(ts, idx);
 }
 
 /* A list of the component values in tokens [first, last), covering source
  * text [pos, end). [first, last) must not split a block. */
-static PyObject *
-cvl_new(kg_TokenStream *ts, uint32_t first, uint32_t last, uint32_t pos, uint32_t end) {
+PyObject *
+kg_cvl_new(kg_TokenStream *ts, uint32_t first, uint32_t last, uint32_t pos, uint32_t end) {
     kg_module_state *state = kg_state_for((PyObject *)ts);
     Py_ssize_t n = 0;
-    for (uint32_t i = first; i < last; i = next_sibling(ts, i)) n++;
+    for (uint32_t i = first; i < last; i = kg_next_sibling(ts, i)) n++;
     kg_ComponentValueList *self = PyObject_NewVar(kg_ComponentValueList, state->ComponentValueList_type, n);
     if (self == NULL) return NULL;
     self->stream = (kg_TokenStream *)Py_NewRef(ts);
     self->pos = pos;
     self->end = end;
     n = 0;
-    for (uint32_t i = first; i < last; i = next_sibling(ts, i)) self->items[n++] = i;
+    for (uint32_t i = first; i < last; i = kg_next_sibling(ts, i)) self->items[n++] = i;
     assert(n == Py_SIZE(self));
     return (PyObject *)self;
 }
@@ -159,8 +137,8 @@ Group_contents(PyObject *o, void *closure) {
     kg_Group *self = (kg_Group *)o;
     kg_TokenStream *ts = self->stream;
     const kg_token *t = group_opener(self);
-    if (t->flags & KG_TF_UNCLOSED) return cvl_new(ts, self->idx + 1, ts->arr.count, t->end, ts->len);
-    return cvl_new(ts, self->idx + 1, t->match, t->end, ts->arr.tokens[t->match].start);
+    if (t->flags & KG_TF_UNCLOSED) return kg_cvl_new(ts, self->idx + 1, ts->arr.count, t->end, ts->len);
+    return kg_cvl_new(ts, self->idx + 1, t->match, t->end, ts->arr.tokens[t->match].start);
 }
 
 static PyObject *
@@ -270,7 +248,7 @@ CVL_item(PyObject *o, Py_ssize_t i) {
         PyErr_SetString(PyExc_IndexError, "component value index out of range");
         return NULL;
     }
-    return make_item(self->stream, self->items[i]);
+    return kg_make_item(self->stream, self->items[i]);
 }
 
 static PyObject *
@@ -345,7 +323,7 @@ PyObject *
 kg_parse_component_value_list(PyObject *module, PyObject *args, PyObject *kwds) {
     kg_TokenStream *ts = parse_args(module, args, kwds, "U|$p:parse_component_value_list");
     if (ts == NULL) return NULL;
-    PyObject *ans = cvl_new(ts, 0, ts->arr.count, 0, ts->len);
+    PyObject *ans = kg_cvl_new(ts, 0, ts->arr.count, 0, ts->len);
     Py_DECREF(ts);
     return ans;
 }
@@ -357,13 +335,13 @@ kg_parse_one_component_value(PyObject *module, PyObject *args, PyObject *kwds) {
     const uint32_t count = ts->arr.count;
     PyObject *ans;
     uint32_t i = 0;
-    while (i < count && is_ignorable(ts, i)) i = next_sibling(ts, i);
+    while (i < count && kg_is_ignorable(ts, i)) i = kg_next_sibling(ts, i);
     if (i >= count) {
         ans = kg_make_parse_error(ts, ts->len, KG_ERR_EMPTY);
     } else {
-        uint32_t j = next_sibling(ts, i);
-        while (j < count && is_ignorable(ts, j)) j = next_sibling(ts, j);
-        ans = j < count ? kg_make_parse_error(ts, ts->arr.tokens[j].start, KG_ERR_EXTRA_INPUT) : make_item(ts, i);
+        uint32_t j = kg_next_sibling(ts, i);
+        while (j < count && kg_is_ignorable(ts, j)) j = kg_next_sibling(ts, j);
+        ans = j < count ? kg_make_parse_error(ts, ts->arr.tokens[j].start, KG_ERR_EXTRA_INPUT) : kg_make_item(ts, i);
     }
     Py_DECREF(ts);
     return ans;

@@ -61,6 +61,8 @@ static const struct { const char *kind, *message; } error_info[KG_ERR__COUNT] = 
     [KG_ERR_EOF_IN_ESCAPE] = {"eof-in-escape", "Backslash at end of input"},
     [KG_ERR_EMPTY] = {"empty", "Expected a value, found only whitespace and comments"},
     [KG_ERR_EXTRA_INPUT] = {"extra-input", "Unexpected input after the value"},
+    [KG_ERR_INVALID_RULE] = {"invalid-rule", "Invalid rule ignored"},
+    [KG_ERR_INVALID_DECLARATION] = {"invalid-declaration", "Invalid declaration ignored"},
 };
 
 /* ---------------------------------------------------------------------------

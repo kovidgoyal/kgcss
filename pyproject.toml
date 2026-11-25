@@ -31,6 +31,17 @@ dev = [
     "mypy>=1.13",
 ]
 
+[tool.uv]
+# Rebuild the extension when any of these change, not just pyproject.toml
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "setup.py" },
+    { file = "csrc/*.c" },
+    { file = "csrc/*.h" },
+    { file = "src/kgcss/**/*.py" },
+    { file = "src/kgcss/**/*.pyi" },
+]
+
 [tool.setuptools]
 package-dir = { "" = "src" }
 packages = ["kgcss"]

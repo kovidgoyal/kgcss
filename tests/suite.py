@@ -9,7 +9,18 @@ import json
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 
-from kgcss import Block, ComponentValueList, Function, Token, TokenType
+from kgcss import (
+    AtRule,
+    Block,
+    ComponentValueList,
+    Declaration,
+    Function,
+    NodeList,
+    ParseError,
+    QualifiedRule,
+    Token,
+    TokenType,
+)
 
 SUITE_DIR = Path(__file__).parent / 'css-parsing-tests'
 
@@ -131,3 +142,54 @@ def group_tokens(tokens: Iterable[Token]) -> list[JSON]:
         return out
 
     return consume_block(None)
+
+
+# Error kinds the suite represents as ["error", "invalid"]
+INVALID_KINDS = frozenset(('invalid-rule', 'invalid-declaration'))
+
+
+def node_to_json(node: AtRule | QualifiedRule | Declaration | ParseError) -> JSON:
+    match node:
+        case AtRule():
+            block = None if node.block is None else values_to_json(node.block.content)
+            return ['at-rule', node.name, values_to_json(node.prelude), block]
+        case QualifiedRule():
+            return ['qualified rule', values_to_json(node.prelude), values_to_json(node.block.content)]
+        case Declaration():
+            return ['declaration', node.name, values_to_json(node.value), node.important]
+    return ['error', 'invalid' if node.kind in INVALID_KINDS else node.kind]
+
+
+def node_list_to_json(nodes: NodeList) -> list[JSON]:
+    """The suite puts errors inline, at the position of the construct that was dropped."""
+    errors = [e for e in nodes.errors if e.kind in INVALID_KINDS]
+    out: list[JSON] = []
+    for node in nodes:
+        if isinstance(node, Token):
+            assert node.type is TokenType.COMMENT
+            continue
+        while errors and errors[0].offset < node.pos:
+            out.append(node_to_json(errors.pop(0)))
+        out.append(node_to_json(node))
+    out.extend(node_to_json(e) for e in errors)
+    return out
+
+
+def strip_whitespace(values: JSON) -> JSON:
+    assert isinstance(values, list)
+    start, end = 0, len(values)
+    while start < end and values[start] == ' ':
+        start += 1
+    while end > start and values[end - 1] == ' ':
+        end -= 1
+    return values[start:end]
+
+
+def normalize_declarations(value: JSON) -> JSON:
+    """The suite keeps whitespace around declaration values. The current CSS
+    Syntax ED trims it (consume a declaration, steps 4 and 7)."""
+    if isinstance(value, list) and value and value[0] == 'declaration':
+        return [*value[:2], strip_whitespace(value[2]), *value[3:]]
+    if isinstance(value, list) and value and isinstance(value[0], list):
+        return [normalize_declarations(x) for x in value]
+    return value

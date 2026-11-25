@@ -84,3 +84,24 @@ def test_concurrent_walk_of_shared_values() -> None:
         results = list(pool.map(walk, range(8)))
     assert len(set(results)) == 1
     assert results[0] > len(shared)
+
+
+def test_concurrent_parse_and_shared_tree() -> None:
+    css = 'a { b: c !important; &:hover { d: e } } @media x { f { g: h } } /* i */ ' * 1000
+    shared = kgcss.parse_stylesheet(css)
+    barrier = threading.Barrier(8)
+
+    def work(_: int) -> tuple[int, int]:
+        barrier.wait()
+        own = kgcss.parse_stylesheet(css)
+        decls = 0
+        for node in shared:
+            block = getattr(node, 'block', None)
+            if block is not None:
+                for child in kgcss.parse_block_contents(block):
+                    decls += isinstance(child, kgcss.Declaration)
+        return len(own), decls
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(work, range(8)))
+    assert set(results) == {(len(shared), 1000)}

@@ -18,11 +18,12 @@ uv run ruff check .       # lint (type annotations are mandatory)
 uv run mypy               # type check
 ```
 
-After changing C code, rebuild with `uv sync --reinstall-package kgcss`, or
+`uv sync` and `uv run` rebuild the extension automatically when files in
+`csrc/` change (see `[tool.uv] cache-keys` in `pyproject.toml`). You can also
 build in place with `python setup.py build_ext --inplace`.
 
-Build knobs (environment variables): `KGCSS_DEBUG=1` (debug build, no
-optimisation), `KGCSS_SANITIZE=1` (ASan + UBSan), `KGCSS_WERROR=1` (compiler
+Build knobs (environment variables): `KGCSS_DEBUG=1` (debug build, `-Og`
+with asserts), `KGCSS_SANITIZE=1` (ASan + UBSan), `KGCSS_WERROR=1` (compiler
 warnings are errors).
 
 To test against free-threaded Python:
