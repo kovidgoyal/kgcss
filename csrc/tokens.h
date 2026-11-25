@@ -51,14 +51,17 @@ enum {
     KG_TF_IS_INTEGER = 1u << 1,
     /* Hash tokens: type flag is "id" (otherwise "unrestricted") */
     KG_TF_HASH_ID = 1u << 2,
-    /* String, url or comment tokens terminated by EOF instead of their closer */
+    /* String, url or comment tokens terminated by EOF instead of their
+     * closer, and block/function openers with no matching closing token */
     KG_TF_UNCLOSED = 1u << 3,
 };
 
 typedef struct {
     uint32_t start, end;    /* code point offsets of the exact source text */
     uint32_t vstart, vend;  /* range holding the value: name, string body, url, number part */
-    uint32_t match;         /* reserved for grouping (milestone 2) */
+    /* Openers ({ [ ( and FUNCTION): index of the matching closing token, or
+     * the number of tokens if unclosed. Unused for other tokens. */
+    uint32_t match;
     uint8_t type;           /* kg_token_type */
     uint8_t flags;
 } kg_token;
@@ -72,6 +75,9 @@ typedef enum {
     KG_ERR_BAD_URL,
     KG_ERR_INVALID_ESCAPE,
     KG_ERR_EOF_IN_ESCAPE,
+    /* Syntax level errors, not produced by the tokenizer */
+    KG_ERR_EMPTY,
+    KG_ERR_EXTRA_INPUT,
     KG_ERR__COUNT
 } kg_error_kind;
 
@@ -97,6 +103,10 @@ void kg_token_array_free(kg_token_array *arr);
 /* Characters */
 #define KG_EOF ((uint32_t)0xFFFFFFFFu)
 #define KG_REPLACEMENT_CHAR ((uint32_t)0xFFFD)
+
+static inline bool kg_is_opener(uint8_t type) {
+    return type == KG_TOK_LEFT_CURLY || type == KG_TOK_LEFT_SQUARE || type == KG_TOK_LEFT_PAREN || type == KG_TOK_FUNCTION;
+}
 
 static inline bool kg_is_newline(uint32_t c) { return c == '\n' || c == '\r' || c == '\f'; }
 static inline bool kg_is_whitespace(uint32_t c) { return c == ' ' || c == '\t' || kg_is_newline(c); }

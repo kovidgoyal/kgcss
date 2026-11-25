@@ -4,9 +4,9 @@
 
 import pytest
 
-from kgcss import tokenize
+from kgcss import Block, Function, ParseError, Token, parse_component_value_list, parse_one_component_value
 
-from .suite import JSON, group_tokens, load_cases, normalize_expected
+from .suite import JSON, item_to_json, load_cases, normalize_expected, values_to_json
 
 # Inputs where we deliberately differ from the suite, with the reason. Our
 # actual behaviour for these is tested in test_tokenizer.py.
@@ -42,8 +42,20 @@ def component_value_cases() -> list[tuple[str, JSON]]:
 def test_component_value_list(css: str, expected: JSON, kind: str) -> None:
     if css in EXPECTED_DIFFERENCES:
         pytest.skip(EXPECTED_DIFFERENCES[css])
-    stream = tokenize(KIND_PREFIXES[kind] + css)
-    assert group_tokens(stream) == normalize_expected(expected)
+    values = parse_component_value_list(KIND_PREFIXES[kind] + css)
+    assert values_to_json(values) == normalize_expected(expected)
+
+
+def one_value_to_json(value: Token | Block | Function | ParseError) -> JSON:
+    if isinstance(value, ParseError):
+        return ['error', value.kind]
+    (ans,) = item_to_json(value)
+    return ans
+
+
+@pytest.mark.parametrize(('css', 'expected'), load_cases('one_component_value.json'), ids=case_id)
+def test_one_component_value(css: str, expected: JSON) -> None:
+    assert one_value_to_json(parse_one_component_value(css)) == normalize_expected(expected)
 
 
 def test_expected_differences_are_in_suite() -> None:

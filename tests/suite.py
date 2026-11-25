@@ -9,7 +9,7 @@ import json
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 
-from kgcss import Token, TokenType
+from kgcss import Block, ComponentValueList, Function, Token, TokenType
 
 SUITE_DIR = Path(__file__).parent / 'css-parsing-tests'
 
@@ -86,8 +86,30 @@ def token_to_json(tok: Token) -> JSON:
     return LITERALS[t]
 
 
+def item_to_json(item: Token | Block | Function) -> list[JSON]:
+    """The suite representation of one component value. Comments produce nothing, and strings and urls closed
+    by EOF are followed by an error marker, so this returns zero, one or two items."""
+    match item:
+        case Block():
+            return [[item.opener + {'{': '}', '[': ']', '(': ')'}[item.opener], *values_to_json(item.content)]]
+        case Function():
+            return [['function', item.name, *values_to_json(item.arguments)]]
+        case Token(type=TokenType.COMMENT):
+            return []
+    ans = [token_to_json(item)]
+    if not item.closed and (marker := EOF_MARKERS.get(item.type)):
+        ans.append(['error', marker])
+    return ans
+
+
+def values_to_json(values: ComponentValueList) -> list[JSON]:
+    """Convert component values grouped by the C code to the suite representation."""
+    return [x for item in values for x in item_to_json(item)]
+
+
 def group_tokens(tokens: Iterable[Token]) -> list[JSON]:
-    """Reference implementation of 'consume a list of component values' (to be replaced by the C grouping)."""
+    """Independent Python implementation of 'consume a list of component values', used to cross-check the C
+    grouping."""
     it: Iterator[Token] = iter(tokens)
 
     def consume_block(closer: TokenType | None) -> list[JSON]:

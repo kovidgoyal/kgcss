@@ -62,6 +62,7 @@
 typedef struct {
     PyObject *empty_string;
     PyTypeObject *TokenStream_type, *Token_type, *ParseError_type;
+    PyTypeObject *Block_type, *Function_type, *ComponentValueList_type;
     /* token_types[i] is kgcss.enums.TokenType(i), item 0 is None */
     PyObject *token_types;
     /* error_kinds[i] is the kind string for kg_error_kind i */

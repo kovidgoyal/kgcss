@@ -15,7 +15,9 @@ section before you implement a feature.
 | `csrc/module.c` | Module definition, method table, module state lifecycle |
 | `csrc/tokens.h` | Token record, token type and error enums, character classes |
 | `csrc/tokenizer_impl.h` | Tokenizer template body, compiled once per PEP 393 kind by `tokenizer.c` |
+| `csrc/objects.h` | Object layouts and functions shared between `types.c` and `values.c` |
 | `csrc/types.c` | Python heap types `TokenStream`, `Token`, `ParseError` and `tokenize()` |
+| `csrc/values.c` | `Block`, `Function`, `ComponentValueList` and the component value parse functions |
 | `src/kgcss/enums.py` | Enums shared with C (imported by the extension at init, so it must not import kgcss) |
 | `tests/css-parsing-tests/` | Vendored CC0 conformance suite. Do not edit; record differences in the runners |
 | `tests/` | pytest test suite |

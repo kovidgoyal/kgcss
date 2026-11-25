@@ -12,7 +12,7 @@
  * section on the stream.
  */
 
-#include "tokens.h"
+#include "objects.h"
 #include <stddef.h>
 
 /* Token offsets are exposed with Py_T_UINT */
@@ -59,6 +59,8 @@ static const struct { const char *kind, *message; } error_info[KG_ERR__COUNT] = 
     [KG_ERR_BAD_URL] = {"bad-url", "Invalid character in unquoted url()"},
     [KG_ERR_INVALID_ESCAPE] = {"invalid-escape", "Backslash followed by a newline is not a valid escape"},
     [KG_ERR_EOF_IN_ESCAPE] = {"eof-in-escape", "Backslash at end of input"},
+    [KG_ERR_EMPTY] = {"empty", "Expected a value, found only whitespace and comments"},
+    [KG_ERR_EXTRA_INPUT] = {"extra-input", "Unexpected input after the value"},
 };
 
 /* ---------------------------------------------------------------------------
@@ -67,35 +69,10 @@ static const struct { const char *kind, *message; } error_info[KG_ERR__COUNT] = 
 
 typedef struct {
     PyObject_HEAD
-    PyObject *source;
-    const void *data;
-    int kind;
-    uint32_t len;
-    kg_token_array arr;
-    /* Lazily built, guarded by a critical section on self */
-    uint32_t *lines;
-    uint32_t line_count;
-} kg_TokenStream;
-
-typedef struct {
-    PyObject_HEAD
-    kg_TokenStream *stream;
-    PyObject *value;
-    PyObject *unit;
-    kg_token rec;
-} kg_Token;
-
-typedef struct {
-    PyObject_HEAD
     Py_ssize_t offset, line, column;
     PyObject *kind;
     PyObject *message;
 } kg_ParseError;
-
-static inline kg_module_state *
-state_for(PyObject *self) {
-    return (kg_module_state *)PyType_GetModuleState(Py_TYPE(self));
-}
 
 /* ---------------------------------------------------------------------------
  * TokenStream
@@ -113,8 +90,8 @@ TokenStream_dealloc(PyObject *o) {
 }
 
 /* Returns 1-based line and column for offset, or false with an exception set */
-static bool
-line_col(kg_TokenStream *self, uint32_t offset, Py_ssize_t *line, Py_ssize_t *col) {
+bool
+kg_line_col(kg_TokenStream *self, uint32_t offset, Py_ssize_t *line, Py_ssize_t *col) {
     bool ok = true;
     Py_BEGIN_CRITICAL_SECTION(self);
     if (self->lines == NULL && !kg_build_line_table(self->kind, self->data, self->len, &self->lines, &self->line_count)) {
@@ -140,8 +117,8 @@ TokenStream_len(PyObject *o) {
     return (Py_ssize_t)((kg_TokenStream *)o)->arr.count;
 }
 
-static PyObject *
-range_value(kg_TokenStream *ts, const kg_token *t, uint32_t start, uint32_t end, bool in_string) {
+PyObject *
+kg_range_value(kg_TokenStream *ts, const kg_token *t, uint32_t start, uint32_t end, bool in_string) {
     if (t->flags & KG_TF_NEEDS_PROCESSING) return kg_unescape(ts->kind, ts->data, start, end, in_string);
     return PyUnicode_Substring(ts->source, start, end);
 }
@@ -165,9 +142,9 @@ number_value(kg_TokenStream *ts, const kg_token *t) {
     return ans;
 }
 
-static PyObject *
-make_token(kg_TokenStream *ts, uint32_t idx) {
-    kg_module_state *state = state_for((PyObject *)ts);
+PyObject *
+kg_make_token(kg_TokenStream *ts, uint32_t idx) {
+    kg_module_state *state = kg_state_for((PyObject *)ts);
     kg_Token *self = PyObject_New(kg_Token, state->Token_type);
     if (self == NULL) return NULL;
     self->stream = (kg_TokenStream *)Py_NewRef(ts);
@@ -177,16 +154,16 @@ make_token(kg_TokenStream *ts, uint32_t idx) {
     const kg_token *t = &self->rec;
     switch ((kg_token_type)t->type) {
         case KG_TOK_IDENT: case KG_TOK_FUNCTION: case KG_TOK_AT_KEYWORD: case KG_TOK_HASH: case KG_TOK_URL:
-            self->value = range_value(ts, t, t->vstart, t->vend, false);
+            self->value = kg_range_value(ts, t, t->vstart, t->vend, false);
             break;
         case KG_TOK_STRING:
-            self->value = range_value(ts, t, t->vstart, t->vend, true);
+            self->value = kg_range_value(ts, t, t->vstart, t->vend, true);
             break;
         case KG_TOK_BAD_STRING: case KG_TOK_BAD_URL:
             self->value = Py_NewRef(Py_None);
             break;
         case KG_TOK_DIMENSION:
-            Py_SETREF(self->unit, range_value(ts, t, t->vend, t->end, false));
+            Py_SETREF(self->unit, kg_range_value(ts, t, t->vend, t->end, false));
             if (self->unit == NULL) { Py_DECREF(self); return NULL; }
             self->value = number_value(ts, t);
             break;
@@ -211,25 +188,20 @@ TokenStream_item(PyObject *o, Py_ssize_t i) {
         PyErr_SetString(PyExc_IndexError, "token index out of range");
         return NULL;
     }
-    return make_token(self, (uint32_t)i);
+    return kg_make_token(self, (uint32_t)i);
 }
 
 static PyObject *
 TokenStream_errors(PyObject *o, void *closure) {
     KG_UNUSED(closure);
     kg_TokenStream *self = (kg_TokenStream *)o;
-    kg_module_state *state = state_for(o);
     PyObject *ans = PyTuple_New(self->arr.error_count);
     if (ans == NULL) return NULL;
     for (uint32_t i = 0; i < self->arr.error_count; i++) {
         const kg_error *e = self->arr.errors + i;
-        kg_ParseError *pe = PyObject_New(kg_ParseError, state->ParseError_type);
+        PyObject *pe = kg_make_parse_error(self, e->offset, (kg_error_kind)e->kind);
         if (pe == NULL) { Py_DECREF(ans); return NULL; }
-        pe->offset = e->offset;
-        pe->kind = Py_NewRef(PyTuple_GET_ITEM(state->error_kinds, e->kind));
-        pe->message = PyUnicode_FromString(error_info[e->kind].message);
-        PyTuple_SET_ITEM(ans, i, (PyObject *)pe);
-        if (pe->message == NULL || !line_col(self, e->offset, &pe->line, &pe->column)) { Py_DECREF(ans); return NULL; }
+        PyTuple_SET_ITEM(ans, i, pe);
     }
     return ans;
 }
@@ -244,7 +216,7 @@ TokenStream_line_col(PyObject *o, PyObject *arg) {
         return NULL;
     }
     Py_ssize_t line, col;
-    if (!line_col(self, (uint32_t)offset, &line, &col)) return NULL;
+    if (!kg_line_col(self, (uint32_t)offset, &line, &col)) return NULL;
     return Py_BuildValue("nn", line, col);
 }
 
@@ -308,7 +280,7 @@ static PyObject *
 Token_type(PyObject *o, void *closure) {
     KG_UNUSED(closure);
     kg_Token *self = (kg_Token *)o;
-    return Py_NewRef(PyTuple_GET_ITEM(state_for(o)->token_types, self->rec.type));
+    return Py_NewRef(PyTuple_GET_ITEM(kg_state_for(o)->token_types, self->rec.type));
 }
 
 static PyObject *
@@ -357,7 +329,7 @@ Token_line(PyObject *o, void *closure) {
     KG_UNUSED(closure);
     kg_Token *self = (kg_Token *)o;
     Py_ssize_t line, col;
-    if (!line_col(self->stream, self->rec.start, &line, &col)) return NULL;
+    if (!kg_line_col(self->stream, self->rec.start, &line, &col)) return NULL;
     return PyLong_FromSsize_t(line);
 }
 
@@ -366,7 +338,7 @@ Token_column(PyObject *o, void *closure) {
     KG_UNUSED(closure);
     kg_Token *self = (kg_Token *)o;
     Py_ssize_t line, col;
-    if (!line_col(self->stream, self->rec.start, &line, &col)) return NULL;
+    if (!kg_line_col(self->stream, self->rec.start, &line, &col)) return NULL;
     return PyLong_FromSsize_t(col);
 }
 
@@ -387,7 +359,7 @@ static PyObject *
 Token_repr(PyObject *o) {
     kg_Token *self = (kg_Token *)o;
     Py_ssize_t line, col;
-    if (!line_col(self->stream, self->rec.start, &line, &col)) return NULL;
+    if (!kg_line_col(self->stream, self->rec.start, &line, &col)) return NULL;
     const char *name = token_type_names[self->rec.type];
     if (self->rec.type == KG_TOK_DIMENSION)
         return PyUnicode_FromFormat("<Token %s %R%R at %zd:%zd>", name, self->value, self->unit, line, col);
@@ -485,16 +457,28 @@ static PyType_Spec ParseError_spec = {
     .slots = ParseError_slots,
 };
 
+PyObject *
+kg_make_parse_error(kg_TokenStream *ts, uint32_t offset, kg_error_kind kind) {
+    kg_module_state *state = kg_state_for((PyObject *)ts);
+    kg_ParseError *pe = PyObject_New(kg_ParseError, state->ParseError_type);
+    if (pe == NULL) return NULL;
+    pe->offset = offset;
+    pe->kind = Py_NewRef(PyTuple_GET_ITEM(state->error_kinds, kind));
+    pe->message = PyUnicode_FromString(error_info[kind].message);
+    pe->line = pe->column = 0;
+    if (pe->message == NULL || !kg_line_col(ts, offset, &pe->line, &pe->column)) {
+        Py_DECREF(pe);
+        return NULL;
+    }
+    return (PyObject *)pe;
+}
+
 /* ---------------------------------------------------------------------------
  * tokenize()
  * ------------------------------------------------------------------------- */
 
-PyObject *
-kg_tokenize_py(PyObject *module, PyObject *args, PyObject *kwds) {
-    static char *kwlist[] = {"", "comments", NULL};
-    PyObject *source;
-    int comments = 1;
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "U|$p:tokenize", kwlist, &source, &comments)) return NULL;
+kg_TokenStream *
+kg_tokenize_to_stream(PyObject *module, PyObject *source, bool comments) {
     const Py_ssize_t len = PyUnicode_GET_LENGTH(source);
     if (len > KG_MAX_INPUT_LENGTH) {
         PyErr_SetString(PyExc_OverflowError, "CSS source text too large, must be less than 4 GiB");
@@ -515,14 +499,24 @@ kg_tokenize_py(PyObject *module, PyObject *args, PyObject *kwds) {
      * malloced memory, so it can run without an attached thread state. */
     if (len > KG_RELEASE_GIL_THRESHOLD) {
         Py_BEGIN_ALLOW_THREADS
-        ok = kg_tokenize(self->kind, self->data, self->len, comments != 0, &self->arr);
+        ok = kg_tokenize(self->kind, self->data, self->len, comments, &self->arr);
         Py_END_ALLOW_THREADS
-    } else ok = kg_tokenize(self->kind, self->data, self->len, comments != 0, &self->arr);
+    } else ok = kg_tokenize(self->kind, self->data, self->len, comments, &self->arr);
     if (!ok) {
         Py_DECREF(self);
-        return PyErr_NoMemory();
+        PyErr_NoMemory();
+        return NULL;
     }
-    return (PyObject *)self;
+    return self;
+}
+
+PyObject *
+kg_tokenize_py(PyObject *module, PyObject *args, PyObject *kwds) {
+    static char *kwlist[] = {"", "comments", NULL};
+    PyObject *source;
+    int comments = 1;
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "U|$p:tokenize", kwlist, &source, &comments)) return NULL;
+    return (PyObject *)kg_tokenize_to_stream(module, source, comments != 0);
 }
 
 /* ---------------------------------------------------------------------------

@@ -10,7 +10,7 @@
  */
 
 #include "kgcss.h"
-#include "tokens.h"
+#include "objects.h"
 
 static PyMethodDef module_methods[] = {
     {"serialize_string", kg_serialize_string, METH_O,
@@ -25,6 +25,15 @@ static PyMethodDef module_methods[] = {
      "tokenize(source: str, /, *, comments: bool = True) -> TokenStream\n\n"
      "Tokenize source following CSS Syntax Level 3. Never raises for bad CSS, errors are recorded "
      "in TokenStream.errors. With comments=False, comment tokens are left out."},
+    {"parse_component_value_list", (PyCFunction)(void (*)(void))kg_parse_component_value_list,
+     METH_VARARGS | METH_KEYWORDS,
+     "parse_component_value_list(source: str, /, *, comments: bool = True) -> ComponentValueList\n\n"
+     "Parse source into a list of component values (CSS Syntax 'parse a list of component values')."},
+    {"parse_one_component_value", (PyCFunction)(void (*)(void))kg_parse_one_component_value,
+     METH_VARARGS | METH_KEYWORDS,
+     "parse_one_component_value(source: str, /, *, comments: bool = True) -> Token | Block | Function | ParseError\n\n"
+     "Parse source as exactly one component value, ignoring surrounding whitespace and comments. "
+     "Returns a ParseError of kind 'empty' or 'extra-input' if there is not exactly one."},
     {NULL, NULL, 0, NULL}
 };
 
@@ -34,14 +43,16 @@ module_exec(PyObject *module) {
     state->empty_string = PyUnicode_FromStringAndSize("", 0);
     if (state->empty_string == NULL) return -1;
     if (PyModule_AddIntConstant(module, "GIL_DISABLED_BUILD", KG_GIL_DISABLED_BUILD) != 0) return -1;
-    return kg_types_init(module);
+    if (kg_types_init(module) != 0) return -1;
+    return kg_values_init(module);
 }
 
 static int
 module_traverse(PyObject *module, visitproc visit, void *arg) {
     kg_module_state *state = kg_get_module_state(module);
     Py_VISIT(state->empty_string);
-    return kg_types_traverse(module, visit, arg);
+    if (kg_types_traverse(module, visit, arg) != 0) return -1;
+    return kg_values_traverse(module, visit, arg);
 }
 
 static int
@@ -49,6 +60,7 @@ module_clear(PyObject *module) {
     kg_module_state *state = kg_get_module_state(module);
     Py_CLEAR(state->empty_string);
     kg_types_clear(module);
+    kg_values_clear(module);
     return 0;
 }
 

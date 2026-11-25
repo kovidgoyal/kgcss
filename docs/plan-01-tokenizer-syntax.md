@@ -178,9 +178,9 @@ typedef struct {
 |---|---|
 | `TokenStream` | `source: str`, `__len__`, `__getitem__ -> Token`, `errors`, `line_col(offset) -> tuple[int, int]`. It owns the C arrays. |
 | `Token` | `type: TokenType`, `value` (unescaped str, or int/float for numbers), `unit`, `pos`, `end`, `line`, `column`, `source_text` (exact slice), `is_integer`, `hash_type` (id/unrestricted), `is_delim(ch)`. |
-| `Block` | `opener: '{' \| '[' \| '('`, `content: ComponentValueList`, positions, `source_text`, `closed: bool`. |
-| `Function` | `name` (unescaped), `arguments: ComponentValueList`, positions, `source_text`, `closed: bool`. |
-| `ComponentValueList` | A lazy, immutable sequence view: `(TokenStream, first, last)`. Indexing creates `Token`, `Block` or `Function` objects on demand by skipping over `match`. It also has `text`, which is the exact source slice. |
+| `Block` | `type` (LEFT_CURLY/LEFT_SQUARE/LEFT_PAREN), `opener: '{' \| '[' \| '('`, `content: ComponentValueList`, positions, `source_text`, `closed: bool`. |
+| `Function` | `type` (FUNCTION), `name` (unescaped), `arguments: ComponentValueList`, positions, `source_text`, `closed: bool`. |
+| `ComponentValueList` | An immutable sequence view. When created, it stores the token index of each top-level item (4 bytes each, found by skipping over `match`), so `len()` and indexing are O(1). `Token`, `Block` and `Function` objects are only created when accessed. It also has `text`, which is the exact source slice, comments included. |
 | `SyntaxStylesheet` / `AtRule` / `QualifiedRule` / `Declaration` / `Comment` | The generic css-syntax result (§3.3). Preludes and values are `ComponentValueList` views. |
 
 - `TokenType` is an `IntEnum` in Python whose values match the C enum.
@@ -294,11 +294,22 @@ bench/
 
 ## 5. Milestones
 
-Status: milestone 1 is done. Every `component_value_list.json` case passes
-on all three PEP 393 kinds, except the unicode-range cases that differ by
-design. `test_css_parsing_suite.py` currently groups blocks with a Python
-reference implementation (`tests/suite.py`). Milestone 2 replaces that with
-the C grouping.
+Status: milestones 1 and 2 are done. Every `component_value_list.json` and
+`one_component_value.json` case passes on all three PEP 393 kinds, except
+the unicode-range cases that differ by design. The suite now runs on the C
+grouping. The Python grouping in `tests/suite.py` is kept as an independent
+reference for a differential test on random input.
+
+Notes from milestone 2:
+- `Block.type` and `Function.type` return the `TokenType` of the opening
+  token, so callers can dispatch on `.type` for any component value.
+- Whether comments appear as items is decided by `comments=` at tokenize
+  time. `text` always includes them.
+- Nothing in the grouping code recurses, so 200k levels of nesting work.
+- Timings on the same 1.3 MB input: `tokenize()` with grouping runs at
+  470 MB/s (about 15% slower than without). `parse_component_value_list()`
+  runs at 230 MB/s. Walking and creating every node runs at 18 MB/s, still
+  9x tinycss2.
 
 A first measurement, taskset 0-2, on 1.3 MB of synthetic CSS
 (512k tokens): `tokenize()` runs at 540 MB/s. Creating a `Token` and its

@@ -60,3 +60,27 @@ def test_concurrent_tokenize_and_shared_stream() -> None:
         results = list(pool.map(work, range(8)))
     assert {r[1:] for r in results} == {(n, 0)}
     assert all(r[0] in (6000, 6001) for r in results)
+
+
+def test_concurrent_walk_of_shared_values() -> None:
+    css = 'a { b: rgb(1, calc(2 + (3 * 4))) [x] } ' * 2000
+    shared = kgcss.parse_component_value_list(css)
+    barrier = threading.Barrier(8)
+
+    def walk(_: int) -> int:
+        barrier.wait()
+        count = 0
+        stack = [shared]
+        while stack:
+            for item in stack.pop():
+                count += 1
+                if isinstance(item, kgcss.Block):
+                    stack.append(item.content)
+                elif isinstance(item, kgcss.Function):
+                    stack.append(item.arguments)
+        return count
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(walk, range(8)))
+    assert len(set(results)) == 1
+    assert results[0] > len(shared)
