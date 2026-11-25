@@ -65,9 +65,8 @@ three changes:
   §2.2 needs the specified values; the fast path converts at once.
 - **Escapes.** It returns `None` for any input with a backslash or a
   non-ASCII character, so `r\65 d` is not `red`, although CSS says it is.
-  See D2: the recommendation is to follow CSS, with a fallback through the
-  tokenizer for the rare inputs that have escapes, and to keep the fast
-  path for the rest.
+  Decided (D2): follow CSS. Inputs with escapes, which are rare, go
+  through the tokenizer; the rest keep the fast path.
 - **The `RGBA` type** is a heap struct sequence (`PyStructSequence`), built
   in C without calling into Python. It is a `tuple`, so `isinstance(x,
   tuple)`, `x[:3]` and `x.alpha` all work as calibre's callers expect,
@@ -363,7 +362,7 @@ corpus.
 
 ## 8. Milestones
 
-Status: planned.
+Status: decided, not started.
 
 1. **The color parser in C.** Port `color.c` into `csrc/color.c` with the
    two-step design of §2.1. `parse_rgba` and `RGBA`. The escape fallback
@@ -380,7 +379,9 @@ Status: planned.
 
 ## 9. Decisions
 
-| # | Question | Recommendation |
+Decided on 2026-11-25, as recommended.
+
+| # | Question | Decision |
 |---|---|---|
 | D1 | Port calibre's `color.c`, or write a new color parser? | Port it (§2.1): it is fast, already pinned by calibre's tests, and the same license |
 | D2 | `r\65 d`: tinycss and its test say it is not a color; CSS says it is `red` | Follow CSS: escapes go through the tokenizer, and the calibre test changes |
