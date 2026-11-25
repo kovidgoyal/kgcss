@@ -26,4 +26,34 @@ jobs:
       - name: Run tests
         env:
           KGCSS_WERROR: "1"
-        run: uv run --no-project -p ${{ matrix.python }} --isolated --with pytest --with pytest-xdist --with . -- python -m pytest -n auto
+          HYPOTHESIS_PROFILE: thorough
+          KGCSS_STRESS: "3"
+        run: uv run --no-project -p ${{ matrix.python }} --isolated --with pytest --with pytest-xdist --with hypothesis --with . -- python -m pytest -n auto
+
+  sanitizers:
+    # ASan + UBSan. Uses a GCC built Python, whose sanitizer runtimes the script preloads.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --python "$(which python)"
+      - run: uv run python tools/sanitize_tests.py -n auto
+
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --python "$(which python)"
+      - run: uv run python tools/fuzz.py run --seconds 120
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: fuzz-crashes
+          path: build/fuzz/crash-*

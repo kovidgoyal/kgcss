@@ -294,7 +294,61 @@ bench/
 
 ## 5. Milestones
 
-Status: milestones 1 to 4 are done.
+Status: milestones 1 to 5 are done.
+
+Notes from milestone 5:
+- **Property tests** are in `tests/test_properties.py`, using hypothesis
+  with strategies from `tests/strategies.py`. They check:
+  - tokens cover the source exactly;
+  - all three PEP 393 kinds give the same tokens;
+  - line and column match a reference implementation;
+  - `serialize_identifier()` and `serialize_string()` output tokenizes back
+    to the original text;
+  - the C grouping matches the Python reference;
+  - every parser keeps its nodes ordered and inside their parents;
+  - declarations and rules reparse identically from their own source text;
+  - decoding never fails, and `@charset` is detected for every WHATWG label.
+
+  The `default` profile runs 150 examples per property, and
+  `HYPOTHESIS_PROFILE=thorough` runs 3000.
+- A purely random strategy rarely produced declarations (2.6% of inputs)
+  and never produced `!important`. A structured strategy (nested rules,
+  at-rules and declarations, sometimes broken, mixed with noise) raised
+  that to 34% and 13%. Counting what a strategy actually produces is part
+  of writing one.
+- **Bug found** by `test_rules_reparse_identically`. An at-rule ended by EOF
+  (or by a `}` in nested mode) had a prelude that included trailing
+  whitespace, but the rule's own `end` stopped before that whitespace. The
+  prelude therefore reached outside its rule. The rule now extends to the
+  end of its prelude, and the property tests also check directly that child
+  ranges lie inside their node.
+- **Concurrency** tests are in `tests/test_threads.py`, scaled by
+  `KGCSS_STRESS`:
+  - many rounds of 8 threads racing to build a new stream's lazy line table;
+  - concurrent tokenizing of inputs above 64 KiB, the GIL released path;
+  - one shared `Block` parsed from 8 threads at once.
+
+  All of these also check that the GIL stays disabled on free-threaded
+  builds.
+- **Sanitizers:** `tools/sanitize_tests.py` builds with ASan and UBSan into
+  a temporary directory and runs the suite with `PYTHONMALLOC=malloc`, so
+  Python object allocations are checked too. It needs a GCC built Python,
+  because it preloads GCC's sanitizer runtimes.
+- **Fuzzing:** `fuzz/fuzz_tokenizer.c` is a libFuzzer harness, built by
+  `tools/fuzz.py`, that runs the C tokenizer directly. Each input is
+  tokenized as kind 1, 2 and 4 data, with and without comments. It checks
+  token bounds, contiguity, that matches point at the right closer and nest
+  properly, error offsets, the line table, and every unescaped value (never
+  NUL, a surrogate or more than U+10FFFF). A 10 minute run made 2.5M
+  executions (4.2k/s, 15M tokenizer runs) with no failures, reaching 1481
+  coverage edges and a corpus of 1868 inputs.
+- **CI** runs the thorough hypothesis profile with `KGCSS_STRESS=3` on
+  Linux and macOS, regular and free-threaded. It also has a sanitizer job
+  and a 2 minute fuzz job, which uploads crash inputs as artifacts.
+- Not done: ThreadSanitizer. It needs a CPython built with TSan to avoid
+  false positives in the interpreter. Without it, the thread safety
+  argument still rests on the design: everything is immutable except the
+  line table, which is guarded by a critical section.
 
 Notes from milestone 4:
 - `kgcss.parse_stylesheet()` is a Python wrapper. It accepts `str` or any

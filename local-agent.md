@@ -21,7 +21,8 @@ section before you implement a feature.
 | `csrc/syntax.c` | CSS Syntax parse algorithms: `AtRule`, `QualifiedRule`, `Declaration`, `NodeList` |
 | `src/kgcss/decode.py` | Decoding stylesheet bytes: BOM, protocol/`@charset`/environment encodings, WHATWG decoders |
 | `src/kgcss/_encodings.py` | **Generated** by `tools/generate_encodings.py` from WHATWG data. Do not edit by hand. Any new generated file must also be marked `linguist-generated` in `.gitattributes` |
-| `tools/` | Developer scripts (code generators). Typed and linted like the rest of the code |
+| `tools/` | Developer scripts: code generators, `sanitize_tests.py`, `fuzz.py`. Typed and linted like the rest of the code |
+| `fuzz/` | libFuzzer harnesses for the C code, built and run by `tools/fuzz.py` |
 | `src/kgcss/enums.py` | Enums shared with C (imported by the extension at init, so it must not import kgcss) |
 | `tests/css-parsing-tests/` | Vendored CC0 conformance suite. Do not edit; record differences in the runners |
 | `tests/` | pytest test suite |
@@ -113,20 +114,38 @@ correct in that case:
 - If a long-running pure-C section touches no Python objects, release the
   GIL around it with `Py_BEGIN_ALLOW_THREADS` (this is harmless on
   free-threaded builds).
-- Add a concurrency test (see `tests/test_native.py::test_concurrent_use`)
-  for any new C entry point that has state.
+- Add a concurrency test to `tests/test_threads.py` for any new C entry
+  point. Use a `threading.Barrier` so that the threads really overlap, and
+  scale the work with `STRESS`.
 
 Test free-threaded builds with:
 
 ```sh
-uv run --no-project -p 3.14t --isolated --with pytest --with pytest-xdist --with . -- python -m pytest -n auto
+uv run --no-project -p 3.14t --isolated --with pytest --with pytest-xdist --with hypothesis --with . -- python -m pytest -n auto
 ```
 
 `test_importing_does_not_enable_gil` fails if the module ever re-enables the
 GIL.
 
-For memory errors, build with `KGCSS_SANITIZE=1 KGCSS_DEBUG=1`. Then run
-pytest with `LD_PRELOAD=$(gcc -print-file-name=libasan.so)` and without `-n`.
+### Sanitizers and fuzzing
+
+For any C change, also run the suite against an ASan + UBSan build:
+
+```sh
+uv run python tools/sanitize_tests.py -n auto
+```
+
+This builds into a temporary directory and leaves the normal build alone. It
+runs with `PYTHONMALLOC=malloc`, so ASan also sees Python object
+allocations. For changes to the tokenizer (`csrc/tokenizer*`), fuzz for a few
+minutes too:
+
+```sh
+uv run python tools/fuzz.py run --seconds 300
+```
+
+If the fuzzer finds a crash, add the input as a regression test in
+`tests/test_tokenizer.py` before fixing it.
 
 ## Tests
 
@@ -137,6 +156,13 @@ pytest with `LD_PRELOAD=$(gcc -print-file-name=libasan.so)` and without `-n`.
   parallel under pytest-xdist. Use `tmp_path` for files, and do not write
   into the source tree.
 - Mark slow tests with `@pytest.mark.slow`.
+- Add hypothesis property tests (`tests/test_properties.py`, strategies in
+  `tests/strategies.py`) for invariants that should hold for all input:
+  round trips, positions, and agreement with reference implementations. For
+  important changes, run them with `HYPOTHESIS_PROFILE=thorough`.
+  Check that a new strategy actually produces the structures a property is
+  about. Count them, as the milestone 5 notes in
+  `docs/plan-01-tokenizer-syntax.md` describe.
 - Warnings are errors (`filterwarnings = error`).
 - When you port behaviour from the calibre tests listed in requirements.md
   §16, keep the original inputs and expected outputs. If a quirk from §18 is

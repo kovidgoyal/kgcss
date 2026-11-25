@@ -183,7 +183,6 @@ consume_at_rule(kg_parser *p, uint32_t i, uint32_t last, uint32_t *next) {
     if ((n->name = kg_range_value(p->ts, at, at->vstart, at->vend, false)) == NULL) { Py_DECREF(n); return NULL; }
     n->first = i + 1;
     n->text_pos = at->end;
-    uint32_t content_end = at->end; /* end of the last non-whitespace item */
     uint32_t j = i + 1;
     for (; j < last; j = kg_next_sibling(p->ts, j)) {
         const uint8_t type = ttype(p, j);
@@ -202,11 +201,12 @@ consume_at_rule(kg_parser *p, uint32_t i, uint32_t last, uint32_t *next) {
             *next = kg_next_sibling(p->ts, j);
             return (PyObject *)n;
         }
-        if (type != KG_TOK_WHITESPACE) content_end = kg_item_end(p->ts, j);
     }
+    /* Ended by EOF (or a } in nested mode): the prelude, trailing whitespace
+     * included, is part of the rule */
     n->last = last;
     n->text_end = range_end_offset(p->ts, last);
-    n->end = content_end;
+    n->end = n->text_end;
     *next = last;
     return (PyObject *)n;
 }

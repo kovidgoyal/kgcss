@@ -29,7 +29,16 @@ warnings are errors).
 To test against free-threaded Python:
 
 ```sh
-uv run --no-project -p 3.14t --isolated --with pytest --with pytest-xdist --with . -- python -m pytest -n auto
+uv run --no-project -p 3.14t --isolated --with pytest --with pytest-xdist --with hypothesis --with . -- python -m pytest -n auto
+```
+
+Hardening tools:
+
+```sh
+uv run python tools/sanitize_tests.py -n auto    # tests against an ASan + UBSan build
+uv run python tools/fuzz.py run --seconds 300    # libFuzzer on the C tokenizer (needs clang)
+HYPOTHESIS_PROFILE=thorough uv run pytest -n auto  # many more property based examples
+KGCSS_STRESS=10 uv run pytest tests/test_threads.py  # longer concurrency stress tests
 ```
 
 ## License

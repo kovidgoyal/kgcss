@@ -27,6 +27,8 @@ classifiers = [
 dev = [
     "pytest>=8",
     "pytest-xdist>=3.5",
+    "hypothesis>=6.100",
+    "setuptools>=77",  # for tools/sanitize_tests.py, which builds the extension directly
     "ruff>=0.8",
     "mypy>=1.13",
 ]

@@ -90,7 +90,8 @@ def test_at_rule_extents() -> None:
     assert r.source_text == '@foo bar ;'
     (r,) = parse_stylesheet('@foo bar  /* x */  ')
     assert isinstance(r, AtRule)
-    assert r.source_text == '@foo bar  /* x */'
+    # Ended by EOF: the rule extends to the end of its prelude, trailing whitespace included
+    assert r.source_text == '@foo bar  /* x */  '
     assert r.prelude.text == ' bar  /* x */  '
     (r,) = parse_stylesheet('@f\\6fo{}')
     assert isinstance(r, AtRule)
