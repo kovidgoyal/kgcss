@@ -15,6 +15,7 @@ section before you implement a feature.
 | `csrc/module.c` | Module definition, method table, module state lifecycle |
 | `tests/` | pytest test suite |
 | `setup.py` | Builds the extension only; all metadata lives in `pyproject.toml` |
+| `docs/plan-*.md` | Implementation plans. Read the relevant one before starting work on a feature |
 
 ## Workflow
 
