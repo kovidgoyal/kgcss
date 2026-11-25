@@ -3,6 +3,7 @@
 """Tests for the C extension module itself: loading, GIL and threading."""
 
 import sysconfig
+import threading
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -40,3 +41,22 @@ def test_concurrent_use() -> None:
         results = list(pool.map(work, range(len(inputs) * 50)))
     for i, r in enumerate(results):
         assert r == expected[i % len(inputs)]
+
+
+def test_concurrent_tokenize_and_shared_stream() -> None:
+    css = 'a { color: red; background: url(x\\)y.png) }\n/* é */ .\\31 x { margin: 1.5e1px }\n' * 3000
+    shared = kgcss.tokenize(css)
+    n = len(shared)
+    barrier = threading.Barrier(8)
+
+    def work(idx: int) -> tuple[int, int, int]:
+        barrier.wait()
+        # Every thread races to build the shared stream's lazy line table
+        last = shared[n - 1 - idx]
+        stream = kgcss.tokenize(css)
+        return last.line, len(stream), len(stream.errors)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(work, range(8)))
+    assert {r[1:] for r in results} == {(n, 0)}
+    assert all(r[0] in (6000, 6001) for r in results)

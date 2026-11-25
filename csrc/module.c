@@ -10,6 +10,7 @@
  */
 
 #include "kgcss.h"
+#include "tokens.h"
 
 static PyMethodDef module_methods[] = {
     {"serialize_string", kg_serialize_string, METH_O,
@@ -20,6 +21,10 @@ static PyMethodDef module_methods[] = {
      "serialize_identifier(text: str) -> str\n\n"
      "Serialize text as a CSS identifier, escaping characters as needed, "
      "following the CSSOM 'serialize an identifier' algorithm."},
+    {"tokenize", (PyCFunction)(void (*)(void))kg_tokenize_py, METH_VARARGS | METH_KEYWORDS,
+     "tokenize(source: str, /, *, comments: bool = True) -> TokenStream\n\n"
+     "Tokenize source following CSS Syntax Level 3. Never raises for bad CSS, errors are recorded "
+     "in TokenStream.errors. With comments=False, comment tokens are left out."},
     {NULL, NULL, 0, NULL}
 };
 
@@ -29,20 +34,21 @@ module_exec(PyObject *module) {
     state->empty_string = PyUnicode_FromStringAndSize("", 0);
     if (state->empty_string == NULL) return -1;
     if (PyModule_AddIntConstant(module, "GIL_DISABLED_BUILD", KG_GIL_DISABLED_BUILD) != 0) return -1;
-    return 0;
+    return kg_types_init(module);
 }
 
 static int
 module_traverse(PyObject *module, visitproc visit, void *arg) {
     kg_module_state *state = kg_get_module_state(module);
     Py_VISIT(state->empty_string);
-    return 0;
+    return kg_types_traverse(module, visit, arg);
 }
 
 static int
 module_clear(PyObject *module) {
     kg_module_state *state = kg_get_module_state(module);
     Py_CLEAR(state->empty_string);
+    kg_types_clear(module);
     return 0;
 }
 

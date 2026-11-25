@@ -34,7 +34,7 @@ def compile_args() -> list[str]:
         '-fvisibility=hidden',
     ]
     if os.environ.get('KGCSS_DEBUG') == '1':
-        args += ['-O0', '-g3', '-UNDEBUG', '-fno-omit-frame-pointer']
+        args += ['-Og', '-g3', '-UNDEBUG', '-fno-omit-frame-pointer']
     else:
         args += ['-O3']
     if os.environ.get('KGCSS_SANITIZE') == '1':

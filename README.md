@@ -28,7 +28,7 @@ warnings are errors).
 To test against free-threaded Python:
 
 ```sh
-uv run -p 3.14t --isolated --with pytest --with pytest-xdist --with . -- python -m pytest -n auto
+uv run --no-project -p 3.14t --isolated --with pytest --with pytest-xdist --with . -- python -m pytest -n auto
 ```
 
 ## License

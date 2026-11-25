@@ -13,6 +13,11 @@ section before you implement a feature.
 | `csrc/` | C99 sources of the `kgcss._kgcss` extension module |
 | `csrc/kgcss.h` | Shared header: included first by every `.c` file, module state, helpers |
 | `csrc/module.c` | Module definition, method table, module state lifecycle |
+| `csrc/tokens.h` | Token record, token type and error enums, character classes |
+| `csrc/tokenizer_impl.h` | Tokenizer template body, compiled once per PEP 393 kind by `tokenizer.c` |
+| `csrc/types.c` | Python heap types `TokenStream`, `Token`, `ParseError` and `tokenize()` |
+| `src/kgcss/enums.py` | Enums shared with C (imported by the extension at init, so it must not import kgcss) |
+| `tests/css-parsing-tests/` | Vendored CC0 conformance suite. Do not edit; record differences in the runners |
 | `tests/` | pytest test suite |
 | `setup.py` | Builds the extension only; all metadata lives in `pyproject.toml` |
 | `docs/plan-*.md` | Implementation plans. Read the relevant one before starting work on a feature |
@@ -109,7 +114,7 @@ correct in that case:
 Test free-threaded builds with:
 
 ```sh
-uv run -p 3.14t --isolated --with pytest --with pytest-xdist --with . -- python -m pytest -n auto
+uv run --no-project -p 3.14t --isolated --with pytest --with pytest-xdist --with . -- python -m pytest -n auto
 ```
 
 `test_importing_does_not_enable_gil` fails if the module ever re-enables the

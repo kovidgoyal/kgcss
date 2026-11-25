@@ -26,4 +26,4 @@ jobs:
       - name: Run tests
         env:
           KGCSS_WERROR: "1"
-        run: uv run -p ${{ matrix.python }} --isolated --with pytest --with pytest-xdist --with . -- python -m pytest -n auto
+        run: uv run --no-project -p ${{ matrix.python }} --isolated --with pytest --with pytest-xdist --with . -- python -m pytest -n auto

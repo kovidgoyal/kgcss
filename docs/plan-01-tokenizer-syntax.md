@@ -131,12 +131,11 @@ str ──► [C] tokenizer ──► flat token array ──► [C] syntax pars
 ```c
 typedef struct {
     uint32_t start, end;       /* code point offsets of the exact source text */
-    uint32_t match;            /* open bracket/function: index of the matching close token (or end) */
-    uint32_t aux;              /* dimension: offset of the unit from start; hash/at/function: name start */
+    uint32_t vstart, vend;     /* range holding the value (name, string body, url, number part) */
+    uint32_t match;            /* open bracket/function: index of the matching close token (M2) */
     uint8_t  type;             /* kg_token_type */
-    uint8_t  flags;            /* HAS_ESCAPES, IS_INTEGER, HASH_ID, UNCLOSED, SIGN, ... */
-    double   number;           /* numeric tokens only */
-} kg_token;                    /* 32 bytes */
+    uint8_t  flags;            /* NEEDS_PROCESSING, IS_INTEGER, HASH_ID, UNCLOSED */
+} kg_token;                    /* 24 bytes */
 ```
 
 - One pass over the input. The array grows geometrically. The initial
@@ -151,7 +150,7 @@ typedef struct {
 - **Comments are always recorded** as COMMENT tokens, because they cost one
   record. Each consumer decides whether to skip them. T4 becomes a filter
   flag, and P7 gets comments at top level and inside blocks.
-- Offsets are `uint32_t`, so the record stays at 32 bytes. Inputs of 4 GiB
+- Offsets are `uint32_t`, so the record stays at 24 bytes. Inputs of 4 GiB
   or more raise `OverflowError`.
 - **Line and column** are not stored per token. The tokenizer records the
   newline offsets in a `uint32_t` array, and line/column is a binary search
@@ -161,12 +160,12 @@ typedef struct {
   flag records whether one is needed. Without escapes, the value is
   `PyUnicode_Substring(src, a, b)`. With escapes, a separate unescape
   routine runs.
-- **Numbers.** Copy the ASCII digits to a stack buffer and call
-  `PyOS_string_to_double`, which is locale-independent (`strtod` is not
-  safe here). Set `IS_INTEGER` if the spec type is integer. Integers that
-  fit in an int64 are exposed as `int`. Larger ones go through
-  `PyLong_FromString`, so `700` stays `700` (V2). This also fixes the
-  `1.0E1px` bug: the value is 10.0 and the unit is `px`.
+- **Numbers** are converted when a `Token` is created (see §6.6). The
+  tokenizer only records the number's text range and an `IS_INTEGER` flag.
+  Integers become `int` (`PyLong_FromUnicodeObject`), so `700` stays `700`
+  (V2). Other numbers go through the locale-independent
+  `PyOS_string_to_double` (never `strtod`). This also fixes the `1.0E1px`
+  bug: the value is 10.0 and the unit is `px`.
 - ASCII characters are classified with a 128-entry `static const` table.
   Anything ≥ 0x80 counts as an ident code point.
 - Error-producing conditions append to a parse-error array as
@@ -252,8 +251,8 @@ instead.
 
 ### 3.5 Selector tokenizer (T7)
 
-This is `tokenize(selector_text)` with a final EOF token whose `pos` is
-`len(src)`. `.pos` and `.value` follow from §3.1. The calibre-specific
+This is `tokenize(selector_text)`. `.pos`, `.end` and `.value` follow from
+§3.1, and `tok.end` takes the place of "the next token's pos". The calibre-specific
 behaviour of raising lazily on unclosed strings belongs in calibre's shim,
 not in the library: the library reports an `UNCLOSED` flag plus a
 ParseError.
@@ -295,6 +294,18 @@ bench/
 
 ## 5. Milestones
 
+Status: milestone 1 is done. Every `component_value_list.json` case passes
+on all three PEP 393 kinds, except the unicode-range cases that differ by
+design. `test_css_parsing_suite.py` currently groups blocks with a Python
+reference implementation (`tests/suite.py`). Milestone 2 replaces that with
+the C grouping.
+
+A first measurement, taskset 0-2, on 1.3 MB of synthetic CSS
+(512k tokens): `tokenize()` runs at 540 MB/s. Creating a `Token` and its
+value for every token runs at 40 MB/s, dominated by Python object creation.
+That gap is why values are only built on demand (§3.2). tinycss2 runs at
+2 MB/s on the same input.
+
 Each milestone ends with ruff, mypy and pytest passing on both normal and
 free-threaded 3.14, and with no warnings in a `KGCSS_WERROR=1` build.
 
@@ -335,22 +346,25 @@ free-threaded 3.14, and with no warnings in a `KGCSS_WERROR=1` build.
 
 ---
 
-## 6. Things to settle before coding
+## 6. Decisions (settled)
 
-1. **Unicode-range and match tokens.** Follow the current spec, so no
-   tokens for them (recommended), or match tinycss2 and the old tests? See
-   §3.4.
-2. **Nesting.** The current ED nesting-aware block parsing is recommended.
-   With the old algorithm, nested rules inside style rules turn into
-   invalid declarations and are dropped. That conflicts with the "keep
-   modern syntax" direction of P6 and P15.
-3. **Column base.** 1-based line and column in code points (tinycss
-   compatible) is recommended. UTF-16 columns would match editors and
-   browsers, but nothing in requirements.md asks for that.
-4. **Size limit.** 4 GiB of input per parse (`uint32_t` offsets) is
-   recommended.
-
----
+1. **No unicode-range or match tokens**, as in the current spec (§3.4).
+   `<urange>` is parsed at the value layer.
+2. **Nesting-aware block parsing**, as in the current ED.
+3. **1-based line and column**, counted in code points.
+4. **4 GiB input limit** per parse (`uint32_t` offsets).
+5. Non-ASCII code points are all ident code points (≥ U+0080). This matches
+   browsers and tinycss2. The newer ED restricts the set, but no browser
+   ships that restriction yet.
+6. Numbers are converted **lazily**, when a `Token` is created, not during
+   tokenizing. `PyOS_string_to_double` needs an attached thread state, so
+   keeping it out of the tokenizer lets that pass run with the GIL released.
+   The token record therefore has no numeric field and is 24 bytes.
+7. A `TokenStream` does not include an EOF token. Every token has `.end`,
+   which is what T7 used "the next token's pos" for.
+8. The line table is built lazily, on the first line/column request, under
+   `Py_BEGIN_CRITICAL_SECTION` on the stream. It is the only mutable cache.
+   Most parses never ask for positions.
 
 ## 7. Testing against the conformance suite
 
