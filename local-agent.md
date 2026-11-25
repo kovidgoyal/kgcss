@@ -10,6 +10,7 @@ section before you implement a feature.
 |---|---|
 | `src/kgcss/` | The Python package. The top level (`__init__.py`) exports the CSSOM API. The lower layers are only available as `kgcss.tokenizer` and `kgcss.syntax` |
 | `src/kgcss/cssom/` | The CSS object model (plan 02): `rules.py` (rule classes), `build.py` (syntax tree to CSSOM), `stylesheet.py`, `serializer.py`, `state.py` (per sheet lock, errors, sources), `declarations.py`, `values.py`, `selector_list.py`, `urls.py` (finding and rewriting URLs), `imports.py` (loading and inlining @import) |
+| `src/kgcss/selectors.py` | Parsed selectors (plan 03): the selector tree, `compile_selectors()` (the cached parse) and `build_tree()` |
 | `src/kgcss/escaping.py` | `serialize_string()` and `serialize_identifier()`, the CSSOM escaping idioms |
 | `src/kgcss/_kgcss.pyi` | Type stubs for the C extension. **Must** match `csrc/` exactly |
 | `csrc/` | C99 sources of the `kgcss._kgcss` extension module |
@@ -24,6 +25,8 @@ section before you implement a feature.
 | `csrc/writer.c` | C port of the CSSOM token writer (`TokenWriter`, `write_values()`) and `write_declarations()` |
 | `csrc/urls.c` | C port of `find_urls()` in `kgcss/cssom/urls.py` |
 | `csrc/properties.c` | `PropertyData`, the C base of `Property` holding its fields, and `build_properties()` |
+| `csrc/selectors.c` | The selector parser, `CompiledSelector` (a flat array of nodes) and specificity |
+| `fuzz/` | libFuzzer harnesses, run with `tools/fuzz.py` |
 | `src/kgcss/decode.py` | Decoding stylesheet bytes: BOM, protocol/`@charset`/environment encodings, WHATWG decoders |
 | `src/kgcss/_encodings.py` | **Generated** by `tools/generate_encodings.py` from WHATWG data. Do not edit by hand. Any new generated file must also be marked `linguist-generated` in `.gitattributes` |
 | `tools/` | Developer scripts: code generators, `sanitize_tests.py`, `fuzz.py`. Typed and linted like the rest of the code |
@@ -148,11 +151,12 @@ uv run python tools/sanitize_tests.py -n auto
 
 This builds into a temporary directory and leaves the normal build alone. It
 runs with `PYTHONMALLOC=malloc`, so ASan also sees Python object
-allocations. For changes to the tokenizer (`csrc/tokenizer*`), fuzz for a few
-minutes too:
+allocations. For changes to the tokenizer (`csrc/tokenizer*`) or the
+selector parser (`csrc/selectors.c`), fuzz for a few minutes too:
 
 ```sh
 uv run python tools/fuzz.py run --seconds 300
+uv run python tools/fuzz.py run --target selectors --seconds 300
 ```
 
 If the fuzzer finds a crash, add the input as a regression test in

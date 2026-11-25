@@ -21,6 +21,7 @@ from kgcss import (
     Rule,
     RuleType,
     Selector,
+    SelectorSyntaxError,
     SerializeOptions,
     StyleRule,
     Stylesheet,
@@ -319,8 +320,12 @@ def test_selectors() -> None:
             rule.selector_text = bad
     with pytest.raises(CSSSyntaxError):
         Selector('a, b')
-    with pytest.raises(NotImplementedError):
-        _ = selectors[0].specificity
+    assert selectors[0].specificity == (0, 0, 1)
+    # Selectors are checked in full: these are balanced, but not selectors
+    for bad in ('a b!', '[a!=b]', 'a::before b', '#1'):
+        with pytest.raises(SelectorSyntaxError):
+            rule.selector_text = bad
+    assert rule.selector_text == 'h, i'
     assert repr(selectors) == "<SelectorList 'h, i'>"
 
 

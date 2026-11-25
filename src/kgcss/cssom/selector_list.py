@@ -2,23 +2,26 @@
 
 """The selector list of a style rule (requirements 3.3).
 
-Selectors are kept as text here, with normalized whitespace but escapes,
-case and comments as written. Parsing them, specificity and matching come
-with the selectors plan (plan 03).
+Selectors are kept as text, with normalized whitespace but escapes, case
+and comments as written. They are parsed (kgcss.selectors) when their tree,
+specificity or pseudo-element is first needed.
 """
 
 from collections.abc import Callable, Iterable, Iterator, MutableSequence
 from typing import TYPE_CHECKING, overload
 
-from kgcss.cssom.exceptions import CSSSyntaxError
+from kgcss.cssom.exceptions import SelectorSyntaxError
 from kgcss.cssom.serializer import normalize_selector
+from kgcss.selectors import ComplexSelector, PseudoElement, SimpleSelector, build_tree, compile_selectors
 from kgcss.syntax import Block, Function, parse_component_value_list
 from kgcss.tokenizer import TokenType
 
 if TYPE_CHECKING:
     from _typeshed import SupportsRichComparison
 
+    from kgcss._kgcss import CompiledSelector
     from kgcss.cssom.rules import StyleRule
+    from kgcss.cssom.stylesheet import Stylesheet
 
 CSS_WHITESPACE = ' \t\n\r\f'
 INVALID_IN_SELECTORS = frozenset((
@@ -28,48 +31,70 @@ INVALID_IN_SELECTORS = frozenset((
 
 
 def check_selector_list(text: str) -> list[str]:
-    """The normalized selectors of a selector list. Raises CSSSyntaxError for an empty or malformed list:
-    an empty selector, unbalanced brackets, an unclosed string, or a {}, ; or stray closing bracket."""
+    """The normalized selectors of a selector list, split at its top level commas. Raises
+    SelectorSyntaxError for an empty or malformed list: an empty selector, unbalanced brackets, an
+    unclosed string, or a {}, ; or stray closing bracket. The selectors themselves are not parsed."""
     values = parse_component_value_list(text)
     for error in values.stream.errors:
-        raise CSSSyntaxError(f'Invalid selector {text!r}: {error.message}')
+        raise SelectorSyntaxError(f'Invalid selector {text!r}: {error.message}', text, error.offset)
     parts: list[str] = []
     start = 0
     for item in values:
         if isinstance(item, Block | Function):
             if not item.closed or (isinstance(item, Block) and item.opener == '{'):
-                raise CSSSyntaxError(f'Invalid selector {text!r}: unbalanced or {{}} block')
+                raise SelectorSyntaxError(f'Invalid selector {text!r}: unbalanced or {{}} block', text, item.pos)
         elif item.type in INVALID_IN_SELECTORS:
-            raise CSSSyntaxError(f'Invalid selector {text!r}: unexpected {item.source_text!r}')
+            raise SelectorSyntaxError(f'Invalid selector {text!r}: unexpected {item.source_text!r}', text, item.pos)
         elif item.type is TokenType.COMMA:
             parts.append(text[start : item.pos])
             start = item.end
     parts.append(text[start:])
     normalized = [normalize_selector(p) for p in parts]
     if not all(normalized):
-        raise CSSSyntaxError(f'Invalid selector list {text!r}: empty selector')
+        raise SelectorSyntaxError(f'Invalid selector list {text!r}: empty selector', text, 0)
     return normalized
+
+
+def validate_selector_list(text: str, nested: bool) -> list[str]:
+    """check_selector_list(), and also parse each selector, raising SelectorSyntaxError if one is not
+    valid. With nested, selectors may also have the syntax of nested style rules (> a)."""
+    parts = check_selector_list(text)
+    for part in parts:
+        compile_selectors(part, nested)
+    return parts
 
 
 class Selector:
     """One selector of a selector list.
 
-    There are no __slots__, so callers can attach their own attributes (for
-    example calibre's selector.calibre_used). They are kept by copy().
+    Callers can attach their own attributes (for example calibre's
+    selector.calibre_used), which are kept by copy(). The fixed fields are
+    slots and __dict__ is one too, so it is only created when a caller sets
+    an attribute: there can be tens of thousands of selectors.
+
+    The text is parsed when the tree (parsed), specificity or pseudo_element
+    are first needed. A selector of a parsed stylesheet that is not valid
+    raises SelectorSyntaxError then; text that is assigned is checked at once.
     """
 
+    __slots__ = ('__dict__', '_compiled', '_owner', '_text', '_tree')
+
     def __init__(self, text: str) -> None:
-        parts = check_selector_list(text)
+        parts = validate_selector_list(text, True)
         if len(parts) != 1:
-            raise CSSSyntaxError(f'Not a single selector: {text!r}')
+            raise SelectorSyntaxError(f'Not a single selector: {text!r}', text, 0)
         self._text = parts[0]
         self._owner: SelectorList | None = None
+        self._compiled: tuple[bool, CompiledSelector] | None = None
+        self._tree: tuple[CompiledSelector, ComplexSelector] | None = None
 
     @classmethod
-    def _from_normalized(cls, text: str) -> Selector:
+    def _from_normalized(cls, text: str, compiled: CompiledSelector | None = None, nested: bool = True) -> Selector:
         s = cls.__new__(cls)
         s._text = text
         s._owner = None
+        s._compiled = None if compiled is None else (nested, compiled)
+        s._tree = None
         return s
 
     @property
@@ -78,22 +103,87 @@ class Selector:
 
     @text.setter
     def text(self, value: str) -> None:
-        parts = check_selector_list(value)
+        parts = validate_selector_list(value, self._is_nested())
         if len(parts) != 1:
-            raise CSSSyntaxError(f'Not a single selector: {value!r}')
+            raise SelectorSyntaxError(f'Not a single selector: {value!r}', value, 0)
         self._text = parts[0]
+        self._compiled = self._tree = None
         if self._owner is not None:
             self._owner._changed()
 
+    def _rule(self) -> StyleRule | None:
+        return None if self._owner is None else self._owner._rule
+
+    def _is_nested(self) -> bool:
+        """Whether the selector is parsed as in a nested style rule. That is also the case for selectors
+        that are not in a rule, as it accepts every selector that the top level accepts."""
+        rule = self._rule()
+        if rule is None:
+            return True
+        if rule.parent_rule is None:
+            return False
+        from kgcss.cssom.build import Context
+        from kgcss.cssom.rules import context_of
+
+        return context_of(rule) is Context.NESTED
+
+    def _compiled_selector(self) -> CompiledSelector:
+        nested = self._is_nested()
+        cached = self._compiled
+        if cached is not None and cached[0] == nested:
+            return cached[1]
+        compiled = compile_selectors(self._text, nested)
+        if len(compiled) != 1:
+            raise SelectorSyntaxError(f'Not a single selector: {self._text!r}', self._text, 0)
+        self._compiled = (nested, compiled[0])
+        return compiled[0]
+
+    @property
+    def parsed(self) -> ComplexSelector:
+        """The parsed selector, as a tree. Raises SelectorSyntaxError if the text is not a valid selector."""
+        compiled = self._compiled_selector()
+        tree = self._tree
+        if tree is None or tree[0] is not compiled:
+            self._tree = tree = (compiled, build_tree(compiled))
+        return tree[1]
+
     @property
     def specificity(self) -> tuple[int, int, int]:
-        raise NotImplementedError('Specificity comes with selector parsing (plan 03)')
+        """The specificity (a, b, c) of Selectors Level 4. Raises SelectorSyntaxError if the text is not a
+        valid selector. & counts as the most specific selector of the parent style rule, or as :scope
+        when the selector is not in a nested rule."""
+        compiled = self._compiled_selector()
+        if not compiled.has_nesting:
+            return compiled.specificity()
+        return compiled.specificity(self._nesting_specificity())
+
+    def _nesting_specificity(self) -> tuple[int, int, int]:
+        from kgcss.cssom.rules import StyleRule
+
+        rule = self._rule()
+        parent = None if rule is None else rule.parent_rule
+        while parent is not None and not isinstance(parent, StyleRule):
+            parent = parent.parent_rule
+        if parent is None:
+            return (0, 1, 0)
+        return max((s.specificity for s in parent.selectors), default=(0, 0, 0))
+
+    @property
+    def pseudo_element(self) -> PseudoElement | None:
+        """The pseudo-element of this selector, if it has one, such as ::before."""
+        compiled = self._compiled_selector()
+        return self.parsed.pseudo_element if compiled.has_pseudo_element else None
+
+    def walk(self) -> Iterator[SimpleSelector]:
+        """Every simple selector, at any depth, see ComplexSelector.walk()."""
+        return self.parsed.walk()
 
     def copy(self) -> Selector:
         """An unattached copy, with any attributes attached by callers."""
-        s = Selector.__new__(Selector)
-        s.__dict__.update(self.__dict__)
-        s._owner = None
+        s = Selector._from_normalized(self._text)
+        s._compiled, s._tree = self._compiled, self._tree
+        if self.__dict__:
+            s.__dict__.update(self.__dict__)
         return s
 
     def __str__(self) -> str:
@@ -186,3 +276,32 @@ class SelectorList(MutableSequence[Selector]):
 
     def __repr__(self) -> str:
         return f'<SelectorList {self.text!r}>'
+
+
+def parse_selectors(text: str, *, nested: bool = False) -> SelectorList:
+    """Parse a selector list into a new SelectorList that is not in any rule. Raises SelectorSyntaxError.
+    With nested, selectors may start with a combinator, as in a nested style rule (> a). Parsing is
+    cached, so parsing the same text again is cheap."""
+    selectors = []
+    for part in check_selector_list(text):
+        compiled = compile_selectors(part, nested)
+        # Valid in nested mode too, which is what selectors that are not in a rule use
+        selectors.append(Selector._from_normalized(part, compiled[0]))
+    return SelectorList(None, selectors)
+
+
+def invalid_selectors(sheet: Stylesheet) -> list[tuple[StyleRule, Selector, SelectorSyntaxError]]:
+    """The selectors of the style rules of a sheet, at any depth, that are not valid, with the error
+    for each. Its pos is the offset in the selector's text; rule.line and rule.column say where the
+    rule is. Parsing a sheet keeps such rules (see docs/plan-03-selectors.md, D4)."""
+    from kgcss.cssom.rules import RuleType, StyleRule
+
+    ans = []
+    for rule in sheet.iter_rules(RuleType.STYLE):
+        assert isinstance(rule, StyleRule)
+        for selector in rule.selectors:
+            try:
+                selector._compiled_selector()
+            except SelectorSyntaxError as e:
+                ans.append((rule, selector, e))
+    return ans

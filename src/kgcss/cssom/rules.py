@@ -7,9 +7,10 @@ from enum import Enum, unique
 from typing import TYPE_CHECKING, ClassVar, Self, final, overload
 
 from kgcss.cssom.declarations import DeclarationBlock, block_from_nodes, parse_declarations
-from kgcss.cssom.exceptions import CSSSyntaxError
-from kgcss.cssom.selector_list import Selector, SelectorList, check_selector_list
+from kgcss.cssom.exceptions import CSSSyntaxError, SelectorSyntaxError
+from kgcss.cssom.selector_list import Selector, SelectorList, validate_selector_list
 from kgcss.cssom.state import SheetState, SourceLike
+from kgcss.selectors import compile_selectors
 from kgcss.syntax import AtRule, Declaration, QualifiedRule, Token
 
 if TYPE_CHECKING:
@@ -583,13 +584,17 @@ class StyleRule(LazyBlockRule, RuleContainer):
 
     def __init__(self, selector_text: str = '') -> None:
         super().__init__()
-        self._selector_text: str | None = ', '.join(check_selector_list(selector_text)) if selector_text else ''
+        # Checked as for a nested rule, which also accepts every selector valid at the top level
+        self._selector_text: str | None = (
+            ', '.join(validate_selector_list(selector_text, True)) if selector_text else ''
+        )
         self._selectors: SelectorList | None = None
 
     @property
     def selector_text(self) -> str:
         """The selector list as text, with normalized whitespace (a, b and a > b) but escapes, case
-        and comments kept. Assigning checks the text, raising CSSSyntaxError if it is not valid."""
+        and comments kept. Assigning checks the text, raising SelectorSyntaxError (a CSSSyntaxError) if
+        it is not a valid selector list."""
         text = self._selector_text
         if text is None:
             from kgcss.cssom.serializer import normalize_prelude
@@ -601,7 +606,7 @@ class StyleRule(LazyBlockRule, RuleContainer):
 
     @selector_text.setter
     def selector_text(self, value: str) -> None:
-        parts = check_selector_list(value)
+        parts = validate_selector_list(value, context_of(self) is _build.Context.NESTED)
         self._selector_text = ', '.join(parts)
         if self._selectors is not None:
             self._selectors._replace_all(parts)
@@ -616,8 +621,16 @@ class StyleRule(LazyBlockRule, RuleContainer):
 
         def create() -> SelectorList:
             text = self.selector_text
-            texts = split_on_commas(text) if text.strip(CSS_WHITESPACE) else []
-            return SelectorList(self, [Selector._from_normalized(t) for t in texts])
+            if not text.strip(CSS_WHITESPACE):
+                return SelectorList(self, [])
+            nested = self.parent_rule is not None and context_of(self) is _build.Context.NESTED
+            try:
+                compiled = compile_selectors(text, nested)
+            except SelectorSyntaxError:
+                # Kept as text: a selector that is not valid raises when it is parsed
+                return SelectorList(self, [Selector._from_normalized(t) for t in split_on_commas(text)])
+            # Hot: one parse gives each selector, and its text is exactly its span in the list
+            return SelectorList(self, [Selector._from_normalized(text[c.start : c.end], c, nested) for c in compiled])
 
         if self._state is None:
             self._selectors = selectors = create()

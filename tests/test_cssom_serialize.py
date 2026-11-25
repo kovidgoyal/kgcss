@@ -11,6 +11,7 @@ from kgcss import (
     ImportRule,
     MediaRule,
     Property,
+    RuleType,
     SerializeOptions,
     StyleRule,
     Stylesheet,
@@ -373,3 +374,22 @@ def test_dropped_comments_in_selectors() -> None:
     assert normalize_selector('a/**/.b', no_comments) == 'a.b'
     assert normalize_selector('e/**/f', no_comments) == 'e/**/f'
     assert normalize_selector('i /**/ j', no_comments) == 'i j'
+
+
+def test_preserve_at_rule_left_open_by_eof() -> None:
+    # The ; of @url(...; is inside a bracket that the end of the input left open. Written verbatim
+    # before other rules, it would swallow them, as found when inlining an imported sheet.
+    sheet = parse_stylesheet('@url(@charset "x";')
+    rule = sheet.rules[0]
+    sheet.add('a { b: c }')
+    text = serialize(sheet, SerializeOptions(style='preserve'))
+    assert [r.type for r in parse_stylesheet(text).rules] == [rule.type, RuleType.STYLE]
+
+
+def test_preserve_declaration_with_comment_left_open_by_eof() -> None:
+    # Found by the property tests: the comment after !important, left open by the end of the
+    # input, would swallow what follows when written verbatim
+    sheet = parse_stylesheet('a:a {a: !important/*Z')
+    sheet.add('a { b: c }')
+    text = serialize(sheet, SerializeOptions(style='preserve'))
+    assert serialize(parse_stylesheet(text)) == serialize(sheet)

@@ -499,6 +499,77 @@ the selectors that match. Decide in milestone 5, from measurements (D9).
 
 ## 8. Milestones
 
+Status: milestone 1 is done.
+
+Notes from milestone 1:
+- **The parser** is `csrc/selectors.c`, about 1000 lines.
+  - It works on the tokenizer's token records and ignores comment tokens.
+    Whitespace is the descendant combinator.
+  - For each complex selector it produces a `CompiledSelector`: a flat
+    pre-order array of nodes, each with its kind, operator, flags, span,
+    subtree end, `a` and `b`, and name, value and namespace strings. The
+    matcher of milestone 3 will work on this array.
+  - Functional pseudo-classes nest at most 32 deep, so hostile input cannot
+    exhaust the C stack.
+  - Text with tokenizer errors (an unclosed string or comment) or with
+    unbalanced closing brackets is rejected.
+- **The tree** (`kgcss.selectors`) is built from the nodes on demand. Each
+  node class has `to_css()`, which writes a canonical form. Spans are not
+  compared, so a tree written with `to_css()` and parsed again equals the
+  original, which a property test checks.
+- **Differences from `css_selectors`**, all following Selectors Level 4:
+  - pseudo-classes may follow a pseudo-element (`a::before:hover`);
+  - a `:has()` inside a forgiving `:is()` inside `:has()` is dropped,
+    rather than making the whole selector invalid;
+  - `!=` and IDs that are not identifiers (`#1`) are syntax errors;
+  - An+B follows CSS Syntax exactly, and is stored as `a` and `b` rather
+    than as tokens;
+  - the arguments of unknown functional pseudo-classes are kept as text,
+    whatever tokens they contain.
+
+  The error positions match those of `css_selectors` for most of its error
+  tests. Messages differ.
+- **The CSSOM.**
+  - `Selector` has `parsed`, `specificity`, `pseudo_element` and `walk()`.
+  - Its fixed fields are slots, with a `__dict__` slot for caller
+    attributes, so the dict is only created when one is set.
+  - `selector_text`, `Selector(text)` and `Selector.text` check the full
+    grammar. A rule in a nested context accepts relative selectors; a
+    selector not in any rule is parsed in that nested mode, which accepts
+    every top-level selector too.
+  - A rule's `SelectorList` comes from one parse of its whole
+    `selector_text`: each selector's text is its span in the list, and it
+    keeps its compiled form.
+  - `parse_selectors()` and `invalid_selectors()` are new, and so are the
+    exceptions.
+- **Speed.** On the 1.55 MB calibre-style sheet (18k selectors), parsing
+  every selector in C takes 4.5 to 9 ms, 0.25 to 0.5 us each, which meets
+  the target of §6. The whole path through the CSSOM, creating the selector
+  lists and reading every specificity, takes about 3 us per selector (52 ms
+  for the sheet), mostly in creating Python objects. If that matters for the
+  stylizer, the lists could be created in C. Walking every rule of a freshly
+  parsed sheet costs more than either, as it parses every block to find the
+  nested rules.
+- **Testing.**
+  - The `css_selectors` parser, pseudo-element, specificity and parse error
+    tests are ported, comparing trees through a converter to its text form.
+  - Property tests on selectors generated from the grammar (checked to
+    produce `:has()`, `of S`, `&`, attribute flags and pseudo-elements in
+    numbers) and on random text: spans, round trips, error positions.
+  - A thread test of lazily created selector lists and parses.
+  - A libFuzzer target, `tools/fuzz.py run --target selectors`, which
+    compiles the whole extension into the fuzzer. It found one bug: a name
+    in an error message, cut at 60 bytes in the middle of a UTF-8 sequence,
+    raised `UnicodeDecodeError`. Then 4.4 million runs were clean.
+- **Bugs found in earlier milestones** by the thorough property tests, all
+  fixed:
+  - in preserve mode, an at-rule whose `;` is inside a bracket left open by
+    the end of the input (`@x(;`) was written verbatim, and swallowed the
+    rules after it once an import was inlined before them;
+  - the same for a comment left open after `!important`;
+  - the import property test's bound on fetches was too low, and its
+    rough selector check now uses the parser.
+
 1. **Parsing and specificity.**
    - The C parser, from tokens to `CompiledSelector`, with errors and
      positions. `nested` mode and `&`. Forgiving lists in `:is()` and

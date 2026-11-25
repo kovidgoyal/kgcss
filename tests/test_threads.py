@@ -13,6 +13,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 
 import kgcss
+import kgcss.selectors
 import kgcss.syntax
 import kgcss.tokenizer
 from kgcss import _kgcss
@@ -299,4 +300,32 @@ def test_cssom_serialize_while_modifying() -> None:
         run_concurrently(work)
         text = kgcss.serialize(sheet)
         assert 'px' not in text.replace('url(', '')
+    check_gil()
+
+
+def test_selectors_shared() -> None:
+    # Selector lists, compiled selectors and their caches are created lazily by whichever
+    # thread gets there first. All threads must see the same lists and the same results.
+    css = ''.join(f'.r{i} > p:nth-child(2n+{i % 5} of .x), #i{i}:is(a, b)::before {{ a: b }}\n' for i in range(300))
+    barrier = threading.Barrier(THREADS)
+    for _ in range(3 * STRESS):
+        kgcss.selectors.compile_selectors.cache_clear()
+        sheet = kgcss.parse_stylesheet(css)
+
+        def work(idx: int, sheet: kgcss.Stylesheet = sheet) -> list[tuple[int, tuple[int, int, int], str | None]]:
+            barrier.wait()
+            rules = list(sheet.rules)
+            if idx % 2:
+                rules.reverse()
+            out = {}
+            for rule in rules:
+                assert isinstance(rule, kgcss.StyleRule)
+                for s in rule.selectors:
+                    pe = s.pseudo_element
+                    out[s.text] = (id(rule.selectors), s.specificity, None if pe is None else pe.name)
+            return [out[k] for k in sorted(out)]
+
+        results = run_concurrently(work)
+        assert all(r == results[0] for r in results)
+        assert results[0][0][1:] == ((1, 0, 2), 'before')  # #i0:is(a, b)::before
     check_gil()

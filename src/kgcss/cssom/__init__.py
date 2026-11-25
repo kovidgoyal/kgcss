@@ -7,7 +7,13 @@ kgcss.syntax. Blocks are parsed on first access, under a per-sheet lock.
 """
 
 from kgcss.cssom.declarations import DeclarationBlock, DeclarationList, Property, parse_style
-from kgcss.cssom.exceptions import CSSSyntaxError, InvalidValueError
+from kgcss.cssom.exceptions import (
+    CSSSyntaxError,
+    ExpressionError,
+    InvalidValueError,
+    SelectorError,
+    SelectorSyntaxError,
+)
 from kgcss.cssom.imports import ImportFetcher, resolve_imports
 from kgcss.cssom.rules import (
     CharsetRule,
@@ -34,7 +40,7 @@ from kgcss.cssom.rules import (
     SupportsRule,
     UnknownAtRule,
 )
-from kgcss.cssom.selector_list import Selector, SelectorList
+from kgcss.cssom.selector_list import Selector, SelectorList, invalid_selectors, parse_selectors
 from kgcss.cssom.serializer import SerializeOptions, serialize
 from kgcss.cssom.state import ErrorHandler
 from kgcss.cssom.stylesheet import NamespaceMap, Stylesheet, parse_rule, parse_stylesheet
@@ -51,6 +57,7 @@ __all__ = [
     'DeclarationList',
     'DocumentRule',
     'ErrorHandler',
+    'ExpressionError',
     'FontFaceRule',
     'GroupingRule',
     'ImportFetcher',
@@ -72,15 +79,19 @@ __all__ = [
     'RuleType',
     'ScopeRule',
     'Selector',
+    'SelectorError',
     'SelectorList',
+    'SelectorSyntaxError',
     'SerializeOptions',
     'StartingStyleRule',
     'StyleRule',
     'Stylesheet',
     'SupportsRule',
     'UnknownAtRule',
+    'invalid_selectors',
     'iter_urls',
     'parse_rule',
+    'parse_selectors',
     'parse_style',
     'parse_stylesheet',
     'parse_value',

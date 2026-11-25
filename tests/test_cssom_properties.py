@@ -26,9 +26,9 @@ from kgcss import (
 )
 from kgcss.cssom.declarations import normalize_name
 from kgcss.cssom.exceptions import CSSSyntaxError
-from kgcss.cssom.selector_list import check_selector_list
 from kgcss.cssom.serializer import source_is_complete
 from kgcss.cssom.values import Function, Other, Separator, SimpleBlock, UnicodeRange
+from kgcss.selectors import compile_selectors
 from kgcss.syntax import QualifiedRule
 
 from .strategies import css_text
@@ -321,7 +321,9 @@ def test_resolve_imports_gives_a_valid_sheet(main: str, a: str, b: str, c: str) 
     text = serialize(out, SerializeOptions(style='preserve', drop_empty_rules=False))
     again = parse_stylesheet(text)
     assert not [e for e in again.errors if e.kind == 'misplaced-rule'], text
-    assert len(calls) <= 64
+    # Each @import rule loads its own sheet, but an import chain never repeats a URL. With at most
+    # 6 import lines per sheet and 4 different sheets, that bounds the fetches.
+    assert len(calls) <= 6 + 6**2 + 6**3 + 6**4
 
     # Style rules with invalid selectors, such as a;@media x {}, can parse differently once nested,
     # and browsers ignore them and their contents
@@ -339,13 +341,11 @@ def test_resolve_imports_gives_a_valid_sheet(main: str, a: str, b: str, c: str) 
 
 
 def valid_selector(text: str) -> bool:
-    # A coarse check: selectors are not parsed yet (plan 03). A selector cannot end with a colon,
-    # and nested, a:{b} is a declaration.
     try:
-        check_selector_list(text)
+        compile_selectors(text)
     except CSSSyntaxError:
         return False
-    return not text.rstrip().endswith(':')
+    return True
 
 
 @given(css_text)

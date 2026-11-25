@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
 # License: GPLv3 Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
-"""Build and run the libFuzzer harness for the C tokenizer (fuzz/fuzz_tokenizer.c).
+"""Build and run the libFuzzer harnesses in fuzz/.
 
-    python tools/fuzz.py build
-    python tools/fuzz.py run --seconds 300 [-- extra libFuzzer options]
+    python tools/fuzz.py build [--target tokenizer|selectors]
+    python tools/fuzz.py run --seconds 300 [--target tokenizer|selectors] [-- extra libFuzzer options]
 
-Needs clang with libFuzzer. The corpus lives in build/fuzz/corpus and is
-seeded from the conformance suite inputs the first time. Crashing inputs are
-written to build/fuzz/ as crash-*; reproduce one with
-build/fuzz/fuzz_tokenizer build/fuzz/crash-<hash>.
+Targets:
+
+    tokenizer  the C tokenizer (fuzz/fuzz_tokenizer.c), the default
+    selectors  the selector parser (fuzz/fuzz_selectors.c), with the whole
+               extension compiled in and the Python package from src/
+
+Needs clang with libFuzzer. The corpus lives in build/fuzz/<target>/corpus
+and is seeded the first time: from the conformance suite inputs for the
+tokenizer, and from the selector test tables for the selectors. Crashing
+inputs are written to build/fuzz/<target>/ as crash-*; reproduce one with
+build/fuzz/<target>/fuzz_<target> build/fuzz/<target>/crash-<hash>.
 """
 
 import argparse
@@ -20,14 +27,26 @@ import sysconfig
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = ROOT / 'build' / 'fuzz'
-BINARY = OUT / 'fuzz_tokenizer'
-CORPUS = OUT / 'corpus'
-SOURCES = (ROOT / 'fuzz' / 'fuzz_tokenizer.c', ROOT / 'csrc' / 'tokenizer.c')
+TARGETS = ('tokenizer', 'selectors')
 
 
-def build() -> None:
-    OUT.mkdir(parents=True, exist_ok=True)
+def out_dir(target: str) -> Path:
+    return ROOT / 'build' / 'fuzz' / target
+
+
+def binary(target: str) -> Path:
+    return out_dir(target) / f'fuzz_{target}'
+
+
+def sources(target: str) -> list[Path]:
+    harness = ROOT / 'fuzz' / f'fuzz_{target}.c'
+    if target == 'tokenizer':
+        return [harness, ROOT / 'csrc' / 'tokenizer.c']
+    return [harness, *sorted((ROOT / 'csrc').glob('*.c'))]
+
+
+def build(target: str) -> None:
+    out_dir(target).mkdir(parents=True, exist_ok=True)
     libdir = sysconfig.get_config_var('LIBDIR')
     cmd = [
         os.environ.get('CLANG', 'clang'),
@@ -35,17 +54,29 @@ def build() -> None:
         '-fsanitize=fuzzer,address,undefined', '-fno-sanitize-recover=undefined',
         '-Wall', '-Wextra', '-Werror', '-Wno-missing-field-initializers',
         f'-I{ROOT / "csrc"}', f'-I{sysconfig.get_path("include")}',
-        *map(str, SOURCES),
-        f'-L{libdir}', f'-Wl,-rpath,{libdir}', f'-lpython{sysconfig.get_config_var("LDVERSION")}',
-        '-o', str(BINARY),
+        *map(str, sources(target)),
+        f'-L{libdir}', f'-Wl,-rpath,{libdir}', f'-lpython{sysconfig.get_config_var("LDVERSION")}', '-lm',
+        '-o', str(binary(target)),
     ]  # fmt: skip
     subprocess.run(cmd, check=True)
 
 
-def seed_corpus() -> None:
-    CORPUS.mkdir(parents=True, exist_ok=True)
-    if any(CORPUS.iterdir()):
-        return
+def seed_corpus(target: str) -> Path:
+    corpus = out_dir(target) / 'corpus'
+    corpus.mkdir(parents=True, exist_ok=True)
+    if any(corpus.iterdir()):
+        return corpus
+    if target == 'selectors':
+        import ast
+
+        # The selectors in the tables of the selector tests
+        tree = ast.parse((ROOT / 'tests' / 'test_selectors.py').read_text(encoding='utf-8'))
+        texts = {
+            node.value for node in ast.walk(tree) if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        }
+        for i, text in enumerate(sorted(texts)):
+            (corpus / f'seed-{i}').write_bytes(text.encode('utf-8', 'surrogatepass'))
+        return corpus
     suite = ROOT / 'tests' / 'css-parsing-tests'
     inputs: set[str] = set()
     for name in ('component_value_list.json', 'stylesheet.json', 'blocks_contents.json', 'one_declaration.json'):
@@ -53,32 +84,37 @@ def seed_corpus() -> None:
         inputs.update(x for x in data[::2] if isinstance(x, str))
     for i, text in enumerate(sorted(inputs)):
         raw = text.encode('utf-8', 'surrogatepass')
-        (CORPUS / f'seed-{i}-utf8').write_bytes(raw)
+        (corpus / f'seed-{i}-utf8').write_bytes(raw)
         # Seeds for the 2 byte kind, which reinterprets the input as UTF-16 code units
-        (CORPUS / f'seed-{i}-utf16').write_bytes(text.encode('utf-16-le', 'surrogatepass'))
+        (corpus / f'seed-{i}-utf16').write_bytes(text.encode('utf-16-le', 'surrogatepass'))
+    return corpus
 
 
-def run(seconds: int, extra: list[str]) -> int:
-    if not BINARY.exists():
-        build()
-    seed_corpus()
-    env = os.environ | {'PYTHONMALLOC': 'malloc'}
-    cmd = [str(BINARY), str(CORPUS), f'-max_total_time={seconds}', '-max_len=4096', '-timeout=10', *extra]
-    return subprocess.run(cmd, cwd=OUT, env=env, check=False).returncode
+def run(target: str, seconds: int, extra: list[str]) -> int:
+    if not binary(target).exists():
+        build(target)
+    corpus = seed_corpus(target)
+    env = os.environ | {'PYTHONMALLOC': 'malloc', 'PYTHONPATH': str(ROOT / 'src')}
+    # Python's own allocations at exit are not leaks of ours
+    env.setdefault('ASAN_OPTIONS', 'detect_leaks=0')
+    cmd = [str(binary(target)), str(corpus), f'-max_total_time={seconds}', '-max_len=4096', '-timeout=10', *extra]
+    return subprocess.run(cmd, cwd=out_dir(target), env=env, check=False).returncode
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest='command', required=True)
-    sub.add_parser('build', help='Build the fuzzer')
+    b = sub.add_parser('build', help='Build the fuzzer')
+    b.add_argument('--target', choices=TARGETS, default='tokenizer')
     r = sub.add_parser('run', help='Build if needed, then fuzz')
+    r.add_argument('--target', choices=TARGETS, default='tokenizer')
     r.add_argument('--seconds', type=int, default=60, help='How long to fuzz for (default: %(default)s)')
     r.add_argument('extra', nargs='*', help='Extra libFuzzer options, after --')
     args = parser.parse_args()
     if args.command == 'build':
-        build()
+        build(args.target)
         return 0
-    return run(args.seconds, args.extra)
+    return run(args.target, args.seconds, args.extra)
 
 
 if __name__ == '__main__':

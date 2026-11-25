@@ -128,6 +128,12 @@ int kg_properties_traverse(PyObject *module, visitproc visit, void *arg);
 void kg_properties_clear(PyObject *module);
 PyObject *kg_build_properties(PyObject *module, PyObject *const *args, Py_ssize_t nargs);
 
+/* selectors.c */
+int kg_selectors_init(PyObject *module);
+int kg_selectors_traverse(PyObject *module, visitproc visit, void *arg);
+void kg_selectors_clear(PyObject *module);
+PyObject *kg_parse_selectors(PyObject *module, PyObject *const *args, Py_ssize_t nargs);
+
 /* urls.c */
 PyObject *kg_find_urls(PyObject *module, PyObject *const *args, Py_ssize_t nargs);
 

@@ -23,7 +23,7 @@ from kgcss._kgcss import write_values as c_write_values
 from kgcss.cssom.values import HEX_ESCAPE_AT_END
 from kgcss.decode import PYTHON_CODECS, lookup_encoding
 from kgcss.escaping import serialize_identifier, serialize_string
-from kgcss.syntax import Block, ComponentValueList, Function, Token, parse_component_value_list
+from kgcss.syntax import Block, ComponentValueList, Declaration, Function, Token, parse_component_value_list
 from kgcss.tokenizer import TokenType
 
 if TYPE_CHECKING:
@@ -163,6 +163,15 @@ def values_complete(values: Iterable[Token | Block | Function]) -> bool:
     return not (isinstance(last, Token) and (last.type is TokenType.BAD_STRING or is_lone_backslash(last)))
 
 
+def declaration_complete(node: Declaration) -> bool:
+    """Whether the source text of a declaration can be written verbatim with more after it. Besides
+    the value, what follows it, such as a comment after !important, can be left open, but only by
+    the end of the input."""
+    if not values_complete(node.value):
+        return False
+    return node.end < len(node.stream.source) or values_complete(parse_component_value_list(node.source_text))
+
+
 def source_is_complete(source: object) -> bool:
     """Whether the source text of a rule can be written verbatim with other rules after it."""
     from kgcss.syntax import AtRule, QualifiedRule
@@ -171,7 +180,10 @@ def source_is_complete(source: object) -> bool:
         return source.block.closed
     if isinstance(source, AtRule):
         block = source.block
-        return source.source_text.endswith(';') if block is None else block.closed
+        if block is not None:
+            return block.closed
+        # The ; can be inside a bracket left open by the end of the input, as in @x(;
+        return source.source_text.endswith(';') and values_complete(source.prelude)
     if isinstance(source, Token):
         return source.closed
     return False
@@ -551,7 +563,7 @@ def property_text(prop: Property, options: SerializeOptions, attribute_safe: boo
         and not prop._dirty
         and prop._node is not None
         and not attribute_safe
-        and values_complete(prop._node.value)
+        and declaration_complete(prop._node)
     ):
         return prop._node.source_text
     value = property_value_text(prop, options, attribute_safe)
