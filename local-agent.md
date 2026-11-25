@@ -17,10 +17,13 @@ section before you implement a feature.
 | `csrc/module.c` | Module definition, method table, module state lifecycle |
 | `csrc/tokens.h` | Token record, token type and error enums, character classes |
 | `csrc/tokenizer_impl.h` | Tokenizer template body, compiled once per PEP 393 kind by `tokenizer.c` |
-| `csrc/objects.h` | Object layouts and functions shared between `types.c` and `values.c` |
+| `csrc/objects.h` | Object layouts and functions shared between the `.c` files |
 | `csrc/types.c` | Python heap types `TokenStream`, `Token`, `ParseError` and `tokenize()` |
 | `csrc/values.c` | `Block`, `Function`, `ComponentValueList` and the component value parse functions |
 | `csrc/syntax.c` | CSS Syntax parse algorithms: `AtRule`, `QualifiedRule`, `Declaration`, `NodeList` |
+| `csrc/writer.c` | C port of the CSSOM token writer (`TokenWriter`, `write_values()`) and `write_declarations()` |
+| `csrc/urls.c` | C port of `find_urls()` in `kgcss/cssom/urls.py` |
+| `csrc/properties.c` | `PropertyData`, the C base of `Property` holding its fields, and `build_properties()` |
 | `src/kgcss/decode.py` | Decoding stylesheet bytes: BOM, protocol/`@charset`/environment encodings, WHATWG decoders |
 | `src/kgcss/_encodings.py` | **Generated** by `tools/generate_encodings.py` from WHATWG data. Do not edit by hand. Any new generated file must also be marked `linguist-generated` in `.gitattributes` |
 | `tools/` | Developer scripts: code generators, `sanitize_tests.py`, `fuzz.py`. Typed and linted like the rest of the code |
@@ -155,6 +158,29 @@ uv run python tools/fuzz.py run --seconds 300
 If the fuzzer finds a crash, add the input as a regression test in
 `tests/test_tokenizer.py` before fixing it.
 
+### C ports of Python code
+
+Some hot CSSOM code exists twice. The Python version is the reference, and
+the C version must give exactly the same results:
+
+| Python reference | C version |
+|---|---|
+| `TokenWriter` and `python_write_values()` in `cssom/serializer.py` | `write_values()` in `csrc/writer.c` |
+| `declaration_lines()` in `cssom/serializer.py` | `write_declarations()` in `csrc/writer.c` |
+| `python_find_urls()` in `cssom/urls.py` | `find_urls()` in `csrc/urls.c` |
+
+- Change both together. `tests/test_writer.py` compares them on random input
+  and must pass, also with `HYPOTHESIS_PROFILE=thorough`. When a comparison
+  fails, check which side is wrong: the Python version has had bugs too.
+- The C versions return `NotImplemented` for rare cases that they leave to
+  Python, for example a comment dropped from a selector, where deciding on a
+  separator needs the tokenizer.
+- Properties created by `build_properties()` are not tracked by the garbage
+  collector. That is only safe while a `Property` cannot be part of a
+  reference cycle: `Property.parent` is a weak reference, and nothing else a
+  property refers to refers back to it. Keep it that way, or track them
+  again.
+
 ## Tests
 
 - Use pytest with plain `assert`s. Use `pytest.mark.parametrize` for tables
@@ -193,6 +219,13 @@ If the fuzzer finds a crash, add the input as a regression test in
   differences of 20-30% in either direction have come from noise alone.
   Use more `--rounds` and `--repeat` for files that parse in under a
   millisecond.
+- `bench_parse.py run --suite cssom` measures the object model (parse, read
+  everything, rewrite URLs, serialize) against css_parser.
+- Garbage collection is a large part of the cost of creating many Python
+  objects, as every collection walks the tracked objects. In hot paths,
+  avoid allocating container objects you do not keep. Note that
+  `cast(list[X], y)` builds the type at run time: quote it, as
+  `cast('list[X]', y)`.
 - `perf stat -e instructions` counts are a steadier signal than time.
   `perf record -g` with `python -X perf` attributes time to C and Python
   frames.

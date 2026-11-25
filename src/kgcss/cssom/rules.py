@@ -2,7 +2,7 @@
 
 """Rule classes of the CSS object model."""
 
-from collections.abc import Callable, Iterable, Iterator, MutableSequence
+from collections.abc import Callable, Iterable, Iterator, MutableSequence, Sequence
 from enum import Enum, unique
 from typing import TYPE_CHECKING, ClassVar, Self, final, overload
 
@@ -111,6 +111,10 @@ class Rule:
         """The rules nested directly in this rule, or None if it cannot contain rules."""
         return None
 
+    def _children(self) -> Sequence[Rule] | None:
+        """Like child_rules(), for walking the rules: it need not create a RuleList."""
+        return self.child_rules()
+
     @property
     def css_text(self) -> str:
         """This rule serialized in the pretty format. Assigning reparses: the text must be exactly one
@@ -168,7 +172,7 @@ def set_sheet(rule: Rule, sheet: Stylesheet | None) -> None:
         r.parent_style_sheet = sheet
         if isinstance(r, GroupingRule):
             stack.extend(r.rules)
-        elif isinstance(r, LazyBlockRule) and r._rules is not None:
+        elif isinstance(r, LazyBlockRule) and r._rules:
             stack.extend(r._rules)
 
 
@@ -490,8 +494,11 @@ class LazyBlockRule(Rule):
         super().__init__()
         # The syntax node whose {} block holds this rule's contents
         self._block_owner: QualifiedRule | AtRule | None = None
-        self._declaration_items: list[Declaration | Token] = []
-        self._rules: RuleList | None = None
+        # The parsed declarations and comments, until style is built from them
+        self._declaration_items: Sequence[Declaration | Token] = ()
+        # None until the block is parsed. Then the nested rules, or an empty tuple if there are none:
+        # most blocks have none, and not creating a RuleList for them saves time and memory.
+        self._rules: RuleList | tuple[()] | None = None
         self._style: DeclarationBlock | None = None
 
     @property
@@ -500,41 +507,67 @@ class LazyBlockRule(Rule):
         style = self._style
         if style is not None:
             return style
-        self._materialize()
         if self._state is None:
+            self._load()
             self._style = style = DeclarationBlock(parent_rule=self)
             return style
-        with self._state.lock:
+        with self._state.lock:  # one lock for both steps, as this is hot
+            self._load_locked()
             if self._style is None:
                 self._style = block_from_nodes(self._declaration_items, self)
+                self._declaration_items = ()
             return self._style
 
     @style.setter
     def style(self, value: str | DeclarationBlock) -> None:
-        self._materialize()
+        self._load()
         self._style = adopt_block(self, value)
         self._changed()
 
-    def _materialize(self) -> RuleList:
+    def _load(self) -> RuleList | tuple[()]:
+        """Parse the block, if not done yet. Returns the nested rules, an empty tuple if there are none."""
         rules = self._rules
         if rules is not None:
             return rules
-        owner = self._block_owner
-        block = None if owner is None else owner.block
-        if block is None or self._state is None:
-            self._rules = rules = RuleList(owner=self)
-            return rules
+        if self._state is None:
+            return self._load_locked()
         with self._state.lock:
-            if self._rules is None:
+            return self._load_locked()
+
+    def _load_locked(self) -> RuleList | tuple[()]:
+        """_load(), with the sheet lock held."""
+        rules = self._rules
+        if rules is None:
+            owner = self._block_owner
+            block = None if owner is None else owner.block
+            if block is None or self._state is None:
+                rules = ()
+            else:
                 items, children = _build.build_block(self, block, self._state)
                 self._declaration_items = items
-                self._rules = RuleList(children, self)
+                rules = RuleList(children, self) if children else ()
+            self._rules = rules
+        return rules
+
+    def _materialize(self) -> RuleList:
+        """The nested rules as a RuleList, parsing the block if not done yet."""
+        rules = self._rules
+        if type(rules) is RuleList:
+            return rules
+        self._load()
+        if self._state is None:
+            if not isinstance(self._rules, RuleList):
+                self._rules = RuleList(owner=self)
+            return self._rules
+        with self._state.lock:
+            if not isinstance(self._rules, RuleList):
+                self._rules = RuleList(owner=self)
             return self._rules
 
     def _adopt_contents(self) -> None:
         if self._style is not None:
             self._style.parent_rule = self
-        if self._rules is not None:
+        if isinstance(self._rules, RuleList):
             self._rules._owner = self
             for r in self._rules:
                 r.parent_rule = self
@@ -559,11 +592,11 @@ class StyleRule(LazyBlockRule, RuleContainer):
         and comments kept. Assigning checks the text, raising CSSSyntaxError if it is not valid."""
         text = self._selector_text
         if text is None:
-            from kgcss.cssom.serializer import normalize_selector
+            from kgcss.cssom.serializer import normalize_prelude
 
             owner = self._block_owner
             assert isinstance(owner, QualifiedRule)
-            self._selector_text = text = normalize_selector(owner.prelude.text)
+            self._selector_text = text = normalize_prelude(owner.prelude)
         return text
 
     @selector_text.setter
@@ -602,6 +635,9 @@ class StyleRule(LazyBlockRule, RuleContainer):
 
     def child_rules(self) -> RuleList:
         return self.rules
+
+    def _children(self) -> Sequence[Rule]:
+        return self._load()
 
     def _adopt_contents(self) -> None:
         super()._adopt_contents()
@@ -743,7 +779,7 @@ class NestedDeclarationsRule(Rule):
 
     def __init__(self) -> None:
         super().__init__()
-        self._declaration_items: list[Declaration | Token] = []
+        self._declaration_items: Sequence[Declaration | Token] = ()
         self._style: DeclarationBlock | None = None
 
     @property
@@ -758,6 +794,7 @@ class NestedDeclarationsRule(Rule):
         with self._state.lock:
             if self._style is None:
                 self._style = block_from_nodes(self._declaration_items, self)
+                self._declaration_items = ()
             return self._style
 
     @style.setter
@@ -918,6 +955,9 @@ class PageRule(LazyBlockRule, RuleContainer):
 
     def child_rules(self) -> RuleList:
         return self.rules
+
+    def _children(self) -> Sequence[Rule]:
+        return self._load()
 
     def _repr_detail(self) -> str:
         return f' {self.selector_text!r}' if self.selector_text else ''

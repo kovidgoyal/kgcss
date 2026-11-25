@@ -2,7 +2,7 @@
 
 """Building CSSOM objects from the generic syntax tree (plan 01)."""
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from enum import Enum, auto
 from typing import TYPE_CHECKING, cast
 
@@ -137,7 +137,9 @@ class Builder:
                     pending = NestedDeclarationsRule()
                     self.init(pending, node, parent)
                     pending._source = Source(self.stream, node.pos, node.end)
+                    pending._declaration_items = []
                     rules.append(pending)
+                assert isinstance(pending._declaration_items, list)
                 pending._declaration_items.append(node)
                 assert isinstance(pending._source, Source)
                 pending._source.end = node.end
@@ -259,9 +261,8 @@ class Builder:
         self.init(rule, node, None)
         return rule
 
-    def block_contents(self, owner: LazyBlockRule, block: Block) -> tuple[list[Declaration | Token], list[Rule]]:
-        """Split the contents of a lazily parsed block into its declarations and its rules."""
-        nodes = parse_block_contents(block)
+    def block_contents(self, owner: LazyBlockRule, nodes: NodeList) -> tuple[list[Declaration | Token], list[Rule]]:
+        """Split the parsed contents of a lazily parsed block into its declarations and its rules."""
         self.report_block_errors(nodes)
         items: list[Declaration | Token] = []
         if isinstance(owner, StyleRule):
@@ -272,7 +273,7 @@ class Builder:
                 if type(n) is not Declaration and type(n) is not Token:
                     first_rule = i
                     break
-            items = cast(list[Declaration | Token], all_nodes[:first_rule])
+            items = cast('list[Declaration | Token]', all_nodes[:first_rule])
             rest = all_nodes[first_rule:]
             return items, self.build_rules(rest, owner, Context.NESTED)
         rules: list[Rule] = []
@@ -294,9 +295,16 @@ class Builder:
         return items, rules
 
 
-def build_block(owner: LazyBlockRule, block: Block, state: SheetState) -> tuple[list[Declaration | Token], list[Rule]]:
+def build_block(
+    owner: LazyBlockRule, block: Block, state: SheetState
+) -> tuple[Sequence[Declaration | Token], Sequence[Rule]]:
     """Parse the block of a rule whose contents are materialized lazily."""
-    return Builder(state, block.stream, owner.parent_style_sheet).block_contents(owner, block)
+    nodes = parse_block_contents(block)
+    if not nodes.errors and not nodes.has_rules:
+        # Hot: most blocks only have declarations and comments. The node list is used as it is,
+        # which saves allocating objects the garbage collector has to track.
+        return cast('Sequence[Declaration | Token]', nodes), ()
+    return Builder(state, block.stream, owner.parent_style_sheet).block_contents(owner, nodes)
 
 
 def build_top_level(nodes: NodeList, sheet: Stylesheet) -> list[Rule]:

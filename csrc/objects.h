@@ -40,6 +40,40 @@ typedef struct {
     PyObject *name; /* Function only: the unescaped name, NULL for Block */
 } kg_Group;
 
+typedef struct {
+    PyObject_VAR_HEAD
+    kg_TokenStream *stream;
+    uint32_t pos, end; /* source range covered by this list */
+    uint32_t items[];  /* token index of each top level item, Py_SIZE() of them */
+} kg_ComponentValueList;
+
+/* Syntax tree nodes, see syntax.c */
+typedef struct {
+    PyObject_HEAD
+    kg_TokenStream *stream;
+    PyObject *name;          /* AtRule and Declaration, NULL for QualifiedRule */
+    uint32_t pos, end;       /* source range of the whole node */
+    uint32_t first, last;    /* token range of the prelude (rules) or value (declarations) */
+    uint32_t text_pos, text_end; /* source range of the prelude or value */
+    uint32_t block;          /* token index of the {} block, or KG_NO_BLOCK */
+    char important;
+} kg_Node;
+
+typedef struct {
+    PyObject_HEAD
+    kg_TokenStream *stream;
+    PyObject *items;    /* list, never mutated after creation */
+    PyObject *errors;   /* tuple of ParseError */
+    PyObject *encoding; /* str or None */
+} kg_NodeList;
+
+/* The fields of kgcss.cssom.declarations.Property, see properties.c */
+typedef struct {
+    PyObject_HEAD
+    PyObject *name, *value, *priority, *literal_priority, *node, *parent, *parsed;
+    char value_from_node, dirty;
+} kg_PropertyData;
+
 /* Index of the token after the component value starting at idx */
 static inline uint32_t
 kg_next_sibling(const kg_TokenStream *ts, uint32_t idx) {
@@ -87,6 +121,19 @@ PyObject *kg_parse_one_component_value(PyObject *module, PyObject *const *args, 
 PyObject *kg_cvl_new(kg_TokenStream *ts, uint32_t first, uint32_t last, uint32_t pos, uint32_t end);
 PyObject *kg_make_item(kg_TokenStream *ts, uint32_t idx);
 PyObject *kg_group_new(kg_TokenStream *ts, uint32_t idx);
+
+/* properties.c */
+int kg_properties_init(PyObject *module);
+int kg_properties_traverse(PyObject *module, visitproc visit, void *arg);
+void kg_properties_clear(PyObject *module);
+PyObject *kg_build_properties(PyObject *module, PyObject *const *args, Py_ssize_t nargs);
+
+/* urls.c */
+PyObject *kg_find_urls(PyObject *module, PyObject *const *args, Py_ssize_t nargs);
+
+/* writer.c */
+PyObject *kg_write_values(PyObject *module, PyObject *const *args, Py_ssize_t nargs);
+PyObject *kg_write_declarations(PyObject *module, PyObject *const *args, Py_ssize_t nargs);
 
 /* syntax.c */
 int kg_syntax_init(PyObject *module);

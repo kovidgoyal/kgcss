@@ -3,13 +3,23 @@
 """Declaration blocks and properties (requirements §4)."""
 
 from collections.abc import Iterable, Iterator, MutableSequence
-from typing import TYPE_CHECKING, overload
+from typing import TYPE_CHECKING, cast, overload
+from weakref import ReferenceType, ref
 
+from kgcss._kgcss import PropertyData, build_properties
 from kgcss.cssom.exceptions import InvalidValueError
 from kgcss.cssom.state import ErrorHandler, SheetState
 from kgcss.cssom.values import PropertyValue, parse_value, protected_end, value_from_components
 from kgcss.escaping import serialize_identifier
-from kgcss.syntax import Block, Declaration, Function, Token, parse_block_contents, parse_one_declaration
+from kgcss.syntax import (
+    Block,
+    Declaration,
+    Function,
+    NodeList,
+    Token,
+    parse_block_contents,
+    parse_one_declaration,
+)
 from kgcss.tokenizer import ParseError, TokenType, tokenize
 
 if TYPE_CHECKING:
@@ -69,24 +79,15 @@ def check_value(name: str, value: str, validate: bool = False) -> str:
     return decl.value.text
 
 
-class Property:
+class Property(PropertyData):
     """A declaration: a name, a value and a priority.
 
     Properties are hashable and compare by identity. The value is text; it
-    is checked when set, see check_value().
+    is checked when set, see check_value(). The fields are in the C base
+    class, so that the parser can create properties quickly.
     """
 
-    __slots__ = (
-        '_dirty',
-        '_literal_priority',
-        '_name',
-        '_node',
-        '_parsed',
-        '_priority',
-        '_value',
-        '_value_from_node',
-        'parent',
-    )
+    __slots__ = ()
 
     def __init__(self, name: str, value: str, priority: str = '', *, validate: bool = False) -> None:
         self._name = normalize_name(name)
@@ -99,28 +100,23 @@ class Property:
         self._parsed: PropertyValue | None = None
         # True once changed, so its source text is stale
         self._dirty = False
-        self.parent: DeclarationBlock | None = None
+        self._parent: ReferenceType[DeclarationBlock] | None = None
 
-    @classmethod
-    def _from_node(cls, node: Declaration) -> Property:
-        """A property for a parsed declaration. The value is read from the node on first access."""
-        p = cls.__new__(cls)
-        name = node.name  # never empty for parsed declarations
-        p._name = name if name.startswith('--') or not name.isascii() else name.lower()
-        p._value = None
-        p._priority = 'important' if node.important else ''
-        p._literal_priority = None
-        p._node = node
-        p._value_from_node = True
-        p._parsed = None
-        p._dirty = False
-        p.parent = None
-        return p
+    @property
+    def parent(self) -> DeclarationBlock | None:
+        """The block this property is in. A weak reference, so properties are never part of a
+        reference cycle, which lets the parser exempt them from garbage collection."""
+        ref = self._parent
+        return None if ref is None else ref()
+
+    @parent.setter
+    def parent(self, block: DeclarationBlock | None) -> None:
+        self._parent = None if block is None else ref(block)
 
     def _changed(self) -> None:
         self._dirty = True
-        if self.parent is not None:
-            self.parent._changed()
+        if (parent := self.parent) is not None:
+            parent._changed()
 
     @property
     def name(self) -> str:
@@ -231,7 +227,7 @@ class Property:
         """An unattached copy of this property."""
         p = Property.__new__(Property)
         p._name, p._value, p._priority = self._name, self.value, self._priority
-        p._literal_priority, p._node, p.parent = self._literal_priority, self._node, None
+        p._literal_priority, p._node, p._parent = self._literal_priority, self._node, None
         p._value_from_node, p._parsed, p._dirty = self._value_from_node, self._parsed, self._dirty
         return p
 
@@ -371,14 +367,26 @@ class DeclarationBlock:
     comment in source order.
     """
 
-    __slots__ = ('_effective', '_items', 'errors', 'parent_rule')
+    __slots__ = ('__weakref__', '_effective', '_errors', '_items', 'parent_rule')
 
     def __init__(self, items: Iterable[Property | Comment] = (), parent_rule: Rule | None = None) -> None:
         self.parent_rule = parent_rule
         self._effective: dict[str, Property] | None = None
-        # Problems found when the block was parsed from text with parse_style()
-        self.errors: list[ParseError] = []
+        # Created on first use, to save allocating it for the many blocks that never need it
+        self._errors: list[ParseError] | None = None
         self._items = DeclarationList(self, items)
+
+    @property
+    def errors(self) -> list[ParseError]:
+        """Problems found when the block was parsed from text, with parse_style() or by assigning text."""
+        errors = self._errors
+        if errors is None:
+            self._errors = errors = []
+        return errors
+
+    @errors.setter
+    def errors(self, errors: list[ParseError]) -> None:
+        self._errors = errors
 
     @property
     def items(self) -> DeclarationList:
@@ -535,23 +543,33 @@ class DeclarationBlock:
         return f'<DeclarationBlock {text}>'
 
 
-def block_from_nodes(nodes: Iterable[Declaration | Token], parent_rule: Rule | None) -> DeclarationBlock:
+def block_from_nodes(nodes: NodeList | Iterable[Declaration | Token], parent_rule: Rule | None) -> DeclarationBlock:
     """A declaration block for parsed declarations and comments."""
     from kgcss.cssom.rules import Comment
 
-    block = DeclarationBlock(parent_rule=parent_rule)
-    items = block._items._items
-    from_node = Property._from_node
-    for node in nodes:
-        if isinstance(node, Declaration):
-            prop = from_node(node)
-            prop.parent = block
-            items.append(prop)
-        else:
-            comment = Comment(str(node.value))
-            comment._source = node
-            comment.parent_rule = parent_rule
-            items.append(comment)
+    # Hot: runs for every block that is read, so objects are built directly rather than through
+    # their constructors. Property values are read from their nodes on first access.
+    block = DeclarationBlock.__new__(DeclarationBlock)
+    block.parent_rule = parent_rule
+    block._effective = None
+    block._errors = None
+    full = DeclarationList.__new__(DeclarationList)
+    full._block = block
+    block._items = full
+    # The properties are created in C (csrc/properties.c), which also exempts them from garbage
+    # collection: they cannot be part of a reference cycle, see Property.parent.
+    if not isinstance(nodes, NodeList | list):
+        nodes = cast('list[Declaration | Token]', list(nodes))
+    built, has_comments = build_properties(nodes, Property, ref(block))
+    items = cast('list[Property | Comment]', built)
+    if has_comments:
+        for i, node in enumerate(built):
+            if type(node) is Token:
+                comment = Comment(str(node.value))
+                comment._source = node
+                comment.parent_rule = parent_rule
+                items[i] = comment
+    full._items = items
     return block
 
 

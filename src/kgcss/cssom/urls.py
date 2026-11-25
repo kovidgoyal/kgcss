@@ -13,6 +13,7 @@ from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from typing import Literal
 
+from kgcss._kgcss import find_urls as c_find_urls
 from kgcss.cssom.declarations import DeclarationBlock, Property
 from kgcss.cssom.rules import (
     GroupingRule,
@@ -54,7 +55,15 @@ def _lower(name: str) -> str:
 
 def find_urls(values: ComponentValueList, *, top_level_rules: bool = False) -> list[URLSpan]:
     """The URLs in component values, in order. With top_level_rules the values are a whole stylesheet,
-    and the strings of @import rules count as URLs while @namespace rules are skipped."""
+    and the strings of @import rules count as URLs while @namespace rules are skipped.
+
+    This uses the C version (csrc/urls.c) of python_find_urls(), the reference implementation.
+    """
+    return [URLSpan(*span) for span in c_find_urls(values, top_level_rules)]
+
+
+def python_find_urls(values: ComponentValueList, *, top_level_rules: bool = False) -> list[URLSpan]:
+    """find_urls() in Python, the reference for the C version."""
     spans: list[URLSpan] = []
     # Each level: an iterator over items, and the lowercased function name if the level is a function
     stack: list[tuple[Iterator[Token | Block | Function], str]] = [(iter(values), '')]
@@ -157,27 +166,32 @@ def _properties(block: DeclarationBlock) -> Iterator[Property]:
 
 
 def _blocks_and_rules(obj: Stylesheet | Rule | DeclarationBlock) -> Iterator[Rule | DeclarationBlock]:
-    """The rules in obj, at every depth, and their declaration blocks, in order."""
+    """The rules in obj, at every depth, and their declaration blocks, in order, leaving out rules
+    that certainly have no URL, without parsing their blocks."""
     if isinstance(obj, DeclarationBlock):
         yield obj
         return
-    rules: Iterable[Rule] = obj.iter_rules() if isinstance(obj, Stylesheet) else _rule_and_descendants(obj)
-    for rule in rules:
+    stack: list[Iterator[Rule]] = [iter(obj.rules if isinstance(obj, Stylesheet) else (obj,))]
+    while stack:
+        rule = next(stack[-1], None)
+        if rule is None:
+            stack.pop()
+            continue
+        if _has_no_urls(rule):
+            continue
         yield rule
         if isinstance(rule, LazyBlockRule | NestedDeclarationsRule):
             yield rule.style
-
-
-def _rule_and_descendants(rule: Rule) -> Iterator[Rule]:
-    stack: list[Iterator[Rule]] = [iter((rule,))]
-    while stack:
-        r = next(stack[-1], None)
-        if r is None:
-            stack.pop()
-            continue
-        yield r
-        if (children := r.child_rules()) is not None:
+        if children := rule._children():
             stack.append(iter(children))
+
+
+def _has_no_urls(rule: Rule) -> bool:
+    """Whether a rule and the rules in it certainly have no URLs: it is unchanged and its source text,
+    which covers its block and the rules in it, has nothing like a URL. Most rules of a sheet are
+    like that, and skipping them saves parsing their blocks."""
+    source = rule._source
+    return not rule._dirty and source is not None and not might_have_urls(source.source_text)
 
 
 def _rule_texts(rule: Rule) -> list[str]:

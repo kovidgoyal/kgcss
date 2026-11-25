@@ -4,8 +4,12 @@
 # the method tables, types and constants in csrc/module.c and csrc/types.c.
 
 from collections.abc import Iterator
-from typing import Final, Literal, final
+from types import NotImplementedType
+from typing import Any, Final, Literal, TypeVar, final
+from weakref import ReferenceType
 
+from kgcss.cssom.declarations import DeclarationBlock
+from kgcss.cssom.values import PropertyValue
 from kgcss.enums import TokenType
 
 GIL_DISABLED_BUILD: Final[int]
@@ -19,9 +23,30 @@ def parse_component_value_list(source: str, /, *, comments: bool = True) -> Comp
 def parse_stylesheet(source: str, /, *, comments: bool = True, encoding: str | None = None) -> NodeList: ...
 def parse_rule_list(source: str | Block, /, *, comments: bool = True) -> NodeList: ...
 def parse_block_contents(source: str | Block, /, *, comments: bool = True) -> NodeList: ...
+def build_properties(
+    nodes: NodeList | list[Declaration | Token], cls: type[_P], parent: ReferenceType[Any] | None, /
+) -> tuple[list[_P | Declaration | Token], bool]: ...
+def find_urls(
+    values: ComponentValueList, top_level_rules: bool, /
+) -> list[tuple[int, int, str, Literal['url', 'string']]]: ...
+def write_declarations(items: list[Any], flags: int, indent: str, /) -> list[str] | NotImplementedType: ...
+def write_values(values: ComponentValueList, flags: int, /) -> str | NotImplementedType | None: ...
 def parse_one_rule(source: str, /, *, comments: bool = True) -> AtRule | QualifiedRule | ParseError: ...
 def parse_one_declaration(source: str, /, *, comments: bool = True) -> Declaration | ParseError: ...
 def parse_one_component_value(source: str, /, *, comments: bool = True) -> Token | Block | Function | ParseError: ...
+
+_P = TypeVar('_P', bound=PropertyData)
+
+class PropertyData:
+    _name: str
+    _value: str | None
+    _priority: str
+    _literal_priority: str | None
+    _node: Declaration | None
+    _parent: ReferenceType[DeclarationBlock] | None
+    _parsed: PropertyValue | None
+    _value_from_node: bool
+    _dirty: bool
 
 @final
 class ParseError:
@@ -187,6 +212,8 @@ class NodeList:
     def errors(self) -> tuple[ParseError, ...]: ...
     @property
     def encoding(self) -> str | None: ...
+    @property
+    def has_rules(self) -> bool: ...
     def __len__(self) -> int: ...
     def __getitem__(self, index: int, /) -> AtRule | QualifiedRule | Declaration | Token: ...
     def __iter__(self) -> Iterator[AtRule | QualifiedRule | Declaration | Token]: ...

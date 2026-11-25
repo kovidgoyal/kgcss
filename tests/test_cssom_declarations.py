@@ -2,6 +2,9 @@
 
 """CSSOM milestone 2: declaration blocks and properties."""
 
+import gc
+import weakref
+
 import pytest
 
 from kgcss import (
@@ -20,6 +23,7 @@ from kgcss import (
     parse_stylesheet,
     serialize,
 )
+from kgcss.syntax import parse_block_contents
 
 PRESERVE = SerializeOptions(style='preserve')
 
@@ -333,3 +337,68 @@ def test_modification_and_preserve_serialization() -> None:
     assert prop is not None
     prop.value = 'j'
     assert serialize(g, PRESERVE) == 'g {\n  h: j;\n}'
+
+
+def test_parsed_properties_are_not_gc_tracked() -> None:
+    # Properties cannot be in a reference cycle (parent is weak), so parsed ones are exempt from
+    # garbage collection, which matters for the speed of reading large sheets
+    sheet = parse_stylesheet('a { b: c; /* x */ d: e !important }')
+    rule = sheet.rules[0]
+    assert isinstance(rule, StyleRule)
+    props = [p for p in rule.style.items if isinstance(p, Property)]
+    assert [(p.name, p.value, p.priority) for p in props] == [('b', 'c', ''), ('d', 'e', 'important')]
+    assert not any(gc.is_tracked(p) for p in props)
+    assert all(p.parent is rule.style for p in props)
+    # Properties created directly are ordinary objects
+    assert gc.is_tracked(Property('x', 'y'))
+
+
+def test_dropped_sheets_are_freed() -> None:
+    def make() -> weakref.ref[DeclarationBlock]:
+        sheet = parse_stylesheet('a { b: c } @media print { d { e: f } }')
+        blocks = [r.style for r in sheet.iter_rules() if isinstance(r, StyleRule)]
+        for block in blocks:
+            for prop in block.items:
+                _ = prop.parsed_value if isinstance(prop, Property) else None
+        return weakref.ref(blocks[-1])
+
+    ref = make()
+    gc.collect()
+    assert ref() is None
+
+
+def test_property_outliving_its_block() -> None:
+    def make() -> Property:
+        block = parse_style('a: b')
+        prop = block.get_property('a')
+        assert prop is not None
+        assert prop.parent is block
+        return prop
+
+    prop = make()
+    gc.collect()
+    assert prop.parent is None
+    assert prop.value == 'b'
+    prop.value = 'c'  # changing it is fine, with nothing to notify
+    assert prop.css_text == 'a: c'
+
+
+def test_build_properties_checks_its_arguments() -> None:
+    from kgcss._kgcss import build_properties
+
+    class Extra(Property):
+        __slots__ = ('x',)
+
+    nodes = parse_block_contents('a: b')
+    with pytest.raises(TypeError):
+        build_properties(nodes, Extra, None)
+    with pytest.raises(TypeError):
+        build_properties(nodes, str, None)  # type: ignore[type-var]
+    with pytest.raises(TypeError):
+        build_properties((), Property, None)  # type: ignore[arg-type]
+    built, others = build_properties(nodes, Property, None)
+    assert not others
+    prop = built[0]
+    assert isinstance(prop, Property)
+    assert prop.name == 'a'
+    assert prop.parent is None

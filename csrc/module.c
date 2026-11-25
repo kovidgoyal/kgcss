@@ -34,6 +34,21 @@ static PyMethodDef module_methods[] = {
      "parse_one_component_value(source: str, /, *, comments: bool = True) -> Token | Block | Function | ParseError\n\n"
      "Parse source as exactly one component value, ignoring surrounding whitespace and comments. "
      "Returns a ParseError of kind 'empty' or 'extra-input' if there is not exactly one."},
+    {"build_properties", (PyCFunction)(void (*)(void))kg_build_properties, METH_FASTCALL,
+     "build_properties(nodes: NodeList | list, cls: type[PropertyData], parent: weakref | None, /) -> tuple[list, bool]\n\n"
+     "Create a cls instance for every Declaration in nodes, other items are kept as they are. Returns the list and "
+     "whether it has other items. See block_from_nodes() in kgcss.cssom.declarations."},
+    {"find_urls", (PyCFunction)(void (*)(void))kg_find_urls, METH_FASTCALL,
+     "find_urls(values: ComponentValueList, top_level_rules: bool, /) -> list[tuple[int, int, str, str]]\n\n"
+     "The C version of find_urls() in kgcss.cssom.urls: (start, end, url, kind) for every URL."},
+    {"write_declarations", (PyCFunction)(void (*)(void))kg_write_declarations, METH_FASTCALL,
+     "write_declarations(items: list[Property | Comment], flags: int, indent: str, /) -> list[str] | NotImplemented\n\n"
+     "The lines of declaration_lines() in kgcss.cssom.serializer, each starting with indent, for the pretty and "
+     "normalized format. NotImplemented for anything the Python version must handle."},
+    {"write_values", (PyCFunction)(void (*)(void))kg_write_values, METH_FASTCALL,
+     "write_values(values: ComponentValueList, flags: int, /) -> str | None | NotImplemented\n\n"
+     "The C version of kgcss.cssom.serializer.TokenWriter, see write_values() there. Returns None for "
+     "values that cannot be written attribute-safe, NotImplemented when the Python version must be used."},
     {"parse_stylesheet", (PyCFunction)(void (*)(void))kg_parse_stylesheet, METH_FASTCALL | METH_KEYWORDS,
      "parse_stylesheet(source: str, /, *, comments: bool = True, encoding: str | None = None) -> NodeList\n\n"
      "Parse a stylesheet into at-rules and qualified rules (CSS Syntax 'parse a stylesheet'). CDO/CDC are ignored between rules. With comments=True, top level comments are included as COMMENT tokens. encoding is recorded as NodeList.encoding; use kgcss.parse_stylesheet() to parse bytes."},
@@ -57,9 +72,12 @@ module_exec(PyObject *module) {
     kg_module_state *state = kg_get_module_state(module);
     state->empty_string = PyUnicode_FromStringAndSize("", 0);
     if (state->empty_string == NULL) return -1;
+    state->str_important = PyUnicode_InternFromString("important");
+    if (state->str_important == NULL) return -1;
     if (PyModule_AddIntConstant(module, "GIL_DISABLED_BUILD", KG_GIL_DISABLED_BUILD) != 0) return -1;
     if (kg_types_init(module) != 0) return -1;
     if (kg_values_init(module) != 0) return -1;
+    if (kg_properties_init(module) != 0) return -1;
     return kg_syntax_init(module);
 }
 
@@ -67,6 +85,8 @@ static int
 module_traverse(PyObject *module, visitproc visit, void *arg) {
     kg_module_state *state = kg_get_module_state(module);
     Py_VISIT(state->empty_string);
+    Py_VISIT(state->str_important);
+    if (kg_properties_traverse(module, visit, arg) != 0) return -1;
     if (kg_types_traverse(module, visit, arg) != 0) return -1;
     if (kg_values_traverse(module, visit, arg) != 0) return -1;
     return kg_syntax_traverse(module, visit, arg);
@@ -76,6 +96,8 @@ static int
 module_clear(PyObject *module) {
     kg_module_state *state = kg_get_module_state(module);
     Py_CLEAR(state->empty_string);
+    Py_CLEAR(state->str_important);
+    kg_properties_clear(module);
     kg_types_clear(module);
     kg_values_clear(module);
     kg_syntax_clear(module);

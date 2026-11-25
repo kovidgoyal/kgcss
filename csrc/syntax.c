@@ -30,25 +30,6 @@
 #define KG_NO_BLOCK UINT32_MAX
 
 typedef struct {
-    PyObject_HEAD
-    kg_TokenStream *stream;
-    PyObject *name;          /* AtRule and Declaration, NULL for QualifiedRule */
-    uint32_t pos, end;       /* source range of the whole node */
-    uint32_t first, last;    /* token range of the prelude (rules) or value (declarations) */
-    uint32_t text_pos, text_end; /* source range of the prelude or value */
-    uint32_t block;          /* token index of the {} block, or KG_NO_BLOCK */
-    char important;
-} kg_Node;
-
-typedef struct {
-    PyObject_HEAD
-    kg_TokenStream *stream;
-    PyObject *items;    /* list, never mutated after creation */
-    PyObject *errors;   /* tuple of ParseError */
-    PyObject *encoding; /* str or None */
-} kg_NodeList;
-
-typedef struct {
     uint32_t offset, kind, seq;
 } sortable_error;
 
@@ -772,6 +753,23 @@ NodeList_repr(PyObject *o) {
                                 PyTuple_GET_SIZE(self->errors));
 }
 
+static PyObject *
+NodeList_has_rules(PyObject *o, void *closure) {
+    KG_UNUSED(closure);
+    kg_NodeList *self = (kg_NodeList *)o;
+    kg_module_state *state = kg_state_for(o);
+    for (Py_ssize_t i = 0; i < PyList_GET_SIZE(self->items); i++) {
+        PyTypeObject *t = Py_TYPE(PyList_GET_ITEM(self->items, i));
+        if (t == state->AtRule_type || t == state->QualifiedRule_type) Py_RETURN_TRUE;
+    }
+    Py_RETURN_FALSE;
+}
+
+static PyGetSetDef NodeList_getset[] = {
+    {"has_rules", NodeList_has_rules, NULL, "True if any of the nodes is an AtRule or a QualifiedRule", NULL},
+    {NULL, NULL, NULL, NULL, NULL}
+};
+
 static PyMemberDef NodeList_members[] = {
     {"stream", Py_T_OBJECT_EX, offsetof(kg_NodeList, stream), Py_READONLY, "The TokenStream that was parsed"},
     {"errors", Py_T_OBJECT_EX, offsetof(kg_NodeList, errors), Py_READONLY,
@@ -785,6 +783,7 @@ static PyType_Slot NodeList_slots[] = {
     {Py_tp_dealloc, NodeList_dealloc},
     {Py_tp_repr, NodeList_repr},
     {Py_tp_members, NodeList_members},
+    {Py_tp_getset, NodeList_getset},
     {Py_sq_length, NodeList_len},
     {Py_sq_item, NodeList_item},
     {Py_tp_doc, (void *)"An immutable sequence of parsed nodes (AtRule, QualifiedRule, Declaration, and COMMENT "

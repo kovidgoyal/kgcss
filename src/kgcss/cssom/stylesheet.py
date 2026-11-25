@@ -171,8 +171,9 @@ class Stylesheet:
                 continue
             if not types or rule.type in types:
                 yield rule
-            if recursive and (children := rule.child_rules()) is not None:
-                stack.append(iter(children))
+            if recursive and (children := rule._children()) is not None:
+                if children:
+                    stack.append(iter(children))
             elif follow_imports and isinstance(rule, ImportRule) and (imported := rule.style_sheet) is not None:
                 stack.append(iter(imported.rules))
 

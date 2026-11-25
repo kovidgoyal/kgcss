@@ -273,3 +273,30 @@ def test_cssom_import_fetched_once() -> None:
         assert all(r == results[0] for r in results)
         assert sorted(calls) == sorted(f'http://x/s{i}.css' for i in range(50))
     check_gil()
+
+
+def test_cssom_serialize_while_modifying() -> None:
+    # Serializing reads properties in C while other threads assign their values
+    css = ''.join(f'.r{i} {{ a: {i}px; b: url(x{i}.png); --c: {{{i}}} }}\n' for i in range(200))
+    barrier = threading.Barrier(THREADS)
+    for _ in range(3 * STRESS):
+        sheet = kgcss.parse_stylesheet(css)
+        rules = [r for r in sheet.rules if isinstance(r, kgcss.StyleRule)]
+
+        def work(idx: int, sheet: kgcss.Stylesheet = sheet, rules: list[kgcss.StyleRule] = rules) -> int:
+            barrier.wait()
+            if idx % 2:
+                for _ in range(5):
+                    text = kgcss.serialize(sheet)
+                    assert text.count(' {\n') == 200
+                return 0
+            for n, rule in enumerate(rules):
+                prop = rule.style.get_property('a')
+                assert prop is not None
+                prop.value = f'{n + idx}em  /* x */'
+            return len(rules)
+
+        run_concurrently(work)
+        text = kgcss.serialize(sheet)
+        assert 'px' not in text.replace('url(', '')
+    check_gil()

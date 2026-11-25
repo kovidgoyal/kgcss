@@ -61,6 +61,8 @@
 
 typedef struct {
     PyObject *empty_string;
+    PyObject *str_important;
+    PyTypeObject *PropertyData_type;
     PyTypeObject *TokenStream_type, *Token_type, *ParseError_type;
     PyTypeObject *Block_type, *Function_type, *ComponentValueList_type;
     PyTypeObject *AtRule_type, *QualifiedRule_type, *Declaration_type, *NodeList_type;

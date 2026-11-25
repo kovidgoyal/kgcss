@@ -5,16 +5,26 @@
 
     uv run --group bench python bench/bench_parse.py prepare
     taskset -c 0-2 uv run --group bench python bench/bench_parse.py run
+    taskset -c 0-2 uv run --group bench python bench/bench_parse.py run --suite cssom
 
 prepare downloads the corpus and calibre's tinycss (pinned, checksummed) into
 bench/.cache, builds calibre's C tokenizer, and generates the synthetic
-sheets. run measures three workloads for every library and corpus file:
+sheets. run measures, for every library and corpus file, the syntax suite:
 
     tokenize  produce all tokens (tinycss2 has no flat tokenizer, so this is
               its component value parser, which is also how its parsers work)
     parse     parse the stylesheet into rules
     full      parse, then read every declaration's name, value text and
               priority, at every nesting depth (the typical calibre workload)
+
+or the cssom suite, comparing the object models of kgcss and css_parser:
+
+    cssom-parse      parse into the object model
+    cssom-full       parse, then read every selector and every declaration's
+                     name, value and priority, at every depth
+    cssom-urls       parse, then rewrite every URL
+    cssom-serialize  serialize a parsed sheet, all of whose declarations were
+                     read, in the default (pretty) format
 
 Times are the best of several runs. The declaration counts show that each
 library did comparable work.
@@ -193,7 +203,48 @@ def kgcss_workloads() -> dict[str, Workload]:
                     stack.append(kgcss.syntax.parse_block_contents(node.block))
         return count
 
-    return {'tokenize': tokenize, 'parse': parse, 'full': full}
+    return {'tokenize': tokenize, 'parse': parse, 'full': full, **kgcss_cssom_workloads()}
+
+
+def rewrite_url(url: str) -> str:
+    return 'images/' + url
+
+
+def kgcss_cssom_workloads() -> dict[str, Workload]:
+    import kgcss
+
+    def read_all(sheet: kgcss.Stylesheet) -> int:
+        count = 0
+        for rule in sheet.iter_rules():
+            if isinstance(rule, kgcss.StyleRule):
+                _ = rule.selector_text
+            if (style := getattr(rule, 'style', None)) is not None:
+                for prop in style.items:
+                    if isinstance(prop, kgcss.Property):
+                        count += 1
+                        _ = (prop.name, prop.value, prop.priority)
+        return count
+
+    def parse(css: str) -> int:
+        return len(kgcss.parse_stylesheet(css).rules)
+
+    def full(css: str) -> int:
+        return read_all(kgcss.parse_stylesheet(css))
+
+    def urls(css: str) -> int:
+        sheet = kgcss.parse_stylesheet(css)
+        kgcss.replace_urls(sheet, rewrite_url)
+        return len(sheet.rules)
+
+    parsed: dict[str, kgcss.Stylesheet] = {}
+
+    def serialize(css: str) -> int:
+        if (sheet := parsed.get(css)) is None:
+            parsed[css] = sheet = kgcss.parse_stylesheet(css)
+            read_all(sheet)
+        return len(sheet.css_text)
+
+    return {'cssom-parse': parse, 'cssom-full': full, 'cssom-urls': urls, 'cssom-serialize': serialize}
 
 
 def import_calibre_tinycss() -> ModuleType:
@@ -268,11 +319,13 @@ def css_parser_workloads() -> dict[str, Workload]:
     def parse(css: str) -> int:
         return len(parser.parseString(css).cssRules)
 
-    def full(css: str) -> int:
+    def read_all(sheet: object, selectors: bool = False) -> int:
         count = 0
-        stack = [parser.parseString(css).cssRules]
+        stack = [sheet.cssRules]  # type: ignore[attr-defined]
         while stack:
             for rule in stack.pop():
+                if selectors and (text := getattr(rule, 'selectorText', None)) is not None:
+                    _ = text
                 if (style := getattr(rule, 'style', None)) is not None:
                     for prop in style.getProperties(all=True):
                         count += 1
@@ -281,7 +334,29 @@ def css_parser_workloads() -> dict[str, Workload]:
                     stack.append(children)
         return count
 
-    return {'tokenize': tokenize, 'parse': parse, 'full': full}
+    def full(css: str) -> int:
+        return read_all(parser.parseString(css))
+
+    def cssom_full(css: str) -> int:
+        return read_all(parser.parseString(css), selectors=True)
+
+    def urls(css: str) -> int:
+        sheet = parser.parseString(css)
+        css_parser.replaceUrls(sheet, rewrite_url, ignoreImportRules=False)
+        return len(sheet.cssRules)
+
+    parsed: dict[str, object] = {}
+
+    def serialize(css: str) -> int:
+        if (sheet := parsed.get(css)) is None:
+            parsed[css] = sheet = parser.parseString(css)
+            read_all(sheet, selectors=True)
+        return len(sheet.cssText)  # type: ignore[attr-defined]
+
+    return {
+        'tokenize': tokenize, 'parse': parse, 'full': full,
+        'cssom-parse': parse, 'cssom-full': cssom_full, 'cssom-urls': urls, 'cssom-serialize': serialize,
+    }  # fmt: skip
 
 
 LIBRARIES: dict[str, Callable[[], dict[str, Workload]]] = {
@@ -315,30 +390,39 @@ def best_time(fn: Workload, css: str, budget: float) -> tuple[float, int]:
     return min(times), result
 
 
-def run(libraries: list[str], corpus: list[str], budget: float) -> None:
+SUITES = {
+    'syntax': ('tokenize', 'parse', 'full'),
+    'cssom': ('cssom-parse', 'cssom-full', 'cssom-urls', 'cssom-serialize'),
+}
+
+
+def run(libraries: list[str], corpus: list[str], budget: float, suite: str) -> None:
     files = sorted(CORPUS.glob('*.css'))
     if not files:
         raise SystemExit('No corpus, run prepare first')
     if corpus:
         files = [f for f in files if any(c in f.name for c in corpus)]
-    workloads = {name: LIBRARIES[name]() for name in libraries}
+    names = SUITES[suite]
+    all_workloads = {name: LIBRARIES[name]() for name in libraries}
+    workloads = {name: w for name, w in all_workloads.items() if all(n in w for n in names)}
+    full = names[2] if suite == 'syntax' else names[1]
     for path in files:
         css = path.read_text(encoding='utf-8')
         mb = len(css.encode('utf-8')) / 1e6
         top = max(map(ord, css), default=0)
         kind = 'ucs1' if top < 0x100 else 'ucs2' if top < 0x10000 else 'ucs4'
         print(f'\n### {path.name}: {mb:.2f} MB, {kind}\n')
-        print('| library | tokenize ms | parse ms | full ms | full MB/s | declarations |')
-        print('|---|---:|---:|---:|---:|---:|')
+        print('| library | ' + ' | '.join(f'{n} ms' for n in names) + f' | {full} MB/s | declarations |')
+        print('|---|' + '---:|' * (len(names) + 2))
         for name, w in workloads.items():
             row = []
             decls = 0
-            for workload in ('tokenize', 'parse', 'full'):
+            for workload in names:
                 t, result = best_time(w[workload], css, budget)
                 row.append(t)
-                if workload == 'full':
+                if workload == full:
                     decls = result
-            cells = [name, *(f'{t * 1e3:.1f}' for t in row), f'{mb / row[2]:.1f}', str(decls)]
+            cells = [name, *(f'{t * 1e3:.1f}' for t in row), f'{mb / row[names.index(full)]:.1f}', str(decls)]
             print('| ' + ' | '.join(cells) + ' |')
             sys.stdout.flush()
 
@@ -350,6 +434,7 @@ def main() -> None:
     r = sub.add_parser('run', help='Run the benchmarks')
     r.add_argument('--lib', action='append', choices=list(LIBRARIES), help='Libraries to run (default: all)')
     r.add_argument('--corpus', action='append', default=[], help='Only corpus files whose name contains this')
+    r.add_argument('--suite', choices=list(SUITES), default='syntax', help='Workloads to run (default: %(default)s)')
     r.add_argument(
         '--budget', type=float, default=float(os.environ.get('BENCH_BUDGET', '2')), help='Seconds per measurement'
     )
@@ -357,7 +442,7 @@ def main() -> None:
     if args.command == 'prepare':
         prepare()
     else:
-        run(args.lib or list(LIBRARIES), args.corpus, args.budget)
+        run(args.lib or list(LIBRARIES), args.corpus, args.budget, args.suite)
 
 
 if __name__ == '__main__':

@@ -18,10 +18,12 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
+from kgcss._kgcss import write_declarations as c_write_declarations
+from kgcss._kgcss import write_values as c_write_values
 from kgcss.cssom.values import HEX_ESCAPE_AT_END
 from kgcss.decode import PYTHON_CODECS, lookup_encoding
 from kgcss.escaping import serialize_identifier, serialize_string
-from kgcss.syntax import Block, Function, Token, parse_component_value_list
+from kgcss.syntax import Block, ComponentValueList, Function, Token, parse_component_value_list
 from kgcss.tokenizer import TokenType
 
 if TYPE_CHECKING:
@@ -428,8 +430,8 @@ class TokenWriter:
                 return format_url(str(tok.value), safe)
             case TokenType.NUMBER | TokenType.PERCENTAGE | TokenType.DIMENSION if self.mode == 'value' and isolated:
                 return format_number(tok, top_level)
-            case TokenType.HASH if self.mode == 'value':
-                return shorten_color(tok)
+            case TokenType.HASH if self.mode == 'value' and (short := shorten_color(tok)) != tok.source_text:
+                return short
         text = self.verbatim_text(tok)
         if safe:
             if t in ESCAPABLE:
@@ -441,16 +443,61 @@ class TokenWriter:
         return text
 
 
+# Flags of the C version of the token writer, keep in sync with csrc/writer.c
+WRITE_NORMALIZE = 1 << 0
+WRITE_SELECTOR = 1 << 1
+WRITE_VERBATIM = 1 << 2
+WRITE_ATTRIBUTE_SAFE = 1 << 3
+WRITE_KEEP_COMMENTS = 1 << 4
+WRITE_RAW = 1 << 5
+MODE_FLAGS = {'value': 0, 'selector': WRITE_SELECTOR, 'verbatim': WRITE_VERBATIM}
+
+
 def write_values(
     values: Iterable[Token | Block | Function],
     options: SerializeOptions,
     *,
     mode: Literal['value', 'selector', 'verbatim'] = 'value',
     attribute_safe: bool = False,
+    raw: bool = False,
 ) -> str:
-    """Serialize component values, stripped of surrounding whitespace."""
+    """Serialize component values, stripped of surrounding whitespace unless raw. Raises _Unsafe
+    if attribute_safe and the values cannot be written on one line inside a double-quoted attribute.
+
+    A ComponentValueList is written by the C version of TokenWriter, which only leaves the rare
+    cases that need tokenizing to the Python version.
+    """
+    if type(values) is ComponentValueList:
+        flags = MODE_FLAGS[mode]
+        if options.normalize:
+            flags |= WRITE_NORMALIZE
+        if options.keep_comments:
+            flags |= WRITE_KEEP_COMMENTS
+        if attribute_safe:
+            flags |= WRITE_ATTRIBUTE_SAFE
+        if raw:
+            flags |= WRITE_RAW
+        ans = c_write_values(values, flags)
+        if ans is None:
+            raise _Unsafe
+        if ans is not NotImplemented:
+            return ans
+    return python_write_values(values, options, mode=mode, attribute_safe=attribute_safe, raw=raw)
+
+
+def python_write_values(
+    values: Iterable[Token | Block | Function],
+    options: SerializeOptions,
+    *,
+    mode: Literal['value', 'selector', 'verbatim'] = 'value',
+    attribute_safe: bool = False,
+    raw: bool = False,
+) -> str:
+    """write_values() using the Python TokenWriter, the reference implementation."""
     w = TokenWriter(options.normalize, mode=mode, attribute_safe=attribute_safe, keep_comments=options.keep_comments)
     text = w.write(values)
+    if raw:
+        return text
     # Only whitespace from whitespace tokens is trimmed, never the space ending an escape
     text = text[w.significant_start : max(w.significant_start, w.significant_end)]
     if HEX_ESCAPE_AT_END.search(text):
@@ -466,6 +513,18 @@ def write_values(
 def normalize_selector(text: str, options: SerializeOptions = DEFAULT_OPTIONS) -> str:
     """Normalise the whitespace of a selector list (requirements 3.3), keeping escapes, case and comments."""
     return write_values(parse_component_value_list(text), options, mode='selector')
+
+
+SELECTOR_FLAGS = WRITE_SELECTOR | WRITE_NORMALIZE | WRITE_KEEP_COMMENTS
+
+
+def normalize_prelude(prelude: ComponentValueList) -> str:
+    """normalize_selector() of the text of a parsed prelude, without parsing that text again.
+    That gives the same result, as the tokens of a prelude end before its block."""
+    ans = c_write_values(prelude, SELECTOR_FLAGS)
+    # Comments are kept, so the C writer never needs the Python one here
+    assert isinstance(ans, str)
+    return ans
 
 
 # ---------------------------------------------------------------------------
@@ -548,6 +607,9 @@ class Writer:
     def __init__(self, options: SerializeOptions) -> None:
         self.options = options
         self.preserve = options.style == 'preserve'
+        self.value_flags = (WRITE_NORMALIZE if options.normalize else 0) | (
+            WRITE_KEEP_COMMENTS if options.keep_comments else 0
+        )
 
     def indent(self, depth: int) -> str:
         return self.options.indent * depth
@@ -574,6 +636,11 @@ class Writer:
 
     def decl_lines(self, block: DeclarationBlock, depth: int) -> list[str]:
         ind = self.indent(depth)
+        if not self.preserve:
+            # The C version of declaration_lines(), for the pretty format
+            lines = c_write_declarations(block._items._items, self.value_flags, ind)
+            if lines is not NotImplemented:
+                return lines
         return [ind + line for line in declaration_lines(block, self.options)]
 
     def rule_lines(self, rule: Rule, depth: int) -> list[str]:
@@ -594,7 +661,7 @@ class Writer:
         match rule:
             case r.StyleRule():
                 body = self.decl_lines(rule.style, depth + 1)
-                children, has_content = self.rules_with_content(rule.rules, depth + 1)
+                children, has_content = self.rules_with_content(rule._load(), depth + 1)
                 empty = not has_declarations(rule.style) and not has_content
                 return self.block(rule.selector_text, body + children, depth, empty)
             case r.NestedDeclarationsRule():
@@ -611,7 +678,7 @@ class Writer:
                 )
             case r.PageRule():
                 body = self.decl_lines(rule.style, depth + 1)
-                margins = self.rules_lines(rule.rules, depth + 1)
+                margins = self.rules_lines(rule._load(), depth + 1)
                 header = '@page' + (' ' + rule.selector_text if rule.selector_text else '')
                 return self.block(header, body + margins, depth, not has_declarations(rule.style) and not margins)
             case r.MarginRule():
@@ -721,7 +788,7 @@ def unknown_at_rule_text(rule: Rule, options: SerializeOptions) -> str:
     head = '@' + rule.name + (' ' + prelude if prelude else '')
     if rule.block_text is None:
         return head + ';'
-    block = TokenWriter(False, mode='verbatim').write(parse_component_value_list(rule.block_text))
+    block = write_values(parse_component_value_list(rule.block_text), verbatim, mode='verbatim', raw=True)
     return head + ' {' + block + '}'
 
 

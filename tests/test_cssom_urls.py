@@ -131,3 +131,24 @@ def test_replace_urls_in_values_left_open_by_eof() -> None:
     sheet = parse_stylesheet('a {a:f(;@import url(a.css) {}}')
     assert replace_urls(sheet, lambda u: 'X' + u)
     assert list(iter_urls(sheet)) == ['Xa.css']
+
+
+def test_rules_without_urls_are_not_parsed() -> None:
+    sheet = parse_stylesheet('a { b: c } d { e: url(f) } g { h: i; j { k: l } }')
+    a, _, g = sheet.rules
+    assert list(iter_urls(sheet)) == ['f']
+    # Blocks whose text has nothing like a URL are skipped without being parsed
+    assert isinstance(a, StyleRule)
+    assert isinstance(g, StyleRule)
+    assert a._rules is None
+    assert g._rules is None
+    # Changed rules are always looked at, as their source text is stale
+    a.style.set('b', 'url(new)')
+    nested = g.rules[0]
+    assert isinstance(nested, StyleRule)
+    nested.style.set('k', 'image-set("x" 1x)')
+    assert list(iter_urls(sheet)) == ['new', 'f', 'x']
+    assert replace_urls(sheet, lambda u: u.upper())
+    assert serialize(sheet) == (
+        'a {\n  b: url(NEW);\n}\nd {\n  e: url(F);\n}\ng {\n  h: i;\n  j {\n    k: image-set("X" 1x);\n  }\n}'
+    )

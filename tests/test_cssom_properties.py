@@ -29,6 +29,7 @@ from kgcss.cssom.exceptions import CSSSyntaxError
 from kgcss.cssom.selector_list import check_selector_list
 from kgcss.cssom.serializer import source_is_complete
 from kgcss.cssom.values import Function, Other, Separator, SimpleBlock, UnicodeRange
+from kgcss.syntax import QualifiedRule
 
 from .strategies import css_text
 
@@ -345,3 +346,13 @@ def valid_selector(text: str) -> bool:
     except CSSSyntaxError:
         return False
     return not text.rstrip().endswith(':')
+
+
+@given(css_text)
+def test_selector_text_from_prelude(css: str) -> None:
+    # selector_text writes the parsed prelude directly, which must equal normalizing its text
+    from kgcss.cssom.serializer import normalize_selector
+
+    for rule in parse_stylesheet(css).iter_rules():
+        if isinstance(rule, StyleRule) and isinstance(owner := rule._block_owner, QualifiedRule):
+            assert rule.selector_text == normalize_selector(owner.prelude.text)

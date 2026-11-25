@@ -468,7 +468,79 @@ class SerializeOptions:
 
 ## 8. Milestones
 
-Status: milestones 1 to 7 are done.
+Status: milestones 1 to 8 are done. The optional `kgcss.compat` facade
+(D1) was not built.
+
+Notes from milestone 8:
+- **Benchmarks.** `bench/bench_parse.py run --suite cssom` has four
+  workloads for kgcss and css_parser: `cssom-parse`; `cssom-full`, which
+  parses and reads every selector and every declaration's name, value and
+  priority; `cssom-urls`, which parses and rewrites every URL; and
+  `cssom-serialize`, which writes a parsed sheet whose declarations were all
+  read. `bench/ab_compare.py` runs them too.
+- **Results** for the 1.55 MB calibre-style sheet, from A/B runs against
+  milestone 7, both pinned to the fast cores:
+
+  | workload | milestone 7 | milestone 8 | change | css_parser |
+  |---|---:|---:|---:|---:|
+  | `cssom-full` | 286 ms | 95 ms | -67% | 24 s |
+  | `cssom-serialize` | 376 ms | 62 ms | -83% | 29 s |
+  | `cssom-parse` | 19 ms | 17 ms | -12% | 7.0 s |
+  | `cssom-urls` | 171 ms | 39 ms | -77% | 7.2 s |
+  | `replace_urls_in_text` | about 133 ms | about 12 ms | -91% | |
+
+  The `replace_urls_in_text` figures come from single runs, not A/B.
+
+  Both targets (under 100 ms to parse and read everything, and to
+  serialize) are met. On bootstrap, `cssom-full` went from 47 to 13 ms and
+  serialization from 49 to 12 ms. On tailwind they went from 668 to 173 ms
+  and from 688 to 174 ms. The syntax layer workloads are unchanged. The
+  css_parser numbers were measured while the machine had other heavy load,
+  so they are approximate. kgcss is about 250 times faster at reading
+  everything and about 450 times faster at serializing.
+- **What made the difference**, in order of effect:
+  1. **The token writer in C** (`csrc/writer.c`), a port of `TokenWriter`
+     that works on the token records of a `ComponentValueList` or a
+     declaration, without creating `Token` objects. `write_declarations()`
+     writes all the lines of a block in one call for the pretty format.
+     `selector_text` writes the parsed prelude directly instead of
+     reparsing its text (a property test checks that this is the same).
+  2. **Garbage collection.** It took 30 to 45% of reading everything,
+     because every collection walks the tracked objects. Fixes:
+     - `Property` gets its fields from a C base, `PropertyData`.
+       `build_properties()` creates a block's properties in one call and
+       exempts them from the collector. That is safe because a property
+       cannot be in a reference cycle: `parent` is now a weak reference.
+       (Making the base type non-GC is not enough: CPython makes instances
+       of every Python class GC tracked.)
+     - Blocks without nested rules store an empty tuple rather than a
+       `RuleList`, which is created when `rules` is accessed.
+       `DeclarationBlock.errors` is created on first use. Blocks with only
+       declarations use the `NodeList` as is (`NodeList.has_rules`).
+     - Untracking the parsed values (`parsed_value`) would help that path
+       as much, but their components are mutable dataclasses, so users
+       could create cycles. Reading every `parsed_value` takes about
+       340 ms, which is not a target.
+  3. **The URL finder in C** (`csrc/urls.c`). `iter_urls` and
+     `replace_urls` also skip unchanged rules whose source text has nothing
+     like a URL, without parsing their blocks.
+  4. **Small Python costs.** `cast(Sequence[X], y)` builds a typing object
+     at run time, 1.3 us per call. It is now quoted. The sheet lock is
+     taken once instead of twice when a block is read.
+- **Correctness of the C ports.** `tests/test_writer.py` compares the C
+  writer, `write_declarations()` and the C URL finder with the Python
+  versions. It ran on 200,000 random inputs for the writer, 30,000 for
+  declarations and 100,000 for URLs. It found two bugs in the Python
+  reference, both fixed:
+  - `HEX_ESCAPE_AT_END` used `$`, which also matches before a final
+    newline, so a hex escape ended by a newline got a needless space.
+  - Hash tokens in values skipped the attribute-safe checks and the
+    trailing backslash fix.
+- **Thread safety.** `write_declarations()` takes strong references to a
+  property's fields under a critical section on the property, since other
+  threads can assign them. A thread test serializes while other threads
+  change values, run with the free-threaded build at `KGCSS_STRESS=20`. The
+  suite also passes under ASan and UBSan with the thorough profile.
 
 Notes from milestone 7:
 - **`kgcss.cssom.imports`** has the loading and inlining. `resolve_imports`

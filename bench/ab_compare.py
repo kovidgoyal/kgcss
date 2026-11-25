@@ -76,7 +76,11 @@ def main() -> None:
     parser.add_argument('--base', default='HEAD', help='git revision to compare against (default: %(default)s)')
     parser.add_argument('--rounds', type=int, default=9, help='alternating rounds (default: %(default)s)')
     parser.add_argument('--repeat', type=int, default=10, help='runs per round, best is kept (default: %(default)s)')
-    parser.add_argument('--workload', action='append', choices=('tokenize', 'parse', 'full'))
+    parser.add_argument(
+        '--workload',
+        action='append',
+        choices=('tokenize', 'parse', 'full', 'cssom-parse', 'cssom-full', 'cssom-urls', 'cssom-serialize'),
+    )
     parser.add_argument('--corpus', action='append', default=[], help='corpus files whose name contains this')
     args = parser.parse_args()
     files = sorted(CORPUS.glob('*.css'))

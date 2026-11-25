@@ -239,8 +239,9 @@ class PropertyValue(Sequence[Component]):
         return ''.join(parts)
 
 
-# A hex escape at the end of text, not itself escaped (an even number of backslashes before it)
-HEX_ESCAPE_AT_END = re.compile(r'(?<!\\)(?:\\\\)*\\[0-9a-fA-F]{1,6}$')
+# A hex escape at the end of text, not itself escaped (an even number of backslashes before it).
+# \Z, since $ also matches before a final newline, which already ends the escape.
+HEX_ESCAPE_AT_END = re.compile(r'(?<!\\)(?:\\\\)*\\[0-9a-fA-F]{1,6}\Z')
 
 TOKEN_CLASSES: dict[TokenType, type[Component]] = {
     TokenType.IDENT: Ident,

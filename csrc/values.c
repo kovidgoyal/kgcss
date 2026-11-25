@@ -15,13 +15,6 @@
 #include "objects.h"
 #include <stddef.h>
 
-typedef struct {
-    PyObject_VAR_HEAD
-    kg_TokenStream *stream;
-    uint32_t pos, end; /* source range covered by this list */
-    uint32_t items[];  /* token index of each top level item, Py_SIZE() of them */
-} kg_ComponentValueList;
-
 /* ---------------------------------------------------------------------------
  * Helpers
  * ------------------------------------------------------------------------- */
