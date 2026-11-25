@@ -468,7 +468,84 @@ class SerializeOptions:
 
 ## 8. Milestones
 
-Status: milestones 1 to 4 are done.
+Status: milestones 1 to 5 are done.
+
+Notes from milestone 5:
+- **`RuleList`** is a mutable sequence owned by a sheet or rule. Its
+  operations keep `parent_rule`, `parent_style_sheet` (at every
+  materialized depth) and the modification marks up to date. Like
+  `DeclarationList`, its low-level operations raise `ValueError` for a rule
+  owned by another list. `sort(key=)` is supported.
+- **`insert_rule(rule_or_text, index=None)`** on sheets, grouping rules,
+  style rules (nesting) and `@page` rules:
+  - copies a rule that belongs elsewhere (D4);
+  - checks the rule type against the context (no `@import` inside
+    `@media`, only margin rules in `@page`);
+  - at the top level, checks the browser CSSOM placement: `@charset`, then
+    `@import`, then `@namespace`, then the rest. `@layer` statements and
+    comments may go anywhere after `@charset`.
+
+  `delete_rule(rule_or_index)` and `Stylesheet.add()` (which finds a valid
+  position, replacing an existing `@charset`) complete the set. There is
+  also `parse_rule()`, which turns the text of a lone comment into a
+  `Comment`, as kepubify needs.
+- **Assigning `css_text`:**
+  - On a rule, it reparses in the rule's context and updates the same
+    object. The text must be one rule of the same type, otherwise
+    `CSSSyntaxError`.
+  - On a sheet, it reparses the whole sheet in place.
+  - On a `Property`, it takes the name, value and priority of one
+    declaration.
+  - On a `NestedDeclarationsRule`, it sets its declarations.
+- **Modification tracking for plain attributes.** `Tracked[T]`
+  descriptors make assignments to `href`, `layer`, `supports`, `prefix`,
+  `namespace_uri`, `encoding`, `names` (now a tuple), `selector_text` of
+  `@page`, margin `name`, the fields of unknown at-rules and `prelude_text`
+  mark the rule modified. The `MediaList` is a mutable sequence of queries
+  that rewrites `media_text` and marks its rule modified.
+- **Selectors.** `StyleRule.selectors` is a `SelectorList` of `Selector`
+  objects:
+  - it is created lazily under the sheet lock;
+  - changes write through to `selector_text`, and the reverse is true too;
+  - appending a selector from another rule copies it, with any custom
+    attributes. `Selector` has no `__slots__`, for calibre's
+    `selector.calibre_used`.
+
+  `selector_text` is checked and raises `CSSSyntaxError` for empty or
+  malformed lists. `specificity` waits for plan 03.
+- **`Stylesheet.namespaces`** is a live `NamespaceMap` over the
+  `@namespace` rules. Setting a prefix adds a correctly placed rule (P9,
+  fb2_input).
+- **`copy()`** on sheets and rules, and `copy.deepcopy`, reparse the
+  `preserve` serialization (with empty rules kept), so unchanged parts keep
+  their exact text. Margin rules are parsed in the `@page` context.
+- **`preserve` now only writes complete source verbatim:**
+  - at-rules without a block must end with `;`, and blocks and comments
+    must be closed;
+  - declarations must have nothing open and no trailing bad string or lone
+    backslash;
+  - nested declaration rules are always written declaration by
+    declaration.
+
+  Otherwise a rule added from `'@import url(c.css)'`, or one cut off by the
+  end of the input, would swallow the next rule.
+- **Bugs found by the new edit property test.** It applies random
+  insertions, deletions, `add()`, `css_text` assignments, property sets and
+  selector changes, then checks that the `preserve` output reads back as
+  the same sheet and that `copy()` matches. It found:
+  - the missing `;` above;
+  - `preserve` writing a nested `a:` rule that reads back as a declaration;
+  - comment-only nested declarations counting differently in the two
+    paths;
+  - a hex escape absorbing the space before a combinator (`a\0>a`);
+  - dropped comments merging tokens (`IMPORTANT/**/(` became a function).
+    In values a dropped comment now acts as whitespace. In selectors, where
+    a space is a combinator, it becomes `/**/` only if the tokens would
+    otherwise merge.
+
+  Each is a regression test.
+- **Known limit.** Selectors keep their comments even with
+  `keep_comments=False`, since they are part of the selector text (3.3).
 
 Notes from milestone 4:
 - **Format.** It was checked against calibre's settings

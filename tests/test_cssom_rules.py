@@ -80,7 +80,7 @@ def test_top_level_rules() -> None:
     assert isinstance(page, PageRule)
     assert page.selector_text == ':first'
     assert isinstance(layer, LayerStatementRule)
-    assert layer.names == ['a', 'b.c']
+    assert layer.names == ('a', 'b.c')
     assert isinstance(unknown, UnknownAtRule)
     for rule in sheet.rules:
         assert rule.parent_style_sheet is sheet
@@ -221,7 +221,7 @@ def test_style_rule_nesting() -> None:
     assert isinstance(hover, StyleRule)
     assert hover.selector_text == '&:hover'
     assert isinstance(nested_decls, NestedDeclarationsRule)
-    assert serialize(nested_decls, PRESERVE) == 'g: h'
+    assert serialize(nested_decls, PRESERVE) == 'g: h;'
     assert isinstance(comment, Comment)
     assert comment.text == ' i '
     assert isinstance(media, MediaRule)
@@ -374,7 +374,7 @@ def test_bytes_input() -> None:
 
 def test_constructed_objects() -> None:
     sheet = Stylesheet(href='x.css')
-    assert (len(sheet), sheet.href, sheet.errors, sheet.namespaces) == (0, 'x.css', [], {})
+    assert (len(sheet), sheet.href, sheet.errors, dict(sheet.namespaces)) == (0, 'x.css', [], {})
     rule: Rule = MediaRule('screen')
     assert rule.line is None
     assert repr(rule) == "<MediaRule 'screen'>"

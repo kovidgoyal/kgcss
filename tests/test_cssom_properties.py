@@ -2,6 +2,8 @@
 
 """Property based tests of the CSSOM."""
 
+import contextlib
+
 from hypothesis import given
 from hypothesis import strategies as st
 
@@ -14,6 +16,7 @@ from kgcss import (
     RuleList,
     RuleType,
     SerializeOptions,
+    StyleRule,
     Stylesheet,
     parse_style,
     parse_stylesheet,
@@ -21,6 +24,7 @@ from kgcss import (
     serialize,
 )
 from kgcss.cssom.declarations import normalize_name
+from kgcss.cssom.serializer import source_is_complete
 from kgcss.cssom.values import Function, Other, Separator, SimpleBlock, UnicodeRange
 
 from .strategies import css_text
@@ -48,7 +52,9 @@ def test_cssom_invariants(css: str) -> None:
     assert serialize(sheet, PRESERVE) == css
     for rule in sheet.iter_rules():
         assert rule.parent_style_sheet is sheet
-        assert serialize(rule, PRESERVE) in css
+        if source_is_complete(rule._source):
+            # Rules left open by the end of the input are closed, so only complete ones are verbatim
+            assert serialize(rule, PRESERVE) in css
         assert rule.line is not None
         if (children := rule.child_rules()) is not None:
             for child in children:
@@ -198,4 +204,60 @@ def test_declaration_serialization_is_idempotent(css: str) -> None:
 def test_preserve_serialization_of_unchanged_rules(css: str) -> None:
     sheet = parse_stylesheet(css)
     for rule in sheet.iter_rules():
-        assert serialize(rule, PRESERVE) in css
+        if source_is_complete(rule._source):
+            # Rules left open by the end of the input are closed, so only complete ones are verbatim
+            assert serialize(rule, PRESERVE) in css
+
+
+RULE_TEXTS = st.sampled_from([
+    'a { b: c }', 'x > y { z: 1px !important }', '@media print { p { q: r } }', '/* comment */',
+    '@import "i.css"', '@namespace n "u"', '@layer l;', '@font-face { src: url(f.otf) }', '@foo bar',
+    'd { e: f(', 'g { h: "i', '@media (x) { j {', 'k { &:hover { l: m } n: o }',
+])  # fmt: skip
+EDITS = st.lists(
+    st.one_of(
+        st.tuples(st.just('insert'), RULE_TEXTS, st.integers(0, 20)),
+        st.tuples(st.just('add'), RULE_TEXTS),
+        st.tuples(st.just('delete'), st.integers(0, 20)),
+        st.tuples(st.just('css_text'), st.integers(0, 20), RULE_TEXTS),
+        st.tuples(st.just('set'), st.integers(0, 20), st.sampled_from(['color', 'margin', '--v']), VALUES),
+        st.tuples(st.just('selector'), st.integers(0, 20), st.sampled_from(['p', 'a, b', 'q > r'])),
+    ),
+    max_size=8,
+)
+
+
+@given(css_text, EDITS)
+def test_edits_keep_preserve_output_equivalent(css: str, edits: list[tuple[object, ...]]) -> None:
+    sheet = parse_stylesheet(css)
+    for edit in edits:
+        rules = list(sheet.iter_rules())
+        match edit:
+            case ('insert', str(text), int(index)):
+                with contextlib.suppress(ValueError, IndexError):
+                    sheet.insert_rule(text, index % (len(sheet.rules) + 1))
+            case ('add', str(text)):
+                with contextlib.suppress(ValueError):
+                    sheet.add(text)
+            case ('delete', int(index)) if sheet.rules:
+                sheet.delete_rule(index % len(sheet.rules))
+            case ('css_text', int(index), str(text)) if rules:
+                with contextlib.suppress(ValueError):
+                    rules[index % len(rules)].css_text = text
+            case ('set', int(index), str(name), str(value)) if rules:
+                rule = rules[index % len(rules)]
+                if isinstance(rule, StyleRule):
+                    rule.style.set(name, value)
+            case ('selector', int(index), str(selector)) if rules:
+                rule = rules[index % len(rules)]
+                if isinstance(rule, StyleRule):
+                    rule.selector_text = selector
+        for rule in sheet.iter_rules():
+            assert rule.parent_style_sheet is sheet
+            if (children := rule.child_rules()) is not None:
+                assert all(child.parent_rule is rule for child in children)
+    pretty = serialize(sheet)
+    # Writing the edited sheet in preserve mode and reading it back gives the same sheet
+    assert serialize(parse_stylesheet(serialize(sheet, PRESERVE))) == pretty
+    assert serialize(parse_stylesheet(pretty)) == pretty
+    assert serialize(sheet.copy()) == pretty

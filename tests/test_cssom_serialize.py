@@ -342,6 +342,10 @@ def test_css_syntax_error_is_exported() -> None:
         'a {a:{b} red}',  # a nested rule that would read back as a declaration
         'a:a:\\ -.5em',  # rewriting a number must not merge it with its neighbours
         'a:url(\n,/* x */',
+        'a\\0>a {}',  # a hex escape absorbs the space before a combinator
+        'a:!IMPORTANT/* x */(',  # dropping a comment must not merge tokens
+        'a:a/* x */1e3',  # a dropped comment in a value acts as whitespace
+        'k { &:hover { l: m } /* c */ }',
     ],
 )
 def test_found_by_property_tests(css: str) -> None:
@@ -354,3 +358,17 @@ def test_found_by_property_tests(css: str) -> None:
     assert '"' not in single
     assert '\n' not in single
     assert parse_style(single).to_css(single_line=True) == single
+
+
+def test_dropped_comments_in_selectors() -> None:
+    from kgcss.cssom.serializer import normalize_selector
+
+    # Comments in selectors are part of the selector text (requirements 3.3), keep_comments=False
+    # applies to comment rules and to comments in declarations
+    no_comments = SerializeOptions(keep_comments=False)
+    sheet = parse_stylesheet('/* x */ a/**/.b {c: d /* y */}')
+    assert serialize(sheet, no_comments) == 'a/**/.b {\n  c: d;\n}'
+    # Dropping comments from a selector never merges tokens and never adds a combinator
+    assert normalize_selector('a/**/.b', no_comments) == 'a.b'
+    assert normalize_selector('e/**/f', no_comments) == 'e/**/f'
+    assert normalize_selector('i /**/ j', no_comments) == 'i j'

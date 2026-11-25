@@ -223,3 +223,22 @@ def test_cssom_lazy_style_race() -> None:
         assert all(r == results[0] for r in results)
         assert {v for _, v in results[0]} == {'y'}
     check_gil()
+
+
+def test_cssom_lazy_selectors_race() -> None:
+    css = ''.join(f'.r{i}, .s{i} > p {{ a: b }}\n' for i in range(300))
+    barrier = threading.Barrier(THREADS)
+    for _ in range(3 * STRESS):
+        sheet = kgcss.parse_stylesheet(css)
+
+        def work(_: int, sheet: kgcss.Stylesheet = sheet) -> list[int]:
+            barrier.wait()
+            out = []
+            for rule in sheet.rules:
+                assert isinstance(rule, kgcss.StyleRule)
+                out.append(id(rule.selectors))
+            return out
+
+        results = run_concurrently(work)
+        assert all(r == results[0] for r in results)
+    check_gil()

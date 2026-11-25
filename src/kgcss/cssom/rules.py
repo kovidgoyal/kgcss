@@ -2,16 +2,19 @@
 
 """Rule classes of the CSS object model."""
 
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, MutableSequence
 from enum import Enum, unique
-from typing import TYPE_CHECKING, ClassVar, final, overload
+from typing import TYPE_CHECKING, ClassVar, Self, final, overload
 
 from kgcss.cssom.declarations import DeclarationBlock, block_from_nodes, parse_declarations
-from kgcss.cssom.serializer import normalize_selector
+from kgcss.cssom.exceptions import CSSSyntaxError
+from kgcss.cssom.selector_list import Selector, SelectorList, check_selector_list
 from kgcss.cssom.state import SheetState, SourceLike
 from kgcss.syntax import AtRule, Declaration, QualifiedRule, Token
 
 if TYPE_CHECKING:
+    from _typeshed import SupportsRichComparison
+
     from kgcss.cssom.stylesheet import Stylesheet
 
 CSS_WHITESPACE = ' \t\n\r\f'
@@ -43,6 +46,30 @@ class RuleType(Enum):
     # Members are singletons compared by identity, and Enum's own __hash__ is
     # Python code that shows up in profiles of sets of rule types
     __hash__ = object.__hash__
+
+
+class Tracked[T]:
+    """An attribute stored in the slot _<name>. Assigning it marks the rule as modified,
+    so that preserve serialization does not write stale source text."""
+
+    __slots__ = ('private',)
+
+    def __set_name__(self, owner: type, name: str) -> None:
+        self.private = '_' + name
+
+    @overload
+    def __get__(self, obj: None, objtype: type | None = None) -> Tracked[T]: ...
+    @overload
+    def __get__(self, obj: Rule, objtype: type | None = None) -> T: ...
+    def __get__(self, obj: Rule | None, objtype: type | None = None) -> T | Tracked[T]:
+        if obj is None:
+            return self
+        value: T = getattr(obj, self.private)
+        return value
+
+    def __set__(self, obj: Rule, value: T) -> None:
+        setattr(obj, self.private, value)
+        obj._changed()
 
 
 class Rule:
@@ -86,10 +113,44 @@ class Rule:
 
     @property
     def css_text(self) -> str:
-        """This rule serialized in the pretty format."""
+        """This rule serialized in the pretty format. Assigning reparses: the text must be exactly one
+        rule of the same type, otherwise CSSSyntaxError is raised. The rule is updated in place."""
         from kgcss.cssom.serializer import serialize
 
         return serialize(self)
+
+    @css_text.setter
+    def css_text(self, text: str) -> None:
+        new = _build.parse_rule_text(text, context_of(self))
+        if type(new) is not type(self):
+            raise CSSSyntaxError(f'Expected the text of a {type(self).__name__}, got a {type(new).__name__}: {text!r}')
+        self._assign(new)
+
+    def _assign(self, new: Self) -> None:
+        """Take over the contents of a newly parsed rule of the same type."""
+        for cls in type(self).__mro__:
+            for slot in getattr(cls, '__slots__', ()):
+                if slot not in ('parent_rule', 'parent_style_sheet', '_dirty'):
+                    setattr(self, slot, getattr(new, slot))
+        self._adopt_contents()
+        # Its source is now the assigned text, which it still matches
+        self._changed()
+        self._dirty = False
+
+    def _adopt_contents(self) -> None:
+        """Point anything this rule contains back at it, after _assign()."""
+
+    def copy(self) -> Self:
+        """An unattached deep copy of this rule. Unchanged parts keep their exact text."""
+        from kgcss.cssom.serializer import SerializeOptions, serialize
+
+        text = serialize(self, SerializeOptions(style='preserve', drop_empty_rules=False))
+        new = _build.parse_rule_text(text, context_of(self))
+        assert type(new) is type(self), (text, new)
+        return new
+
+    def __deepcopy__(self, memo: dict[int, object]) -> Self:
+        return self.copy()
 
     def __repr__(self) -> str:
         where = '' if self._source is None else f' at {self._source.line}:{self._source.column}'
@@ -99,13 +160,74 @@ class Rule:
         return ''
 
 
-class RuleList(Sequence[Rule]):
-    """An ordered list of rules, as found in a stylesheet or a grouping rule."""
+def set_sheet(rule: Rule, sheet: Stylesheet | None) -> None:
+    """Set parent_style_sheet on a rule and on every rule already built below it."""
+    stack = [rule]
+    while stack:
+        r = stack.pop()
+        r.parent_style_sheet = sheet
+        if isinstance(r, GroupingRule):
+            stack.extend(r.rules)
+        elif isinstance(r, LazyBlockRule) and r._rules is not None:
+            stack.extend(r._rules)
 
-    __slots__ = ('_items',)
 
-    def __init__(self, items: Iterable[Rule] = ()) -> None:
+def context_of(rule: Rule) -> _build.Context:
+    """Where a rule is: what is valid there, and how text for it is parsed."""
+    parent = rule.parent_rule
+    if parent is None:
+        # Margin rules are only valid in @page rules
+        return _build.Context.PAGE if isinstance(rule, MarginRule) else _build.Context.TOP
+    return context_inside(parent)
+
+
+def context_inside(container: Rule) -> _build.Context:
+    """The context of rules directly inside container."""
+    if isinstance(container, PageRule):
+        return _build.Context.PAGE
+    r: Rule | None = container
+    while r is not None:
+        if isinstance(r, StyleRule):
+            return _build.Context.NESTED
+        r = r.parent_rule
+    return _build.Context.GROUPING
+
+
+class RuleList(MutableSequence[Rule]):
+    """The rules of a stylesheet or of a rule that contains rules. Changes keep the parent pointers
+    up to date. Use insert_rule() on the owner to check where a rule may go and to copy rules that
+    belong elsewhere; these list operations raise ValueError for a rule owned by another list."""
+
+    __slots__ = ('_items', '_owner')
+
+    def __init__(self, items: Iterable[Rule] = (), owner: Rule | Stylesheet | None = None) -> None:
+        # Items are expected to have their parents set already
         self._items: list[Rule] = list(items)
+        self._owner = owner
+
+    def _adopt(self, rule: Rule) -> None:
+        if (rule.parent_rule is not None or rule.parent_style_sheet is not None) and not any(
+            r is rule for r in self._items
+        ):
+            raise ValueError('The rule belongs to another rule or sheet: remove it first, or use insert_rule()')
+        owner = self._owner
+        if isinstance(owner, Rule):
+            rule.parent_rule = owner
+            set_sheet(rule, owner.parent_style_sheet)
+        else:
+            rule.parent_rule = None
+            set_sheet(rule, owner)
+
+    def _release(self, rule: Rule) -> None:
+        rule.parent_rule = None
+        set_sheet(rule, None)
+
+    def _changed(self) -> None:
+        owner = self._owner
+        if isinstance(owner, Rule):
+            owner._changed()
+        elif owner is not None:
+            owner._dirty = True
 
     @overload
     def __getitem__(self, index: int) -> Rule: ...
@@ -114,18 +236,58 @@ class RuleList(Sequence[Rule]):
     def __getitem__(self, index: int | slice) -> Rule | list[Rule]:
         return self._items[index]
 
+    @overload
+    def __setitem__(self, index: int, value: Rule) -> None: ...
+    @overload
+    def __setitem__(self, index: slice, value: Iterable[Rule]) -> None: ...
+    def __setitem__(self, index: int | slice, value: Rule | Iterable[Rule]) -> None:
+        if isinstance(index, slice):
+            assert not isinstance(value, Rule)
+            new = list(value)
+            old = self._items[index]
+            for r in new:
+                if not any(r is o for o in old):
+                    self._adopt(r)
+            for r in old:
+                if not any(r is n for n in new):
+                    self._release(r)
+            self._items[index] = new
+        else:
+            assert isinstance(value, Rule)
+            old_rule = self._items[index]
+            if value is not old_rule:
+                self._adopt(value)
+                self._release(old_rule)
+                self._items[index] = value
+        self._changed()
+
+    def __delitem__(self, index: int | slice) -> None:
+        for r in self._items[index] if isinstance(index, slice) else [self._items[index]]:
+            self._release(r)
+        del self._items[index]
+        self._changed()
+
     def __len__(self) -> int:
         return len(self._items)
 
     def __iter__(self) -> Iterator[Rule]:
         return iter(self._items)
 
-    def index(self, rule: Rule, start: int = 0, stop: int | None = None) -> int:
-        """The index of rule, compared by identity."""
+    def insert(self, index: int, value: Rule) -> None:
+        self._adopt(value)
+        self._items.insert(index, value)
+        self._changed()
+
+    def index(self, value: object, start: int = 0, stop: int | None = None) -> int:
+        """The index of a rule, compared by identity."""
         for i in range(start, len(self._items) if stop is None else stop):
-            if self._items[i] is rule:
+            if self._items[i] is value:
                 return i
         raise ValueError('rule is not in the list')
+
+    def sort(self, *, key: Callable[[Rule], SupportsRichComparison], reverse: bool = False) -> None:
+        self._items.sort(key=key, reverse=reverse)
+        self._changed()
 
     def of_type(self, *types: RuleType) -> list[Rule]:
         """The rules in this list (not recursive) of any of the given types."""
@@ -133,6 +295,89 @@ class RuleList(Sequence[Rule]):
 
     def __repr__(self) -> str:
         return f'<RuleList of {len(self._items)} rules>'
+
+
+# Rules that must come first in a sheet, in this order
+STATEMENTS_ORDER = {RuleType.CHARSET: 0, RuleType.IMPORT: 1, RuleType.NAMESPACE: 2}
+
+
+def placement_error(rules: Iterable[Rule], index: int, rule: Rule) -> str | None:
+    """Why rule cannot be inserted at index in the top level rules of a sheet, or None.
+
+    @charset comes first, then @import (which @layer statements may precede), then
+    @namespace, then everything else. Comments can go anywhere.
+    """
+    if rule.type is RuleType.COMMENT:
+        return None
+    if rule.type is RuleType.LAYER_STATEMENT:
+        # Allowed anywhere, including before @import, but not before @charset
+        if any(r.type is RuleType.CHARSET for r in list(rules)[index:]):
+            return 'layer-statement rules cannot come before @charset rules'
+        return None
+    rank = STATEMENTS_ORDER.get(rule.type, 3)
+    for i, other in enumerate(rules):
+        if other.type in (RuleType.COMMENT, RuleType.LAYER_STATEMENT):
+            continue
+        other_rank = STATEMENTS_ORDER.get(other.type, 3)
+        if i < index and other_rank > rank:
+            return f'@{rule.type.value} rules must come before {other.type.value} rules'
+        if i >= index and other_rank < rank:
+            return f'{rule.type.value} rules cannot come before @{other.type.value} rules'
+        if rule.type is RuleType.CHARSET and other.type is RuleType.CHARSET:
+            return 'There can only be one @charset rule'
+    return None
+
+
+# The rule types allowed in each context, by Context name
+ALLOWED = {
+    'TOP': frozenset(RuleType) - {RuleType.MARGIN, RuleType.NESTED_DECLARATIONS},
+    'GROUPING': frozenset(RuleType) - {RuleType.MARGIN, RuleType.NESTED_DECLARATIONS} - set(STATEMENTS_ORDER),
+    'NESTED': frozenset(RuleType) - {RuleType.MARGIN} - set(STATEMENTS_ORDER),
+    'PAGE': frozenset((RuleType.MARGIN, RuleType.COMMENT)),
+}
+
+
+def insert_into(
+    rules: RuleList, rule: Rule | str, index: int | None, context: _build.Context, check_placement: bool = True
+) -> Rule:
+    """Insert a rule or the text of one. A rule that belongs elsewhere is copied. Returns the inserted rule."""
+    if isinstance(rule, str):
+        rule = _build.parse_rule_text(rule, context)
+    elif rule.parent_rule is not None or rule.parent_style_sheet is not None:
+        rule = rule.copy()
+    if rule.type not in ALLOWED[context.name]:
+        raise ValueError(f'A {rule.type.value} rule is not allowed here')
+    if index is None:
+        index = len(rules)
+    elif not 0 <= index <= len(rules):
+        raise IndexError(f'Rule index {index} out of range')
+    if check_placement and context is _build.Context.TOP and (error := placement_error(rules, index, rule)):
+        raise ValueError(error)
+    rules.insert(index, rule)
+    return rule
+
+
+def delete_from(rules: RuleList, rule_or_index: Rule | int) -> None:
+    del rules[rules.index(rule_or_index) if isinstance(rule_or_index, Rule) else rule_or_index]
+
+
+class RuleContainer(Rule):
+    """Base of rules that contain rules."""
+
+    __slots__ = ()
+
+    def child_rules(self) -> RuleList:
+        raise NotImplementedError
+
+    def insert_rule(self, rule: Rule | str, index: int | None = None) -> Rule:
+        """Insert a rule, or the text of one, at index (default: at the end). A rule that belongs to
+        another rule or sheet is copied. Returns the inserted rule. Raises ValueError for a rule that
+        is not allowed here, and CSSSyntaxError for invalid text."""
+        return insert_into(self.child_rules(), rule, index, context_inside(self))
+
+    def delete_rule(self, rule_or_index: Rule | int) -> None:
+        """Remove a rule, given as the rule or its index."""
+        delete_from(self.child_rules(), rule_or_index)
 
 
 def split_on_commas(text: str) -> list[str]:
@@ -151,17 +396,32 @@ def split_on_commas(text: str) -> list[str]:
     return [] if parts == [''] else parts
 
 
-class MediaList(Sequence[str]):
-    """The media query list of an @media or @import rule. The text is kept exactly as written."""
+class MediaList(MutableSequence[str]):
+    """The media query list of an @media or @import rule. The text is kept exactly as written;
+    list operations work on the queries and rewrite the text."""
 
-    __slots__ = ('media_text',)
+    __slots__ = ('_media_text', '_owner')
 
-    def __init__(self, media_text: str = '') -> None:
-        self.media_text = media_text
+    def __init__(self, media_text: str = '', owner: Rule | None = None) -> None:
+        self._media_text = media_text
+        self._owner = owner
+
+    @property
+    def media_text(self) -> str:
+        return self._media_text
+
+    @media_text.setter
+    def media_text(self, value: str) -> None:
+        self._media_text = value
+        if self._owner is not None:
+            self._owner._changed()
 
     @property
     def _queries(self) -> list[str]:
-        return split_on_commas(self.media_text)
+        return split_on_commas(self._media_text)
+
+    def _set_queries(self, queries: list[str]) -> None:
+        self.media_text = ', '.join(queries)
 
     @overload
     def __getitem__(self, index: int) -> str: ...
@@ -170,14 +430,38 @@ class MediaList(Sequence[str]):
     def __getitem__(self, index: int | slice) -> str | list[str]:
         return self._queries[index]
 
+    @overload
+    def __setitem__(self, index: int, value: str) -> None: ...
+    @overload
+    def __setitem__(self, index: slice, value: Iterable[str]) -> None: ...
+    def __setitem__(self, index: int | slice, value: str | Iterable[str]) -> None:
+        q = self._queries
+        if isinstance(index, slice):
+            assert not isinstance(value, str)
+            q[index] = list(value)
+        else:
+            assert isinstance(value, str)
+            q[index] = value
+        self._set_queries(q)
+
+    def __delitem__(self, index: int | slice) -> None:
+        q = self._queries
+        del q[index]
+        self._set_queries(q)
+
+    def insert(self, index: int, value: str) -> None:
+        q = self._queries
+        q.insert(index, value)
+        self._set_queries(q)
+
     def __len__(self) -> int:
         return len(self._queries)
 
     def __bool__(self) -> bool:
-        return bool(self.media_text.strip(CSS_WHITESPACE))
+        return bool(self._media_text.strip(CSS_WHITESPACE))
 
     def __repr__(self) -> str:
-        return f'<MediaList {self.media_text!r}>'
+        return f'<MediaList {self._media_text!r}>'
 
 
 def adopt_block(rule: Rule, value: str | DeclarationBlock) -> DeclarationBlock:
@@ -238,33 +522,45 @@ class LazyBlockRule(Rule):
         owner = self._block_owner
         block = None if owner is None else owner.block
         if block is None or self._state is None:
-            self._rules = rules = RuleList()
+            self._rules = rules = RuleList(owner=self)
             return rules
         with self._state.lock:
             if self._rules is None:
                 items, children = _build.build_block(self, block, self._state)
                 self._declaration_items = items
-                self._rules = RuleList(children)
+                self._rules = RuleList(children, self)
             return self._rules
+
+    def _adopt_contents(self) -> None:
+        if self._style is not None:
+            self._style.parent_rule = self
+        if self._rules is not None:
+            self._rules._owner = self
+            for r in self._rules:
+                r.parent_rule = self
+                set_sheet(r, self.parent_style_sheet)
 
 
 @final
-class StyleRule(LazyBlockRule):
+class StyleRule(LazyBlockRule, RuleContainer):
     """A style rule: a selector list and a declaration block, plus any nested rules (CSS nesting)."""
 
-    __slots__ = ('_selector_text',)
+    __slots__ = ('_selector_text', '_selectors')
     type = RuleType.STYLE
 
     def __init__(self, selector_text: str = '') -> None:
         super().__init__()
-        self._selector_text: str | None = normalize_selector(selector_text)
+        self._selector_text: str | None = ', '.join(check_selector_list(selector_text)) if selector_text else ''
+        self._selectors: SelectorList | None = None
 
     @property
     def selector_text(self) -> str:
         """The selector list as text, with normalized whitespace (a, b and a > b) but escapes, case
-        and comments kept. For parsed rules it is read from the source on first access."""
+        and comments kept. Assigning checks the text, raising CSSSyntaxError if it is not valid."""
         text = self._selector_text
         if text is None:
+            from kgcss.cssom.serializer import normalize_selector
+
             owner = self._block_owner
             assert isinstance(owner, QualifiedRule)
             self._selector_text = text = normalize_selector(owner.prelude.text)
@@ -272,8 +568,32 @@ class StyleRule(LazyBlockRule):
 
     @selector_text.setter
     def selector_text(self, value: str) -> None:
-        self._selector_text = normalize_selector(value)
+        parts = check_selector_list(value)
+        self._selector_text = ', '.join(parts)
+        if self._selectors is not None:
+            self._selectors._replace_all(parts)
         self._changed()
+
+    @property
+    def selectors(self) -> SelectorList:
+        """The selectors, as a mutable list. Changes update selector_text."""
+        selectors = self._selectors
+        if selectors is not None:
+            return selectors
+
+        def create() -> SelectorList:
+            text = self.selector_text
+            texts = split_on_commas(text) if text.strip(CSS_WHITESPACE) else []
+            return SelectorList(self, [Selector._from_normalized(t) for t in texts])
+
+        if self._state is None:
+            self._selectors = selectors = create()
+            return selectors
+        # Under the sheet lock, so that concurrent readers all get the same list
+        with self._state.lock:
+            if self._selectors is None:
+                self._selectors = create()
+            return self._selectors
 
     @property
     def rules(self) -> RuleList:
@@ -283,20 +603,25 @@ class StyleRule(LazyBlockRule):
     def child_rules(self) -> RuleList:
         return self.rules
 
+    def _adopt_contents(self) -> None:
+        super()._adopt_contents()
+        self._selectors = None
+
     def _repr_detail(self) -> str:
         return f' {self.selector_text!r}'
 
 
-class GroupingRule(Rule):
+class GroupingRule(RuleContainer):
     """Base of rules that contain a list of rules, such as @media and @supports."""
 
-    __slots__ = ('_keyword', 'prelude_text', 'rules')
+    __slots__ = ('_keyword', '_prelude_text', 'rules')
     default_keyword: ClassVar[str] = ''
+    prelude_text = Tracked[str]()
 
     def __init__(self, prelude_text: str = '') -> None:
         super().__init__()
-        self.prelude_text = prelude_text
-        self.rules = RuleList()
+        self._prelude_text = prelude_text
+        self.rules = RuleList(owner=self)
         # The at-keyword as written, lowercased, for rules with more than one (@-moz-document)
         self._keyword: str | None = None
 
@@ -308,21 +633,39 @@ class GroupingRule(Rule):
     def child_rules(self) -> RuleList:
         return self.rules
 
+    def _adopt_contents(self) -> None:
+        self.rules._owner = self
+        for r in self.rules:
+            r.parent_rule = self
+            set_sheet(r, self.parent_style_sheet)
+
     def _repr_detail(self) -> str:
         return f' {self.prelude_text!r}'
 
 
 @final
 class MediaRule(GroupingRule):
-    """An @media rule."""
+    """An @media rule. Its prelude is the media query list, media."""
 
     __slots__ = ('media',)
     type = RuleType.MEDIA
     default_keyword = 'media'
 
     def __init__(self, media_text: str = '') -> None:
-        super().__init__(media_text)
-        self.media = MediaList(media_text)
+        super().__init__()
+        self.media = MediaList(media_text, self)
+
+    @property
+    def prelude_text(self) -> str:
+        return self.media.media_text
+
+    @prelude_text.setter
+    def prelude_text(self, value: str) -> None:
+        self.media.media_text = value
+
+    def _adopt_contents(self) -> None:
+        super()._adopt_contents()
+        self.media._owner = self
 
 
 @final
@@ -336,6 +679,10 @@ class SupportsRule(GroupingRule):
     @property
     def condition_text(self) -> str:
         return self.prelude_text
+
+    @condition_text.setter
+    def condition_text(self, value: str) -> None:
+        self.prelude_text = value
 
 
 @final
@@ -418,17 +765,33 @@ class NestedDeclarationsRule(Rule):
         self._style = adopt_block(self, value)
         self._changed()
 
+    @property
+    def css_text(self) -> str:
+        """The declarations. Assigning replaces them."""
+        return self.style.css_text
+
+    @css_text.setter
+    def css_text(self, text: str) -> None:
+        self.style = text
+
+    def copy(self) -> NestedDeclarationsRule:
+        new = NestedDeclarationsRule()
+        new.style = self.style.copy()
+        new._dirty = False
+        return new
+
 
 @final
 class LayerStatementRule(Rule):
     """An @layer rule without a block, declaring layer names."""
 
-    __slots__ = ('names',)
+    __slots__ = ('_names',)
     type = RuleType.LAYER_STATEMENT
+    names = Tracked[tuple[str, ...]]()
 
     def __init__(self, names: Iterable[str] = ()) -> None:
         super().__init__()
-        self.names = list(names)
+        self._names = tuple(names)
 
     def _repr_detail(self) -> str:
         return f' {", ".join(self.names)}'
@@ -438,20 +801,26 @@ class LayerStatementRule(Rule):
 class ImportRule(Rule):
     """An @import rule."""
 
-    __slots__ = ('_href_is_string', 'href', 'layer', 'media', 'supports')
+    __slots__ = ('_href', '_href_is_string', '_layer', '_supports', 'media')
     type = RuleType.IMPORT
+    href = Tracked[str]()
+    # None if no layer was given, '' for an anonymous layer
+    layer = Tracked[str | None]()
+    supports = Tracked[str | None]()
 
     def __init__(
         self, href: str = '', media_text: str = '', layer: str | None = None, supports: str | None = None
     ) -> None:
         super().__init__()
-        self.href = href
-        self.media = MediaList(media_text)
-        # None if no layer was given, '' for an anonymous layer
-        self.layer = layer
-        self.supports = supports
+        self._href = href
+        self.media = MediaList(media_text, self)
+        self._layer = layer
+        self._supports = supports
         # @import "a" is written back as a string, @import url(a) as url()
         self._href_is_string = False
+
+    def _adopt_contents(self) -> None:
+        self.media._owner = self
 
     def _repr_detail(self) -> str:
         return f' {self.href!r}'
@@ -461,13 +830,15 @@ class ImportRule(Rule):
 class NamespaceRule(Rule):
     """An @namespace rule. prefix is None for the default namespace."""
 
-    __slots__ = ('namespace_uri', 'prefix')
+    __slots__ = ('_namespace_uri', '_prefix')
     type = RuleType.NAMESPACE
+    namespace_uri = Tracked[str]()
+    prefix = Tracked[str | None]()
 
     def __init__(self, namespace_uri: str = '', prefix: str | None = None) -> None:
         super().__init__()
-        self.namespace_uri = namespace_uri
-        self.prefix = prefix
+        self._namespace_uri = namespace_uri
+        self._prefix = prefix
 
     def _repr_detail(self) -> str:
         return f' {self.prefix!r} {self.namespace_uri!r}'
@@ -477,12 +848,13 @@ class NamespaceRule(Rule):
 class CharsetRule(Rule):
     """An @charset rule."""
 
-    __slots__ = ('encoding',)
+    __slots__ = ('_encoding',)
     type = RuleType.CHARSET
+    encoding = Tracked[str]()
 
     def __init__(self, encoding: str = 'utf-8') -> None:
         super().__init__()
-        self.encoding = encoding
+        self._encoding = encoding
 
     def _repr_detail(self) -> str:
         return f' {self.encoding!r}'
@@ -497,15 +869,16 @@ class FontFaceRule(LazyBlockRule):
 
 
 @final
-class PageRule(LazyBlockRule):
+class PageRule(LazyBlockRule, RuleContainer):
     """An @page rule: a page selector, declarations and margin rules."""
 
-    __slots__ = ('selector_text',)
+    __slots__ = ('_selector_text',)
     type = RuleType.PAGE
+    selector_text = Tracked[str]()
 
     def __init__(self, selector_text: str = '') -> None:
         super().__init__()
-        self.selector_text = selector_text
+        self._selector_text = selector_text
 
     @property
     def rules(self) -> RuleList:
@@ -530,12 +903,13 @@ MARGIN_RULE_NAMES = frozenset((
 class MarginRule(LazyBlockRule):
     """A page margin rule such as @top-left, inside an @page rule."""
 
-    __slots__ = ('name',)
+    __slots__ = ('_name',)
     type = RuleType.MARGIN
+    name = Tracked[str]()
 
     def __init__(self, name: str = 'top-left') -> None:
         super().__init__()
-        self.name = name
+        self._name = name
 
     def _repr_detail(self) -> str:
         return f' {self.name}'
@@ -566,6 +940,9 @@ class Comment(Rule):
         self._text = value
         self._changed()
 
+    def copy(self) -> Comment:
+        return Comment(self._text)
+
     def _repr_detail(self) -> str:
         return f' {self.text[:30]!r}'
 
@@ -574,15 +951,18 @@ class Comment(Rule):
 class UnknownAtRule(Rule):
     """An at-rule this library does not model. It is kept exactly as written."""
 
-    __slots__ = ('block_text', 'name', 'prelude_text')
+    __slots__ = ('_block_text', '_name', '_prelude_text')
     type = RuleType.UNKNOWN
+    name = Tracked[str]()
+    prelude_text = Tracked[str]()
+    # The text inside the {} block, or None for an at-rule ended by a semicolon
+    block_text = Tracked[str | None]()
 
     def __init__(self, name: str = '', prelude_text: str = '', block_text: str | None = None) -> None:
         super().__init__()
-        self.name = name
-        self.prelude_text = prelude_text
-        # The text inside the {} block, or None for an at-rule ended by a semicolon
-        self.block_text = block_text
+        self._name = name
+        self._prelude_text = prelude_text
+        self._block_text = block_text
 
     @property
     def at_keyword(self) -> str:

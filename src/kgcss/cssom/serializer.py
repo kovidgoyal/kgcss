@@ -149,6 +149,42 @@ def could_merge(c: str, after: bool = False) -> bool:
     return c.isalnum() or ord(c) >= 0x80 or c in '-_\\.+' or (after and c == '%')
 
 
+def values_complete(values: Iterable[Token | Block | Function]) -> bool:
+    """Whether component values can be written verbatim with more text after them: nothing is left
+    open by the end of the input, and they do not end with something that needs a newline after it.
+    Checking the top level is enough, since anything left open inside leaves its parents open too."""
+    last: Token | Block | Function | None = None
+    for item in values:
+        if not item.closed:
+            return False
+        last = item
+    return not (isinstance(last, Token) and (last.type is TokenType.BAD_STRING or is_lone_backslash(last)))
+
+
+def source_is_complete(source: object) -> bool:
+    """Whether the source text of a rule can be written verbatim with other rules after it."""
+    from kgcss.syntax import AtRule, QualifiedRule
+
+    if isinstance(source, QualifiedRule):
+        return source.block.closed
+    if isinstance(source, AtRule):
+        block = source.block
+        return source.source_text.endswith(';') if block is None else block.closed
+    if isinstance(source, Token):
+        return source.closed
+    return False
+
+
+def tokens_merge(before: str, after: str) -> bool:
+    """Whether two pieces of text tokenize differently when written next to each other."""
+    from kgcss.tokenizer import tokenize
+
+    def key(text: str) -> list[tuple[TokenType, str]]:
+        return [(t.type, t.source_text) for t in tokenize(text)]
+
+    return key(before + after) != key(before) + key(after)
+
+
 def is_lone_backslash(tok: Token) -> bool:
     return tok.type is TokenType.DELIM and tok.source_text == '\\'
 
@@ -187,9 +223,20 @@ class TokenWriter:
         length = 0
         first_significant: int | None = None
         last_needs_newline = False
+        # A comment was left out after last_text: what comes next must not merge with it
+        dropped_comment = False
+        last_text = ''
 
         def emit(text: str, significant: bool = True) -> None:
             nonlocal need_newline, pending_space, length, first_significant, last_needs_newline
+            nonlocal dropped_comment, last_text
+            if dropped_comment and significant:
+                dropped_comment = False
+                if last_text and tokens_merge(last_text, text):
+                    # In selectors a space is a combinator, so separate with an empty comment
+                    sep = '/**/' if self.mode == 'selector' else ' '
+                    out.append(sep)
+                    length += len(sep)
             if need_newline:
                 need_newline = False
                 if not text.startswith(('\n', '\r', '\f')):
@@ -203,11 +250,17 @@ class TokenWriter:
             if significant:
                 self.significant_end = length
                 last_needs_newline = False
+                last_text = text
+            else:
+                last_text = ''
 
         def space() -> None:
-            nonlocal length
-            out.append(' ')
-            length += 1
+            nonlocal length, last_text
+            last_text = ''
+            # A hex escape at the end of the previous token would absorb a single space
+            sep = '  ' if out and HEX_ESCAPE_AT_END.search(out[-1]) else ' '
+            out.append(sep)
+            length += len(sep)
 
         while stack:
             it, closer, kind = stack[-1]
@@ -236,6 +289,14 @@ class TokenWriter:
                     continue
                 if t is TokenType.COMMENT:
                     if not self.keep_comments:
+                        if self.mode == 'selector':
+                            # A space would be a combinator: separate only if tokens would merge
+                            dropped_comment = True
+                        elif self.normalize:
+                            # In values a comment separates tokens exactly like whitespace
+                            pending_space = True
+                        elif not (out and out[-1].endswith(' ')):
+                            emit(' ', False)
                         continue
                     text = f'/*{item.value}*/'
                 elif self.normalize:
@@ -412,7 +473,13 @@ def property_value_text(prop: Property, options: SerializeOptions, attribute_saf
 
 def property_text(prop: Property, options: SerializeOptions, attribute_safe: bool = False) -> str:
     """name: value, with !important if set."""
-    if options.style == 'preserve' and not prop._dirty and prop._node is not None and not attribute_safe:
+    if (
+        options.style == 'preserve'
+        and not prop._dirty
+        and prop._node is not None
+        and not attribute_safe
+        and values_complete(prop._node.value)
+    ):
         return prop._node.source_text
     value = property_value_text(prop, options, attribute_safe)
     # Names are stored unescaped, so they are escaped as needed: \31 x is stored as 1x
@@ -472,7 +539,16 @@ class Writer:
         return self.options.indent * depth
 
     def unchanged_source(self, rule: Rule) -> str | None:
-        if self.preserve and not rule._dirty and rule._source is not None:
+        from kgcss.cssom.rules import NestedDeclarationsRule
+
+        if (
+            self.preserve
+            and not rule._dirty
+            and rule._source is not None
+            # Their text has no final ;, so they are written declaration by declaration
+            and not isinstance(rule, NestedDeclarationsRule)
+            and source_is_complete(rule._source)
+        ):
             return rule._source.source_text
         return None
 
@@ -489,23 +565,27 @@ class Writer:
     def rule_lines(self, rule: Rule, depth: int) -> list[str]:
         from kgcss.cssom import rules as r
 
+        if (
+            isinstance(rule, r.StyleRule)
+            and rule.parent_rule is not None
+            and reparses_as_declaration(rule.selector_text)
+        ):
+            # A nested rule with the selector "a:" would be read back as a declaration whose
+            # value is a {} block. Such a selector is invalid, so the rule is left out.
+            return []
         if (source := self.unchanged_source(rule)) is not None:
             return [self.indent(depth) + source]
         ind = self.indent(depth)
         opts = self.options
         match rule:
             case r.StyleRule():
-                if rule.parent_rule is not None and reparses_as_declaration(rule.selector_text):
-                    # A nested rule with the selector "a:" would be read back as a declaration whose
-                    # value is a {} block. Such a selector is invalid, so the rule is left out.
-                    return []
                 body = self.decl_lines(rule.style, depth + 1)
                 children, has_content = self.rules_with_content(rule.rules, depth + 1)
                 empty = not has_declarations(rule.style) and not has_content
                 return self.block(rule.selector_text, body + children, depth, empty)
             case r.NestedDeclarationsRule():
-                if opts.drop_empty_rules and not has_declarations(rule.style):
-                    return []
+                # Written even without declarations: its comments then read back as comment
+                # rules, which are written too. It only counts as content with declarations.
                 return self.decl_lines(rule.style, depth)
             case r.MediaRule():
                 return self.grouping(rule, '@media', rule.media.media_text, depth)
@@ -553,13 +633,15 @@ class Writer:
     def rules_with_content(self, rules: Iterable[Rule], depth: int) -> tuple[list[str], bool]:
         """The lines for rules, and whether any of them is more than a comment: a rule containing only
         comments counts as empty, wherever the comments are."""
-        from kgcss.cssom.rules import Comment
+        from kgcss.cssom.rules import Comment, NestedDeclarationsRule
 
         lines: list[str] = []
         has_content = False
         for rule in rules:
             rule_lines = self.rule_lines(rule, depth)
-            if rule_lines and not isinstance(rule, Comment):
+            if isinstance(rule, NestedDeclarationsRule):
+                has_content = has_content or has_declarations(rule.style)
+            elif rule_lines and not isinstance(rule, Comment):
                 has_content = True
             lines.extend(rule_lines)
         return lines, has_content

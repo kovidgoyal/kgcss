@@ -229,10 +229,29 @@ class Property:
 
     @property
     def css_text(self) -> str:
-        """name: value, with !important if set, in the pretty format."""
+        """name: value, with !important if set, in the pretty format. Assigning parses one declaration
+        and takes its name, value and priority, raising CSSSyntaxError if it is not one."""
         from kgcss.cssom.serializer import DEFAULT_OPTIONS, property_text
 
         return property_text(self, DEFAULT_OPTIONS)
+
+    @css_text.setter
+    def css_text(self, text: str) -> None:
+        from kgcss.cssom.exceptions import CSSSyntaxError
+
+        decl = parse_one_declaration(text)
+        if not isinstance(decl, Declaration) or decl.end < len(
+            text.rstrip(CSS_WHITESPACE).rstrip(';').rstrip(CSS_WHITESPACE)
+        ):
+            raise CSSSyntaxError(f'Not a single declaration: {text!r}')
+        name = normalize_name(decl.name)
+        value = check_value(name, decl.value_text)
+        self._name, self._value = name, value
+        self._priority = 'important' if decl.important else ''
+        self._literal_priority = None
+        self._value_from_node = False
+        self._parsed = None
+        self._changed()
 
     def __repr__(self) -> str:
         imp = ' !important' if self._priority else ''

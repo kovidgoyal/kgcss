@@ -33,9 +33,10 @@ from kgcss.cssom.rules import (
     SupportsRule,
     UnknownAtRule,
 )
+from kgcss.cssom.selector_list import Selector, SelectorList
 from kgcss.cssom.serializer import SerializeOptions, serialize
 from kgcss.cssom.state import ErrorHandler
-from kgcss.cssom.stylesheet import Stylesheet, parse_stylesheet
+from kgcss.cssom.stylesheet import NamespaceMap, Stylesheet, parse_rule, parse_stylesheet
 from kgcss.cssom.values import Component, PropertyValue, parse_value
 
 __all__ = [
@@ -57,6 +58,7 @@ __all__ = [
     'MarginRule',
     'MediaList',
     'MediaRule',
+    'NamespaceMap',
     'NamespaceRule',
     'NestedDeclarationsRule',
     'PageRule',
@@ -66,12 +68,15 @@ __all__ = [
     'RuleList',
     'RuleType',
     'ScopeRule',
+    'Selector',
+    'SelectorList',
     'SerializeOptions',
     'StartingStyleRule',
     'StyleRule',
     'Stylesheet',
     'SupportsRule',
     'UnknownAtRule',
+    'parse_rule',
     'parse_style',
     'parse_stylesheet',
     'parse_value',

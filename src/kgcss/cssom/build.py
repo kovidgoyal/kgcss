@@ -34,7 +34,7 @@ from kgcss.cssom.rules import (
     UnknownAtRule,
     split_on_commas,
 )
-from kgcss.cssom.state import SYNTAX_ERROR_KINDS, SheetState, Source
+from kgcss.cssom.state import SYNTAX_ERROR_KINDS, ErrorHandler, SheetState, Source
 from kgcss.syntax import (
     AtRule,
     Block,
@@ -59,6 +59,7 @@ class Context(Enum):
     TOP = auto()  # top level of a stylesheet
     GROUPING = auto()  # inside a grouping rule that is not inside a style rule
     NESTED = auto()  # inside a style rule, at any depth
+    PAGE = auto()  # inside an @page rule, where margin rules are
 
 
 GROUPING_RULES: dict[str, type[GroupingRule]] = {
@@ -187,7 +188,7 @@ class Builder:
             nodes = parse_block_contents(block)
             self.report_block_errors(nodes)
             child_context = Context.NESTED if context is Context.NESTED else Context.GROUPING
-            grouping.rules = RuleList(self.build_rules(nodes, grouping, child_context))
+            grouping.rules = RuleList(self.build_rules(nodes, grouping, child_context), grouping)
             return grouping
         elif name in ('font-face', 'page'):
             if block is None:
@@ -329,3 +330,42 @@ def build_top_level(nodes: NodeList, sheet: Stylesheet) -> list[Rule]:
         previous.add(rule.type)
     state.end_batch()
     return rules
+
+
+def parse_rule_text(text: str, context: Context, log: ErrorHandler | None = None) -> Rule:
+    """Parse the text of exactly one rule, valid in context. Raises CSSSyntaxError otherwise.
+
+    The text of a single comment gives a Comment rule.
+    """
+    from kgcss.cssom.exceptions import CSSSyntaxError
+    from kgcss.syntax import parse_one_rule
+    from kgcss.tokenizer import tokenize
+
+    significant = [t for t in tokenize(text) if t.type is not TokenType.WHITESPACE]
+    if len(significant) == 1 and significant[0].type is TokenType.COMMENT:
+        if not significant[0].closed:
+            raise CSSSyntaxError(f'Unclosed comment: {text!r}')
+        comment = Comment(str(significant[0].value))
+        comment._source = significant[0]
+        return comment
+    node = parse_one_rule(text)
+    if not isinstance(node, AtRule | QualifiedRule):
+        raise CSSSyntaxError(f'{node.message}: {text!r}')
+    state = SheetState(log, None)
+    builder = Builder(state, node.stream, None)
+    rule: Rule | None
+    if context is Context.PAGE:
+        rule = None
+        if isinstance(node, AtRule) and ascii_lower(node.name) in MARGIN_RULE_NAMES and node.block is not None:
+            margin = MarginRule(ascii_lower(node.name))
+            builder.init(margin, node, None)
+            margin._block_owner = node
+            rule = margin
+        if rule is None:
+            raise CSSSyntaxError(f'Only margin rules are allowed in @page rules: {text!r}')
+        return rule
+    rule = builder.style_rule(node, None) if isinstance(node, QualifiedRule) else builder.at_rule(node, None, context)
+    if rule is None:
+        message = state.errors[-1].message if state.errors else 'Invalid rule'
+        raise CSSSyntaxError(f'{message}: {text!r}')
+    return rule
