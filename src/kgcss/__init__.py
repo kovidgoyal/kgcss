@@ -11,6 +11,7 @@ from kgcss._version import __version__
 from kgcss.cssom import (
     CharsetRule,
     Comment,
+    Component,
     ContainerRule,
     CSSSyntaxError,
     DeclarationBlock,
@@ -30,6 +31,7 @@ from kgcss.cssom import (
     NestedDeclarationsRule,
     PageRule,
     Property,
+    PropertyValue,
     Rule,
     RuleList,
     RuleType,
@@ -42,6 +44,7 @@ from kgcss.cssom import (
     UnknownAtRule,
     parse_style,
     parse_stylesheet,
+    parse_value,
     serialize,
 )
 from kgcss.decode import decode_stylesheet, lookup_encoding
@@ -52,6 +55,7 @@ __all__ = [
     'CSSSyntaxError',
     'CharsetRule',
     'Comment',
+    'Component',
     'ContainerRule',
     'DeclarationBlock',
     'DeclarationList',
@@ -71,6 +75,7 @@ __all__ = [
     'PageRule',
     'ParseError',
     'Property',
+    'PropertyValue',
     'Rule',
     'RuleList',
     'RuleType',
@@ -86,6 +91,7 @@ __all__ = [
     'lookup_encoding',
     'parse_style',
     'parse_stylesheet',
+    'parse_value',
     'serialize',
     'serialize_identifier',
     'serialize_string',

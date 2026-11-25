@@ -6,8 +6,10 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from kgcss import (
+    Component,
     DeclarationBlock,
     Property,
+    PropertyValue,
     Rule,
     RuleList,
     RuleType,
@@ -15,9 +17,11 @@ from kgcss import (
     Stylesheet,
     parse_style,
     parse_stylesheet,
+    parse_value,
     serialize,
 )
 from kgcss.cssom.declarations import normalize_name
+from kgcss.cssom.values import Function, Other, Separator, SimpleBlock, UnicodeRange
 
 from .strategies import css_text
 
@@ -123,3 +127,48 @@ def test_mutations_keep_invariants(css: str, operations: list[tuple[object, ...]
         # The cached effective view always matches a fresh computation
         assert summary(block) == reference_effective(block)
         assert all(i.parent is block for i in block.items if isinstance(i, Property))
+
+
+def check_value_tree(value: PropertyValue) -> None:
+    stack = [value]
+    while stack:
+        v = stack.pop()
+        assert len(v) == len([i for i in v.items if not isinstance(i, Separator)])
+        for item in v.items:
+            # Every component's text appears verbatim in its parent's text (requirements V6)
+            assert item.css_text in v.css_text
+            if isinstance(item, Function):
+                stack.append(item.arguments)
+            elif isinstance(item, SimpleBlock):
+                stack.append(item.content)
+
+
+def component_key(c: Component) -> tuple[str, object]:
+    # Compared by meaning: the text of a hex escape can gain its terminating space when joined
+    if isinstance(c, Function | SimpleBlock):
+        return c.type, c.css_text
+    return c.type, getattr(c, 'value', c.css_text)
+
+
+@given(css_text)
+def test_values(css: str) -> None:
+    for name in (None, 'unicode-range'):
+        value = parse_value(css, property_name=name)
+        check_value_tree(value)
+        for i in range(len(value)):
+            # Removing a component leaves exactly the others
+            # Reparse the same way: a value that was not a valid unicode-range list can become one
+            is_urange = any(isinstance(c, UnicodeRange) for c in value)
+            remaining = parse_value(value.text_without(i), property_name=name if is_urange else None)
+            expected = [component_key(c) for j, c in enumerate(value) if j != i]
+            if remaining.css_text and not any(isinstance(c, Other) for c in value):
+                assert [component_key(c) for c in remaining] == expected, (css, i)
+
+
+@given(css_text)
+def test_parsed_values_of_declarations(css: str) -> None:
+    for item in parse_style(css).items:
+        if isinstance(item, Property):
+            parsed = item.parsed_value
+            check_value_tree(parsed)
+            assert parsed.css_text == item.value

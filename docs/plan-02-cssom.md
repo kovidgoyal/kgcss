@@ -468,7 +468,64 @@ class SerializeOptions:
 
 ## 8. Milestones
 
-Status: milestones 1 and 2 are done.
+Status: milestones 1 to 3 are done.
+
+Notes from milestone 3:
+- **Where values live.** `kgcss.cssom.values` has `PropertyValue` and the
+  component classes: `Ident`, `String`, `Number`, `Percentage`,
+  `Dimension`, `Url`, `Hash`, `UnicodeRange`, `Operator`, `Separator`,
+  `Function`, `SimpleBlock` and `Other`. `Other` covers at-keywords, bad
+  strings and URLs, CDO, CDC and stray closers. `PropertyValue`,
+  `Component` and `parse_value()` are also exported at the top level. The
+  component names are too generic for that.
+- **Separators.** Commas and `/` are `Separator` items. They are in
+  `items` but are not components, so `font: italic 12px/1.2 "My Font",
+  serif` has 5 components (V1). Other delimiters, such as `+` in `calc()`,
+  are `Operator` components (V2). `url("x")` is a `Url`, not a `Function`.
+- **Unicode ranges.** For `unicode-range` (`parse_value(...,
+  property_name='unicode-range')`, or `Property.parsed_value`), the value is
+  parsed from its text into `UnicodeRange(start, end)` components. If any
+  part is invalid, the value falls back to ordinary components.
+- **Caching.** `Property.parsed_value` is cached. While the value is
+  unchanged it is built from the syntax node, otherwise from the text.
+  Setting the value or the name invalidates it. There is also
+  `DeclarationBlock.get_parsed_value()`.
+- **Removing components** (V6, U5): `PropertyValue.text_without(i)` and
+  `Property.remove_component(i)`. They remove the component and one
+  adjacent separator. The remaining text is kept as written wherever items
+  stay adjacent, otherwise joined with a space.
+- **Bugs found by property tests**, all about never changing the meaning of
+  what remains. Each is now a regression test:
+  - Value text was trimmed with `str.strip()`, which ate the space that ends
+    a hex escape (`\31 `). Value text now runs from the first to the last
+    significant item, as in the parser, and is never trimmed.
+  - Joining after a hex escape needs two spaces, because the escape absorbs
+    one.
+  - A lone backslash (from `\` before a newline, which is invalid CSS) is a
+    delimiter only because of that newline. Values ending in one keep the
+    newline (`protected_end()`), and joins after one keep their original
+    gap. Otherwise it would turn into an escape.
+  - Joining a `/` directly to the next item could create `/*`, so joins
+    always use a space unless the next item is a separator.
+- **Performance, for milestone 8.**
+  - The garbage collector is a large share of the cost. The CSSOM has
+    parent pointers by design, so a parsed sheet is one big reference
+    cycle. Reference counting cannot free it, and repeated parsing leads to
+    repeated full collections over millions of objects.
+  - On the calibre-style sheet, reading all 53k values as text takes about
+    115 ms with GC off and 150-255 ms with it on. Parsing every value takes
+    about 220 ms with GC off and about 800 ms with it on.
+  - Components are now plain slots dataclasses rather than frozen ones,
+    which are twice as slow to create. Spans are one flat tuple, and the
+    items tuple is reused when there are no separators.
+  - Options for milestone 8:
+    - value components implemented in C without GC tracking, like the
+      syntax tokens;
+    - fewer tracked objects per declaration;
+    - weak back-references;
+    - documenting `gc.freeze()` for applications that keep sheets around.
+
+    Choose between them with A/B measurements.
 
 Notes from milestone 2:
 - **`DeclarationBlock`** has the effective view (iteration, `len`, `in`,

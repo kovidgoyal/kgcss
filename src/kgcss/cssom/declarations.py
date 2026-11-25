@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, overload
 
 from kgcss.cssom.exceptions import InvalidValueError
 from kgcss.cssom.state import ErrorHandler, SheetState
+from kgcss.cssom.values import PropertyValue, parse_value, protected_end, value_from_components
 from kgcss.escaping import serialize_identifier
 from kgcss.syntax import Block, Declaration, Function, Token, parse_block_contents, parse_one_declaration
 from kgcss.tokenizer import ParseError, TokenType, tokenize
@@ -74,7 +75,7 @@ class Property:
     is checked when set, see check_value().
     """
 
-    __slots__ = ('_literal_priority', '_name', '_node', '_priority', '_value', 'parent')
+    __slots__ = ('_literal_priority', '_name', '_node', '_parsed', '_priority', '_value', '_value_from_node', 'parent')
 
     def __init__(self, name: str, value: str, priority: str = '', *, validate: bool = False) -> None:
         self._name = normalize_name(name)
@@ -82,6 +83,9 @@ class Property:
         self._priority = normalize_priority(priority)
         self._literal_priority: str | None = None
         self._node: Declaration | None = None
+        # True while the value is still the one in the syntax node
+        self._value_from_node = False
+        self._parsed: PropertyValue | None = None
         self.parent: DeclarationBlock | None = None
 
     @classmethod
@@ -94,6 +98,8 @@ class Property:
         p._priority = 'important' if node.important else ''
         p._literal_priority = None
         p._node = node
+        p._value_from_node = True
+        p._parsed = None
         p.parent = None
         return p
 
@@ -109,6 +115,8 @@ class Property:
     @name.setter
     def name(self, name: str) -> None:
         self._name = normalize_name(name)
+        # How the value is parsed can depend on the name (unicode-range)
+        self._parsed = None
         self._changed()
 
     @property
@@ -116,15 +124,41 @@ class Property:
         """The value as text, without surrounding whitespace. Assigning checks the new value, see check_value()."""
         value = self._value
         if value is None:
-            assert self._node is not None
-            self._value = value = self._node.value_text
+            node = self._node
+            assert node is not None
+            value = node.value_text
+            if value.endswith('\\'):
+                # A trailing lone backslash needs its newline, see protected_end()
+                values = node.value
+                end = protected_end(node.stream.source, values.end, values[len(values) - 1])
+                value = node.stream.source[values.pos : end]
+            self._value = value
         return value
 
     @value.setter
     def value(self, value: str) -> None:
         self._value = check_value(self._name, value)
+        self._value_from_node = False
+        self._parsed = None
         self._literal_priority = None
         self._changed()
+
+    @property
+    def parsed_value(self) -> PropertyValue:
+        """The value as a sequence of components, parsed on first access."""
+        parsed = self._parsed
+        if parsed is None:
+            node = self._node
+            if node is not None and self._value_from_node:
+                parsed = value_from_components(node.value, self._name)
+            else:
+                parsed = parse_value(self.value, property_name=self._name)
+            self._parsed = parsed
+        return parsed
+
+    def remove_component(self, index: int) -> None:
+        """Remove the component at index of parsed_value, with one adjacent separator (requirements V6)."""
+        self.value = self.parsed_value.text_without(index)
 
     @property
     def priority(self) -> str:
@@ -175,6 +209,7 @@ class Property:
         p = Property.__new__(Property)
         p._name, p._value, p._priority = self._name, self.value, self._priority
         p._literal_priority, p._node, p.parent = self._literal_priority, self._node, None
+        p._value_from_node, p._parsed = self._value_from_node, self._parsed
         return p
 
     def __repr__(self) -> str:
@@ -348,6 +383,11 @@ class DeclarationBlock:
     def get_property(self, name: str) -> Property | None:
         """The effective property for name, or None."""
         return self._effective_view().get(normalize_name(name))
+
+    def get_parsed_value(self, name: str) -> PropertyValue | None:
+        """The parsed effective value of the property name, or None if it is not set."""
+        p = self._effective_view().get(normalize_name(name))
+        return None if p is None else p.parsed_value
 
     def _remove_others(self, name: str, keep: Property | None) -> None:
         self._items[:] = [i for i in self._items if not (isinstance(i, Property) and i.name == name and i is not keep)]

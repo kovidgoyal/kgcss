@@ -36,11 +36,13 @@ from kgcss.cssom.rules import (
 from kgcss.cssom.serializer import SerializeOptions, serialize
 from kgcss.cssom.state import ErrorHandler
 from kgcss.cssom.stylesheet import Stylesheet, parse_stylesheet
+from kgcss.cssom.values import Component, PropertyValue, parse_value
 
 __all__ = [
     'CSSSyntaxError',
     'CharsetRule',
     'Comment',
+    'Component',
     'ContainerRule',
     'DeclarationBlock',
     'DeclarationList',
@@ -59,6 +61,7 @@ __all__ = [
     'NestedDeclarationsRule',
     'PageRule',
     'Property',
+    'PropertyValue',
     'Rule',
     'RuleList',
     'RuleType',
@@ -71,5 +74,6 @@ __all__ = [
     'UnknownAtRule',
     'parse_style',
     'parse_stylesheet',
+    'parse_value',
     'serialize',
 ]
