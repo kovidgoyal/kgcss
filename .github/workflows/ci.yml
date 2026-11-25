@@ -1,0 +1,29 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy
+
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.10", "3.12", "3.13", "3.14", "3.13t", "3.14t"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Run tests
+        env:
+          KGCSS_WERROR: "1"
+        run: uv run -p ${{ matrix.python }} --isolated --with pytest --with pytest-xdist --with . -- python -m pytest -n auto
