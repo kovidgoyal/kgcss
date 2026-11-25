@@ -43,7 +43,9 @@ per-call settings, full typing, `@final` classes. In addition:
   then `select(selector, root=None)`, `select.select(...)` and
   `select.has_matches(...)`. With the exception names and
   `INAPPROPRIATE_PSEUDO_CLASSES` exported at the top level, a
-  `css_selectors` shim in calibre is a single import line.
+  `css_selectors` shim in calibre is a single import, plus
+  `quirks_mode=True` to keep today's case-insensitive ids and classes
+  (§2.4).
 
 ---
 
@@ -91,8 +93,8 @@ document once and records, for each element, in compact C arrays:
   ends, so "is a descendant of" is a range check;
 - parent, previous and next element siblings, its index among element
   siblings and the number of element siblings;
-- the ASCII-lowercased local name, id and classes as interned integers
-  (atoms);
+- the ASCII-lowercased local name, and the id and classes (lowercased only
+  in quirks mode, §2.4), as interned integers (atoms);
 - its attributes (local name atom, value);
 - a reference to the element object, to return results.
 
@@ -150,17 +152,22 @@ features.
 
 ### 2.4 HTML-style matching
 
-As `css_selectors` does today, and as the requirements specify (9.2):
-- tag names, attribute names, ids and classes are compared ASCII
-  case-insensitively;
+As the requirements specify (9.2):
+- tag names and attribute names are compared ASCII case-insensitively;
 - attribute values are compared case-sensitively, unless the selector has
   the `i` flag;
 - namespaces are ignored: `{ns}` is stripped from tags and attribute
   names, and namespace prefixes in selectors (`svg|rect`, `[xml|lang]`)
   are accepted and ignored.
 
-Case-insensitive ids and classes are not what standards-mode HTML does,
-but calibre's output and tests rely on them (decision D5).
+**Ids and classes (D5)** follow HTML: case-sensitive in the default
+standards mode, and ASCII case-insensitive with `Select(...,
+quirks_mode=True)`, as in an HTML document in quirks mode. `css_selectors`
+always matches them case-insensitively, so calibre passes
+`quirks_mode=True` wherever it needs today's behaviour. The option decides
+how the snapshot stores id and class atoms (exactly, or lowercased) and how
+a selector's names are looked up in them, so it costs nothing at match
+time.
 
 ### 2.5 Thread safety
 
@@ -191,7 +198,8 @@ def parse_selectors(text: str, *, nested: bool = False) -> SelectorList:
 
 class Select:
     def __init__(self, root: Element | ElementTree, *,
-                 ignore_inappropriate_pseudo_classes: bool = False) -> None: ...
+                 ignore_inappropriate_pseudo_classes: bool = False,
+                 quirks_mode: bool = False) -> None: ...
     def select(self, selector: str | Selector | SelectorList,
                root: Element | None = None) -> Iterator[Element]: ...
     __call__ = select
@@ -282,9 +290,12 @@ inside `:is()`, `:not()`, `:has()` and `of S`. That is what
 
 ### 4.3 Specificity
 
-A 3-tuple `(ids, classes, types)`, as `css_selectors` returns. Callers that
-used `css_parser`'s 4-tuple prepend the inline part themselves (D3). Level 4
-rules:
+A 3-tuple `(a, b, c)`: ids, then classes, attributes and pseudo-classes,
+then types and pseudo-elements, as Selectors Level 4 defines it (D3).
+`css_selectors` returns the same. The 4-tuple of `css_parser` adds a first
+part for the style attribute. In the CSS cascade that is a separate level,
+not part of specificity, so callers that need it compare it separately.
+Level 4 rules:
 - `:is()`, `:not()` and `:has()` count as their most specific argument;
 - `:where()` counts as 0;
 - `:nth-child(An+B of S)` counts as a pseudo-class plus the most specific
@@ -468,10 +479,10 @@ the selectors that match. Decide in milestone 5, from measurements (D9).
   random selectors (a strategy generated from the grammar, including
   `:has()`, `of S` and deep combinator chains) and random trees (varying
   depth, siblings, namespaces, case, `lang` and `xml:lang`, comments and
-  text for `:empty`).
+  text for `:empty`), in both standards and quirks mode.
 - **Against `css_selectors`:** the same random inputs, compared with the
-  real `css_selectors` from the bench cache, minus a table of intended
-  differences. This catches places where the oracle and our reading of the
+  real `css_selectors` from the bench cache, with `quirks_mode=True`, minus
+  a table of intended differences. This catches places where the oracle and our reading of the
   spec both differ from what calibre does today.
 - **The parser:** for every parsed selector, the tree's spans must cover
   the text exactly. The tree serialized back to text and reparsed must give
@@ -507,7 +518,7 @@ the selectors that match. Decide in milestone 5, from measurements (D9).
    `rename_ids()`, and `resolved()` for nested rules. Property tests for
    the renames: only the renamed spans change.
 3. **The snapshot and core matching.**
-   - `Select`: the snapshot in C, atoms and indexes.
+   - `Select`: the snapshot in C, atoms and indexes, and `quirks_mode`.
    - Type, universal, id, class and attribute selectors, all operators and
      flags. The four combinators, with the failure cache.
    - `:not()`, `:is()`, `:where()` and `:matches()`; `:root`, `:scope`,
@@ -530,18 +541,20 @@ the selectors that match. Decide in milestone 5, from measurements (D9).
 
 ## 9. Decisions
 
-| # | Question | Recommendation |
+Decided on 2026-11-25.
+
+| # | Question | Decision |
 |---|---|---|
 | D1 | How to match: in Python over lxml, by translating to XPath, in C on libxml2 nodes, or a snapshot matched in C? | A snapshot matched in C (§2.1) |
 | D2 | One parser in C with a tree view, or a parser in Python? | One parser in C; the tree is built from its output on demand (§2.2) |
-| D3 | Specificity as a 3-tuple (`css_selectors`) or a 4-tuple with an inline part (`css_parser`)? | 3-tuple; calibre prepends the inline part where it needs it |
+| D3 | Specificity as a 3-tuple or a 4-tuple with an inline part? | What the CSS spec does: the 3-tuple `(a, b, c)` of Selectors Level 4 (§4.3) |
 | D4 | Rules with selectors that do not parse: keep them (fidelity) or drop them (as browsers and `css_parser` do)? | Keep them, raise when they are parsed or matched, and offer `invalid_selectors(sheet)` (§2.3). Assigning invalid `selector_text` raises. |
-| D5 | Ids and classes: ASCII case-insensitive (calibre today) or case-sensitive (standards-mode HTML)? | Case-insensitive, as calibre relies on it |
+| D5 | Ids and classes: ASCII case-insensitive (calibre today) or case-sensitive (standards-mode HTML)? | An option per `Select`, `quirks_mode`, defaulting to standards mode: case-sensitive (§2.4) |
 | D6 | The `!=` attribute operator, which parses today and then crashes when matched | A syntax error, since it is not CSS |
 | D7 | `:lang()` ignores `xml:lang` | Fix: `xml:lang`, then `lang`, inherited |
 | D8 | lxml as a dependency? | No. `Select` works on any ElementTree-style tree. lxml is in the dev and bench dependency groups for tests. |
 | D9 | A bulk `match_all()` for the stylizer | Only if milestone 5 measurements show that per-call overhead dominates |
-| D10 | A separate `css_selectors` compatibility module? | No. `Select`, the exceptions and `INAPPROPRIATE_PSEUDO_CLASSES` keep their names and call protocol at the top level of kgcss, so calibre's shim is one import line. Code that walks the old parse tree (`classes_in_selector`, `live_css.py`) is ported to §4.2 and §4.4. |
+| D10 | A separate `css_selectors` compatibility module? | No. `Select`, the exceptions and `INAPPROPRIATE_PSEUDO_CLASSES` keep their names and call protocol at the top level of kgcss, so calibre's shim is an import plus `quirks_mode=True`. Code that walks the old parse tree (`classes_in_selector`, `live_css.py`) is ported to §4.2 and §4.4. |
 
 ---
 
@@ -549,7 +562,7 @@ the selectors that match. Decide in milestone 5, from measurements (D9).
 
 | `css_selectors` (calibre today) | kgcss |
 |---|---|
-| `Select(root, ignore_inappropriate_pseudo_classes=...)` | the same |
+| `Select(root, ignore_inappropriate_pseudo_classes=...)` | the same, plus `quirks_mode=True` for case-insensitive ids and classes |
 | `select(selector_text, root=None)`, `select.has_matches(...)` | the same, also taking `Selector` and `SelectorList` |
 | `Select(..., default_lang=, dispatch_map=, trace=)` | dropped (requirements 9.2) |
 | `select.invalidate_caches()` | dropped: make a new `Select` after changing the tree |
