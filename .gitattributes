@@ -3,3 +3,6 @@ src/kgcss/_encodings.py linguist-generated=true
 
 # Vendored CC0 conformance suite (see tests/css-parsing-tests/VENDORED)
 tests/css-parsing-tests/** linguist-vendored=true
+
+# From calibre's css_selectors tests
+tests/data/css_selectors_* linguist-vendored=true

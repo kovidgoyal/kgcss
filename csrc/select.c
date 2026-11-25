@@ -32,8 +32,8 @@
 #define ABSENT (UINT32_MAX - 1)  /* an atom for a name that occurs nowhere in the document */
 
 /* Atoms that are always present, at these indices */
-enum { ATOM_ID = 0, ATOM_CLASS, ATOM_HREF, ATOM_A, ATOM_AREA, ATOM_LINK, FIXED_ATOMS };
-static const char *const fixed_atoms[FIXED_ATOMS] = {"id", "class", "href", "a", "area", "link"};
+enum { ATOM_ID = 0, ATOM_CLASS, ATOM_HREF, ATOM_A, ATOM_AREA, ATOM_LINK, ATOM_LANG, ATOM_XML_LANG, FIXED_ATOMS };
+static const char *const fixed_atoms[FIXED_ATOMS] = {"id", "class", "href", "a", "area", "link", "lang", "xml:lang"};
 
 typedef struct {
     uint32_t parent, prev, next, first_child, subtree_end;
@@ -43,8 +43,12 @@ typedef struct {
     uint8_t has_content;  /* for :empty, valid once content_done */
 } snap_el;
 
+/* The kinds of language attributes, for :lang() */
+enum { LANG_NONE = 0, LANG_PLAIN, LANG_XML };
+
 typedef struct {
     uint32_t name;
+    uint8_t lang;     /* LANG_PLAIN for lang without a namespace, LANG_XML for xml:lang */
     PyObject *value;  /* str */
 } snap_attr;
 
@@ -65,6 +69,9 @@ typedef struct {
     /* Filled on first use, inside a critical section */
     bool content_done;
     PyObject *index_map;  /* dict: element -> index */
+    uint32_t *type_index, *type_count;  /* position among the siblings with the same name, and their number */
+    PyObject **lang;      /* the language of each element, borrowed from attrs, or NULL */
+    bool lang_done;
 } kg_Snapshot;
 
 /* ---------------------------------------------------------------------------
@@ -200,7 +207,14 @@ add_element(builder *b, PyObject *e, PyObject *tag, uint32_t parent) {
         if (!PyUnicode_Check(k) || !PyUnicode_Check(v)) continue;
         uint32_t a = name_atom(b, k);
         if (a == NONE || !grow((void **)&s->attrs, &b->cap_attrs, s->n_attrs + 1, sizeof(snap_attr))) { ok = false; break; }
-        s->attrs[s->n_attrs++] = (snap_attr){.name = a, .value = Py_NewRef(v)};
+        uint8_t lang = LANG_NONE;
+        if (a == ATOM_XML_LANG) lang = LANG_XML;  /* xml:lang without namespace processing, as in lxml.html */
+        else if (a == ATOM_LANG) {
+            /* lang without a namespace, or in the XML namespace: in other namespaces, it is not a language */
+            if (PyUnicode_READ_CHAR(k, 0) != '{') lang = LANG_PLAIN;
+            else if (PyUnicode_CompareWithASCIIString(k, "{http://www.w3.org/XML/1998/namespace}lang") == 0) lang = LANG_XML;
+        }
+        s->attrs[s->n_attrs++] = (snap_attr){.name = a, .lang = lang, .value = Py_NewRef(v)};
         if (a == ATOM_ID && el->id == NONE) {
             if ((el->id = value_atom(s, v)) == NONE) ok = false;
         } else if (a == ATOM_CLASS && el->class_count == 0) {
@@ -419,6 +433,7 @@ Snapshot_dealloc(PyObject *o) {
     for (size_t i = 0; i < 3; i++) { PyMem_Free(indexes[i]->off); PyMem_Free(indexes[i]->items); }
     Py_XDECREF(s->atoms);
     Py_XDECREF(s->index_map);
+    PyMem_Free(s->type_index); PyMem_Free(s->type_count); PyMem_Free(s->lang);
     tp->tp_free(o);
     Py_DECREF(tp);
 }
@@ -500,14 +515,75 @@ ensure_content(kg_Snapshot *s) {
     return ok;
 }
 
+/* The positions of elements among their siblings with the same name, for the of-type pseudo-classes */
+static bool
+ensure_types(kg_Snapshot *s) {
+    bool ok = true;
+    Py_BEGIN_CRITICAL_SECTION(s);
+    if (s->type_index == NULL) {
+        uint32_t *index = PyMem_Malloc((s->n ? s->n : 1) * sizeof(uint32_t));
+        uint32_t *count = PyMem_Malloc((s->n ? s->n : 1) * sizeof(uint32_t));
+        uint32_t *counter = PyMem_Calloc(s->n_atoms ? s->n_atoms : 1, sizeof(uint32_t));
+        if (!index || !count || !counter) {
+            PyMem_Free(index); PyMem_Free(count); PyMem_Free(counter);
+            PyErr_NoMemory();
+            ok = false;
+        } else {
+            for (uint32_t i = 0; i < s->n; i++) {
+                /* Each group of siblings, from its first element */
+                const snap_el *el = s->els + i;
+                if (el->prev != NONE) continue;
+                for (uint32_t c = i; c != NONE; c = s->els[c].next) index[c] = counter[s->els[c].name]++;
+                for (uint32_t c = i; c != NONE; c = s->els[c].next) count[c] = counter[s->els[c].name];
+                for (uint32_t c = i; c != NONE; c = s->els[c].next) counter[s->els[c].name] = 0;
+            }
+            PyMem_Free(counter);
+            s->type_index = index;
+            s->type_count = count;
+        }
+    }
+    Py_END_CRITICAL_SECTION();
+    return ok;
+}
+
+/* The language of each element: from its own xml:lang, else its own lang, else its parent's */
+static bool
+ensure_lang(kg_Snapshot *s) {
+    bool ok = true;
+    Py_BEGIN_CRITICAL_SECTION(s);
+    if (!s->lang_done) {
+        PyObject **lang = PyMem_Calloc(s->n ? s->n : 1, sizeof(PyObject *));
+        if (lang == NULL) { PyErr_NoMemory(); ok = false; }
+        else {
+            for (uint32_t i = 0; i < s->n; i++) {
+                const snap_el *el = s->els + i;
+                PyObject *plain = NULL, *xml = NULL;
+                for (uint32_t k = 0; k < el->attr_count; k++) {
+                    const snap_attr *a = s->attrs + el->attr_start + k;
+                    if (a->lang == LANG_XML && xml == NULL) xml = a->value;
+                    else if (a->lang == LANG_PLAIN && plain == NULL) plain = a->value;
+                }
+                /* Document order puts parents first */
+                lang[i] = xml ? xml : (plain ? plain : (el->parent == NONE ? NULL : lang[el->parent]));
+            }
+            s->lang = lang;
+            s->lang_done = true;
+        }
+    }
+    Py_END_CRITICAL_SECTION();
+    return ok;
+}
+
 /* ---------------------------------------------------------------------------
  * Preparing a compiled selector for a snapshot
  * ------------------------------------------------------------------------- */
 
 typedef enum {
     P_NONE = 0, P_ROOT, P_SCOPE, P_ANY_LINK, P_EMPTY, P_FIRST_CHILD, P_LAST_CHILD, P_ONLY_CHILD,
+    P_FIRST_OF_TYPE, P_LAST_OF_TYPE, P_ONLY_OF_TYPE,
     P_ALL,  /* an inappropriate pseudo-class or pseudo-element, ignored: matches everything */
-    P_IS, P_NOT,
+    P_IS, P_NOT, P_HAS,
+    P_NTH_CHILD, P_NTH_LAST_CHILD, P_NTH_OF_TYPE, P_NTH_LAST_OF_TYPE,
 } pseudo_code;
 
 /* Keep in sync with INAPPROPRIATE_PSEUDO_CLASSES in src/kgcss/selectors.py */
@@ -529,13 +605,23 @@ typedef struct {
     uint8_t *code;
     uint8_t *skip;      /* complex selectors in :is() that cannot be matched, and so match nothing */
     uint8_t **memo;     /* per complex selector: bits per (compound, element) known to fail */
-    bool needs_content;
+    /* Per node, filled during a run: for nth with 'of S', each element's position among its siblings
+     * that match S (0 if it does not), and their number; for :has(), 1 or 2 when known to match or not */
+    uint32_t **nth_pos, **nth_total;
+    uint8_t **has_cache;
+    bool needs_content, needs_types, needs_lang;
 } prepared;
 
 static void
 prepared_free(prepared *p) {
-    if (p->memo) for (uint32_t i = 0; i < p->c->n; i++) PyMem_RawFree(p->memo[i]);
+    for (uint32_t i = 0; i < p->c->n; i++) {
+        if (p->memo) PyMem_RawFree(p->memo[i]);
+        if (p->nth_pos) PyMem_RawFree(p->nth_pos[i]);
+        if (p->nth_total) PyMem_RawFree(p->nth_total[i]);
+        if (p->has_cache) PyMem_RawFree(p->has_cache[i]);
+    }
     PyMem_Free(p->atom); PyMem_Free(p->code); PyMem_Free(p->skip); PyMem_Free(p->memo);
+    PyMem_Free(p->nth_pos); PyMem_Free(p->nth_total); PyMem_Free(p->has_cache);
 }
 
 static uint32_t
@@ -578,41 +664,56 @@ prepare_node(prepared *p, kg_Snapshot *s, uint32_t i, bool ignore) {
             static const struct { const char *name; pseudo_code code; } known[] = {
                 {"root", P_ROOT}, {"scope", P_SCOPE}, {"any-link", P_ANY_LINK}, {"empty", P_EMPTY},
                 {"first-child", P_FIRST_CHILD}, {"last-child", P_LAST_CHILD}, {"only-child", P_ONLY_CHILD},
+                {"first-of-type", P_FIRST_OF_TYPE}, {"last-of-type", P_LAST_OF_TYPE}, {"only-of-type", P_ONLY_OF_TYPE},
             };
             for (size_t k = 0; k < sizeof known / sizeof known[0]; k++) {
                 if (PyUnicode_CompareWithASCIIString(node->name, known[k].name) == 0) {
                     p->code[i] = (uint8_t)known[k].code;
                     if (known[k].code == P_EMPTY) p->needs_content = true;
+                    if (known[k].code >= P_FIRST_OF_TYPE && known[k].code <= P_ONLY_OF_TYPE) p->needs_types = true;
                     Py_RETURN_NONE;
                 }
             }
             if (ignore && in_list(node->name, inappropriate)) { p->code[i] = P_ALL; Py_RETURN_NONE; }
-            if (in_list(node->name, (const char *const[]){"first-of-type", "last-of-type", "only-of-type", NULL})) {
-                return PyUnicode_FromFormat("The pseudo-class :%U is not supported yet", node->name);
-            }
             return PyUnicode_FromFormat("The pseudo-class :%U is not supported", node->name);
         }
         case SN_SELECTOR_PSEUDO: {
             const bool negation = PyUnicode_CompareWithASCIIString(node->name, "not") == 0;
-            if (PyUnicode_CompareWithASCIIString(node->name, "has") == 0) {
-                return PyUnicode_FromString("The pseudo-class :has() is not supported yet");
-            }
-            p->code[i] = negation ? P_NOT : P_IS;
+            const bool has = PyUnicode_CompareWithASCIIString(node->name, "has") == 0;
+            p->code[i] = negation ? P_NOT : (has ? P_HAS : P_IS);
             for (uint32_t k = i + 1; k < node->subtree_end; k = nodes[k].subtree_end) {
                 PyObject *r = prepare_node(p, s, k, ignore);
                 if (r == NULL) return NULL;
                 if (r != Py_None) {
-                    /* :is(), :where() and :matches() take forgiving lists: such an argument matches nothing */
-                    if (negation) return r;
+                    /* :is(), :where() and :matches() take forgiving lists: such an argument matches nothing.
+                     * In :not() and :has() it is an error. */
+                    if (negation || has) return r;
                     p->skip[k] = 1;
                 }
                 Py_DECREF(r);
             }
             Py_RETURN_NONE;
         }
-        case SN_NTH: case SN_LANG:
-            return PyUnicode_FromFormat("The pseudo-class :%s() is not supported yet",
-                                        node->kind == SN_LANG ? "lang" : PyUnicode_AsUTF8(node->name));
+        case SN_NTH: {
+            static const struct { const char *name; pseudo_code code; } nth[] = {
+                {"nth-child", P_NTH_CHILD}, {"nth-last-child", P_NTH_LAST_CHILD},
+                {"nth-of-type", P_NTH_OF_TYPE}, {"nth-last-of-type", P_NTH_LAST_OF_TYPE},
+            };
+            for (size_t k = 0; k < sizeof nth / sizeof nth[0]; k++) {
+                if (PyUnicode_CompareWithASCIIString(node->name, nth[k].name) == 0) p->code[i] = (uint8_t)nth[k].code;
+            }
+            if (p->code[i] == P_NTH_OF_TYPE || p->code[i] == P_NTH_LAST_OF_TYPE) p->needs_types = true;
+            /* The selectors of 'of S': not a forgiving list */
+            for (uint32_t k = i + 1; k < node->subtree_end; k = nodes[k].subtree_end) {
+                PyObject *r = prepare_node(p, s, k, ignore);
+                if (r != Py_None) return r;
+                Py_DECREF(r);
+            }
+            Py_RETURN_NONE;
+        }
+        case SN_LANG:
+            p->needs_lang = true;
+            Py_RETURN_NONE;
         case SN_FUNCTIONAL_PSEUDO:
             return PyUnicode_FromFormat("The pseudo-class :%U() is not supported", node->name);
         case SN_PSEUDO_ELEMENT:
@@ -640,7 +741,12 @@ prepare(prepared *p, kg_Snapshot *s, const kg_CompiledSelector *c, bool ignore) 
     p->code = PyMem_Calloc(c->n, 1);
     p->skip = PyMem_Calloc(c->n, 1);
     p->memo = PyMem_Calloc(c->n, sizeof(uint8_t *));
-    if (!p->atom || !p->code || !p->skip || !p->memo) return PyErr_NoMemory();
+    p->nth_pos = PyMem_Calloc(c->n, sizeof(uint32_t *));
+    p->nth_total = PyMem_Calloc(c->n, sizeof(uint32_t *));
+    p->has_cache = PyMem_Calloc(c->n, sizeof(uint8_t *));
+    if (!p->atom || !p->code || !p->skip || !p->memo || !p->nth_pos || !p->nth_total || !p->has_cache) {
+        return PyErr_NoMemory();
+    }
     return prepare_node(p, s, 0, ignore);
 }
 
@@ -655,13 +761,185 @@ typedef struct {
     bool oom;
 } mctx;
 
-static bool match_complex(mctx *m, uint32_t x, uint32_t e);
+static bool match_complex(mctx *m, uint32_t x, uint32_t e, uint32_t anchor);
 
 static inline Py_UCS4
 uch(PyObject *u, Py_ssize_t i) { return PyUnicode_READ(PyUnicode_KIND(u), PyUnicode_DATA(u), i); }
 
 static inline Py_UCS4
 fold(Py_UCS4 c, bool ci) { return (ci && c >= 'A' && c <= 'Z') ? c + 32 : c; }
+
+
+/* Whether index (1-based) is a*n + b for some integer n >= 0 */
+static inline bool
+anb_matches(int32_t a, int32_t b, uint32_t index) {
+    const int64_t d = (int64_t)index - b;
+    if (a == 0) return d == 0;
+    return d % a == 0 && d / a >= 0;
+}
+
+/* The positions of the siblings of e among those that match the 'of S' selectors of the nth node i */
+static bool
+nth_of_positions(mctx *m, uint32_t i, uint32_t e) {
+    const kg_Snapshot *s = m->s;
+    prepared *p = m->p;
+    const sn_node *nodes = p->c->nodes;
+    if (p->nth_pos[i] == NULL) {
+        p->nth_pos[i] = PyMem_RawMalloc((s->n ? s->n : 1) * sizeof(uint32_t));
+        p->nth_total[i] = PyMem_RawMalloc((s->n ? s->n : 1) * sizeof(uint32_t));
+        if (!p->nth_pos[i] || !p->nth_total[i]) { m->oom = true; return false; }
+        for (uint32_t k = 0; k < s->n; k++) p->nth_pos[i][k] = NONE;
+    }
+    uint32_t *pos = p->nth_pos[i], *total = p->nth_total[i];
+    if (pos[e] != NONE) return true;
+    const uint32_t parent = s->els[e].parent;
+    const uint32_t first = parent == NONE ? e : s->els[parent].first_child;
+    uint32_t count = 0;
+    for (uint32_t c = first; c != NONE; c = parent == NONE ? NONE : s->els[c].next) {
+        bool matches = false;
+        for (uint32_t k = i + 1; k < nodes[i].subtree_end && !matches; k = nodes[k].subtree_end) {
+            matches = match_complex(m, k, c, NONE);
+        }
+        pos[c] = matches ? ++count : 0;
+    }
+    for (uint32_t c = first; c != NONE; c = parent == NONE ? NONE : s->els[c].next) total[c] = count;
+    return !m->oom;
+}
+
+static bool
+match_nth(mctx *m, uint32_t i, uint32_t e) {
+    const kg_Snapshot *s = m->s;
+    const sn_node *node = m->p->c->nodes + i;
+    const snap_el *el = s->els + e;
+    uint32_t index;
+    switch ((pseudo_code)m->p->code[i]) {
+        case P_NTH_CHILD: case P_NTH_LAST_CHILD:
+            if (node->flags & F_HAS_OF) {
+                if (!nth_of_positions(m, i, e)) return false;
+                const uint32_t pos = m->p->nth_pos[i][e];
+                if (pos == 0) return false;
+                index = m->p->code[i] == P_NTH_CHILD ? pos : m->p->nth_total[i][e] - pos + 1;
+            } else index = m->p->code[i] == P_NTH_CHILD ? el->sibling_index + 1 : el->sibling_count - el->sibling_index;
+            break;
+        case P_NTH_OF_TYPE: index = s->type_index[e] + 1; break;
+        case P_NTH_LAST_OF_TYPE: index = s->type_count[e] - s->type_index[e]; break;
+        default: return false;
+    }
+    return anb_matches(node->a, node->b, index);
+}
+
+/* The next subtag of a language tag or range: [*start, *end), from pos. Returns false at the end. */
+static bool
+subtag(PyObject *text, Py_ssize_t *pos, Py_ssize_t *start, Py_ssize_t *end) {
+    const Py_ssize_t n = PyUnicode_GET_LENGTH(text);
+    if (*pos > n) return false;
+    *start = *pos;
+    Py_ssize_t i = *pos;
+    while (i < n && uch(text, i) != '-') i++;
+    *end = i;
+    *pos = i + 1;
+    return true;
+}
+
+static bool
+subtags_equal(PyObject *a, Py_ssize_t as, Py_ssize_t ae, PyObject *b, Py_ssize_t bs, Py_ssize_t be) {
+    if (ae - as != be - bs) return false;
+    for (Py_ssize_t k = 0; k < ae - as; k++) if (fold(uch(a, as + k), true) != fold(uch(b, bs + k), true)) return false;
+    return true;
+}
+
+/* Whether a language tag matches a language range, by extended filtering (RFC 4647, section 3.3.2):
+ * fr matches fr and fr-CH, *-CH matches de-CH and de-Latn-CH. ASCII case-insensitive. */
+static bool
+language_matches(PyObject *tag, PyObject *range) {
+    if (!PyUnicode_GET_LENGTH(tag) || !PyUnicode_GET_LENGTH(range)) return false;
+    Py_ssize_t tp = 0, rp = 0, ts, te, rs, re;
+    subtag(tag, &tp, &ts, &te);
+    subtag(range, &rp, &rs, &re);
+    const bool wildcard = re - rs == 1 && uch(range, rs) == '*';
+    if (!wildcard && !subtags_equal(tag, ts, te, range, rs, re)) return false;
+    bool have_tag = subtag(tag, &tp, &ts, &te);
+    while (subtag(range, &rp, &rs, &re)) {
+        if (re - rs == 1 && uch(range, rs) == '*') continue;
+        if (re == rs) return false;  /* an empty subtag in the range, as in fr- */
+        while (true) {
+            if (!have_tag) return false;
+            if (subtags_equal(tag, ts, te, range, rs, re)) { have_tag = subtag(tag, &tp, &ts, &te); break; }
+            if (te - ts == 1) return false;  /* a singleton ends the search */
+            have_tag = subtag(tag, &tp, &ts, &te);
+        }
+    }
+    return true;
+}
+
+/* The candidates for the complex selector at node x: from the index for the most selective part of its
+ * last compound, in document order, or every element (*all) */
+static void
+candidates(const kg_Snapshot *s, const prepared *p, uint32_t x, const uint32_t **items, uint32_t *count, bool *all) {
+    const sn_node *nodes = p->c->nodes;
+    uint32_t last = x + 1;
+    for (uint32_t k = x + 1; k < nodes[x].subtree_end; k = nodes[k].subtree_end) last = k;
+    const snap_index *best = NULL;
+    uint32_t best_atom = 0, best_count = UINT32_MAX;
+    *all = true;
+    for (uint32_t k = last + 1; k < nodes[last].subtree_end; k = nodes[k].subtree_end) {
+        const snap_index *index = NULL;
+        switch (nodes[k].kind) {
+            case SN_ID: index = &s->by_id; break;
+            case SN_CLASS: index = &s->by_class; break;
+            case SN_TYPE: if (p->atom[k] != NONE) index = &s->by_name; break;
+            default: break;
+        }
+        if (index == NULL) continue;
+        const uint32_t a = p->atom[k];
+        if (a == ABSENT) { *all = false; *count = 0; *items = NULL; return; }
+        const uint32_t n = index->off[a + 1] - index->off[a];
+        if (n < best_count) { best = index; best_atom = a; best_count = n; }
+    }
+    if (best == NULL) return;
+    *all = false;
+    *items = best->items + best->off[best_atom];
+    *count = best_count;
+}
+
+/* Whether the relative selector at node x matches an element of which anchor is the subject of :has() */
+static bool
+has_matches(mctx *m, uint32_t x, uint32_t anchor) {
+    const kg_Snapshot *s = m->s;
+    const sn_node *nodes = m->p->c->nodes;
+    const uint8_t comb = nodes[x + 1].op;  /* before the first compound */
+    uint32_t lo, hi;
+    if (comb == C_DESCENDANT || comb == C_CHILD) { lo = anchor + 1; hi = s->els[anchor].subtree_end; }
+    else {
+        /* The following siblings, and their descendants */
+        const uint32_t parent = s->els[anchor].parent;
+        if (parent == NONE) return false;
+        lo = s->els[anchor].subtree_end;
+        hi = s->els[parent].subtree_end;
+    }
+    const uint32_t *items;
+    uint32_t count;
+    bool all;
+    candidates(s, m->p, x, &items, &count, &all);
+    if (all) {
+        for (uint32_t e = lo; e < hi; e++) {
+            if (match_complex(m, x, e, anchor)) return true;
+            if (m->oom) return false;
+        }
+        return false;
+    }
+    /* Index lists are in document order: start at the first one in range */
+    uint32_t a = 0, b = count;
+    while (a < b) {
+        const uint32_t mid = a + (b - a) / 2;
+        if (items[mid] < lo) a = mid + 1; else b = mid;
+    }
+    for (uint32_t j = a; j < count && items[j] < hi; j++) {
+        if (match_complex(m, x, items[j], anchor)) return true;
+        if (m->oom) return false;
+    }
+    return false;
+}
 
 /* Whether hay[start:start+len(needle)] equals needle */
 static bool
@@ -737,16 +1015,40 @@ match_simple(mctx *m, uint32_t i, uint32_t e) {
                 case P_FIRST_CHILD: return el->prev == NONE;
                 case P_LAST_CHILD: return el->next == NONE;
                 case P_ONLY_CHILD: return el->prev == NONE && el->next == NONE;
+                case P_FIRST_OF_TYPE: return s->type_index[e] == 0;
+                case P_LAST_OF_TYPE: return s->type_index[e] + 1 == s->type_count[e];
+                case P_ONLY_OF_TYPE: return s->type_count[e] == 1;
                 case P_ALL: return true;
                 default: return false;
             }
         case SN_SELECTOR_PSEUDO: {
+            if (m->p->code[i] == P_HAS) {
+                uint8_t *cache = m->p->has_cache[i];
+                if (cache == NULL && (cache = m->p->has_cache[i] = PyMem_RawCalloc(s->n ? s->n : 1, 1)) == NULL) {
+                    m->oom = true;
+                    return false;
+                }
+                if (cache[e]) return cache[e] == 1;
+                bool ans = false;
+                for (uint32_t k = i + 1; k < node->subtree_end && !ans; k = nodes[k].subtree_end) ans = has_matches(m, k, e);
+                cache[e] = ans ? 1 : 2;
+                return ans;
+            }
             const bool negation = m->p->code[i] == P_NOT;
             for (uint32_t k = i + 1; k < node->subtree_end; k = nodes[k].subtree_end) {
                 if (m->p->skip[k]) continue;
-                if (match_complex(m, k, e)) return !negation;
+                if (match_complex(m, k, e, NONE)) return !negation;
             }
             return negation;
+        }
+        case SN_NTH: return match_nth(m, i, e);
+        case SN_LANG: {
+            PyObject *lang = s->lang[e];
+            if (lang == NULL) return false;
+            for (Py_ssize_t k = 0; k < PyTuple_GET_SIZE(node->value); k++) {
+                if (language_matches(lang, PyTuple_GET_ITEM(node->value, k))) return true;
+            }
+            return false;
         }
         case SN_PSEUDO_ELEMENT:
             /* Only the ignored ones get here: they match their originating element */
@@ -785,9 +1087,22 @@ next_candidate(const kg_Snapshot *s, uint8_t comb, uint32_t y) {
 
 #define MAX_STACK_COMPOUNDS 32
 
-/* Whether the complex selector at node x matches element e */
+/* Whether the leftmost compound, matched at x, relates to anchor as the combinator before it says */
+static inline bool
+related_to_anchor(const kg_Snapshot *s, uint8_t comb, uint32_t anchor, uint32_t x) {
+    switch (comb) {
+        case C_DESCENDANT: return anchor < x && x < s->els[anchor].subtree_end;
+        case C_CHILD: return s->els[x].parent == anchor;
+        case C_NEXT_SIBLING: return s->els[x].prev == anchor;
+        case C_SUBSEQUENT_SIBLING: return s->els[x].parent == s->els[anchor].parent && anchor < x;
+    }
+    return true;
+}
+
+/* Whether the complex selector at node x matches element e. For a relative selector (in :has()),
+ * anchor is the element its leftmost compound must relate to, otherwise NONE. */
 static bool
-match_complex(mctx *m, uint32_t x, uint32_t e) {
+match_complex(mctx *m, uint32_t x, uint32_t e, uint32_t anchor) {
     const sn_node *nodes = m->p->c->nodes;
     const kg_Snapshot *s = m->s;
     /* The compounds, left to right */
@@ -803,18 +1118,19 @@ match_complex(mctx *m, uint32_t x, uint32_t e) {
     for (uint32_t k = x + 1; k < nodes[x].subtree_end; k = nodes[k].subtree_end) comp[K++] = k;
     bool ans = false;
     uint32_t k = K - 1;
+    const uint8_t first_comb = nodes[comp[0]].op;
     if (!match_compound(m, comp[k], e)) goto done;
-    /* A relative first compound (in :has() or nested rules) has nothing to its left here */
-    if (k == 0) { ans = true; goto done; }
+    if (k == 0) { ans = anchor == NONE || related_to_anchor(s, first_comb, anchor, e); goto done; }
     frames[k] = e;
-    /* Failure memo: bit (j, el) set when compounds 0..j cannot match with compound j at el */
-    uint8_t *memo = m->p->memo[x];
+    /* Failure memo: bit (j, el) set when compounds 0..j cannot match with compound j at el. Not for
+     * relative selectors, where that also depends on the anchor. */
+    uint8_t *memo = anchor == NONE ? m->p->memo[x] : NULL;
     bool backtracks = false;
     for (uint32_t j = 1; j < K; j++) {
         const uint8_t comb = nodes[comp[j]].op;
         if (comb == C_DESCENDANT || comb == C_SUBSEQUENT_SIBLING) backtracks = true;
     }
-    if (backtracks && memo == NULL) {
+    if (backtracks && memo == NULL && anchor == NONE) {
         memo = m->p->memo[x] = PyMem_RawCalloc(((size_t)K * s->n + 7) / 8, 1);
         if (memo == NULL) { m->oom = true; goto done; }
     }
@@ -831,7 +1147,8 @@ match_complex(mctx *m, uint32_t x, uint32_t e) {
             cand = next_candidate(s, nodes[comp[k]].op, frames[k - 1]);
             continue;
         }
-        if (!FAILED(k - 1, cand) && match_compound(m, comp[k - 1], cand)) {
+        if (!FAILED(k - 1, cand) && match_compound(m, comp[k - 1], cand) &&
+            (k > 1 || anchor == NONE || related_to_anchor(s, first_comb, anchor, cand))) {
             k--;
             frames[k] = cand;
             if (k == 0) { ans = true; break; }
@@ -844,36 +1161,6 @@ match_complex(mctx *m, uint32_t x, uint32_t e) {
 done:
     if (comp != small_c) { PyMem_RawFree(comp); PyMem_RawFree(frames); }
     return ans;
-}
-
-/* The candidates for the complex selector of p: from the index for the most selective part of its
- * last compound, or every element */
-static void
-candidates(const kg_Snapshot *s, const prepared *p, const uint32_t **items, uint32_t *count, bool *all) {
-    const sn_node *nodes = p->c->nodes;
-    uint32_t last = 1;
-    for (uint32_t k = 1; k < nodes[0].subtree_end; k = nodes[k].subtree_end) last = k;
-    const snap_index *best = NULL;
-    uint32_t best_atom = 0, best_count = UINT32_MAX;
-    *all = true;
-    for (uint32_t k = last + 1; k < nodes[last].subtree_end; k = nodes[k].subtree_end) {
-        const snap_index *index = NULL;
-        switch (nodes[k].kind) {
-            case SN_ID: index = &s->by_id; break;
-            case SN_CLASS: index = &s->by_class; break;
-            case SN_TYPE: if (p->atom[k] != NONE) index = &s->by_name; break;
-            default: break;
-        }
-        if (index == NULL) continue;
-        const uint32_t a = p->atom[k];
-        if (a == ABSENT) { *all = false; *count = 0; *items = NULL; return; }
-        const uint32_t n = index->off[a + 1] - index->off[a];
-        if (n < best_count) { best = index; best_atom = a; best_count = n; }
-    }
-    if (best == NULL) return;
-    *all = false;
-    *items = best->items + best->off[best_atom];
-    *count = best_count;
 }
 
 typedef struct {
@@ -891,18 +1178,20 @@ run(run_args *r) {
     const kg_Snapshot *s = r->s;
     for (Py_ssize_t q = 0; q < r->count && !(r->first_only && r->any); q++) {
         mctx m = {.s = s, .p = r->ps + q, .scope = r->scope};
+        /* A selector that starts with a combinator, not from a nested rule, is relative to :scope */
+        const uint32_t anchor = (r->ps[q].c->nodes[0].flags & F_RELATIVE) ? r->scope : NONE;
         if (r->target != NONE) {
-            if (match_complex(&m, 0, r->target)) r->any = true;
+            if (match_complex(&m, 0, r->target, anchor)) r->any = true;
         } else {
             const uint32_t *items = NULL;
             uint32_t count = 0;
             bool all;
-            candidates(s, r->ps + q, &items, &count, &all);
+            candidates(s, r->ps + q, 0, &items, &count, &all);
             const uint32_t n = all ? r->hi - r->lo : count;
             for (uint32_t j = 0; j < n && !(r->first_only && r->any); j++) {
                 const uint32_t e = all ? r->lo + j : items[j];
                 if (e < r->lo || e >= r->hi || (r->found[e / 8] & (1u << (e % 8)))) continue;
-                if (match_complex(&m, 0, e)) { r->found[e / 8] |= (uint8_t)(1u << (e % 8)); r->any = true; }
+                if (match_complex(&m, 0, e, anchor)) { r->found[e / 8] |= (uint8_t)(1u << (e % 8)); r->any = true; }
                 if (m.oom) break;
             }
         }
@@ -933,7 +1222,7 @@ Snapshot_match(PyObject *o, PyObject *args) {
     prepared *ps = PyMem_Calloc(count ? count : 1, sizeof(prepared));
     if (ps == NULL) { Py_DECREF(seq); return PyErr_NoMemory(); }
     PyObject *ans = NULL;
-    bool needs_content = false;
+    bool needs_content = false, needs_types = false, needs_lang = false;
     Py_ssize_t prepared_count = 0;
     for (Py_ssize_t q = 0; q < count; q++) {
         PyObject *c = PySequence_Fast_GET_ITEM(seq, q);
@@ -947,8 +1236,12 @@ Snapshot_match(PyObject *o, PyObject *args) {
         if (err != Py_None) { PyErr_SetObject(state->MatchError, err); Py_DECREF(err); goto end; }
         Py_DECREF(err);
         needs_content |= ps[q].needs_content;
+        needs_types |= ps[q].needs_types;
+        needs_lang |= ps[q].needs_lang;
     }
     if (needs_content && !s->content_done && !ensure_content(s)) goto end;
+    if (needs_types && !ensure_types(s)) goto end;
+    if (needs_lang && !s->lang_done && !ensure_lang(s)) goto end;
     run_args r = {
         .s = s, .ps = ps, .count = count, .scope = (uint32_t)scope, .lo = (uint32_t)root,
         .hi = s->els[root].subtree_end, .target = target < 0 ? NONE : (uint32_t)target, .first_only = first_only,

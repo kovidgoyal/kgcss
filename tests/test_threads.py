@@ -337,9 +337,10 @@ def test_select_shared() -> None:
     # The standard library's ElementTree, as lxml enables the GIL on free-threaded builds.
     import xml.etree.ElementTree as ET
 
-    parts = ['<root>']
+    parts = ['<root lang="en">']
     for i in range(200):
-        parts.append(f'<div class="d{i % 7}"><p id="p{i}" class="x{i % 3}">t</p><p/><span/></div>')
+        lang = ' lang="fr-CH"' if i % 5 == 0 else ''
+        parts.append(f'<div class="d{i % 7}"{lang}><p id="p{i}" class="x{i % 3}">t</p><p/><span/></div>')
     parts.append('</root>')
     document = ET.fromstring(''.join(parts))
     barrier = threading.Barrier(THREADS)
@@ -351,11 +352,14 @@ def test_select_shared() -> None:
             barrier.wait()
             out: list[object] = []
             out.append([e.get('id') for e in select('div.d1 > p.x2, p:empty + span, :not(div, p, span)')])
+            # Of-type positions and languages are filled lazily, nth-of and :has() results per call
+            out.append(len(list(select('p:nth-of-type(2), p:lang(fr) ~ span, div:nth-child(3n of .d2)'))))
+            out.append(len(list(select('div:has(> p.x1 + p:last-of-type)'))))
             out.append(sum(1 for r in roots for _ in select('p', root=r)))
             out.append(select.matches(roots[idx % len(roots)], 'div:first-child, .d3'))
             return out
 
         results = run_concurrently(work)
         assert all(r == results[0] for r in results)
-        assert results[0][1] == 2 * len(roots)
+        assert results[0][3] == 2 * len(roots)
     check_gil()

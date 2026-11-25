@@ -502,7 +502,66 @@ the selectors that match. Decide in milestone 5, from measurements (D9).
 
 ## 8. Milestones
 
-Status: milestones 1 to 3 are done.
+Status: milestones 1 to 4 are done.
+
+Notes from milestone 4:
+- **The nth family.**
+  - Plain `:nth-child()` and `:nth-last-child()` use the sibling positions
+    of the snapshot.
+  - With `of S`, a match run computes, once per group of siblings, each
+    element's position among the siblings that match S, so a long list of
+    siblings stays linear.
+  - The of-type positions (and their counts) are filled lazily in the
+    snapshot, inside a critical section, as `:empty` was.
+- **`:has()`.**
+  - Its relative selectors are matched right to left as usual. The
+    leftmost compound must then relate to the anchor by the combinator
+    before it.
+  - Candidates come from the index for the selector's last compound,
+    binary-searched to the anchor's range: its subtree for `>` and the
+    descendant combinator, the following siblings' subtrees for `+` and
+    `~`. Without that, `p:has(~ p.x)` on 1,500 sibling paragraphs took
+    25 ms; with it, 0.08 ms.
+  - The failure memo is not used there, as it would depend on the anchor.
+    Results are cached per anchor element for the run instead.
+- **`:lang()`** (D7, fixed).
+  - An element's language is its own `xml:lang`, else its own `lang`, else
+    its parent's, so `xml:lang` wins on the same element.
+  - `lang` counts only without a namespace; `xml:lang` counts in the XML
+    namespace and as the literal name lxml.html keeps. `lang=""` is an
+    unknown language.
+  - Ranges match by extended filtering (RFC 4647), so `"*-CH"` and
+    `"de-*-CH"` work.
+- **Relative selectors.** A selector that starts with a combinator and is
+  not from a nested rule, such as from `parse_selectors('> a',
+  nested=True)`, is matched relative to `:scope`, like
+  `querySelector()`.
+- **More intended differences from `css_selectors`**, found by the new
+  comparison test (`tests/test_select_vs_css_selectors.py`):
+  - `css_selectors` counts comments and processing instructions as
+    siblings for `:first-child`, `:last-child`, `:only-child` and
+    `:nth-child()` without `of` (it uses lxml's `parent.index()`).
+    Selectors counts only elements, and so does kgcss.
+  - `css_selectors` does not always return document order (`div > div` on
+    nested divs).
+  - `css_selectors` raises `ExpressionError` only when matching reaches
+    the part it cannot match, so `div div:hover` raises nothing in a
+    document without `div div`. kgcss always raises.
+  - `css_selectors` strips namespaces from tags only when the root element
+    has one.
+- **Testing.**
+  - The level 4 and Shakespeare tests are ported, the latter with
+    `quirks_mode=True` and its brute force check of `:has()`. The rest of
+    `test_select` passes too.
+  - The oracle covers the new pseudo-classes. The random strategy was also
+    fixed: it had made 80% syntax errors (type selectors in the middle of
+    compounds, unquoted wildcard ranges, `:has()` in `:has()`).
+  - `bench_parse.py prepare` now downloads `css_selectors` at the pinned
+    calibre commit. The comparison test uses it, wrapping each tree in an
+    element that no generated selector can match, and is skipped without
+    it.
+  - The free-threaded thread test covers the lazily filled positions and
+    languages and the per-run caches.
 
 Notes from milestone 3:
 - **The snapshot** (`csrc/select.c`, `Snapshot`) records each element in

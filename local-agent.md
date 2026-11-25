@@ -186,7 +186,10 @@ the C version must give exactly the same results:
 - The C matcher (`csrc/select.c`) has a reference too, used only by the
   tests: the naive matcher in `tests/selector_oracle.py`. Change both when
   the rules of matching change, and keep the oracle obviously right rather
-  than fast.
+  than fast. `tests/test_select_vs_css_selectors.py` also compares the
+  matcher with calibre's css_selectors. It is skipped unless
+  `uv run --group bench python bench/bench_parse.py prepare` has downloaded
+  css_selectors into the bench cache, so run that once.
 - Properties created by `build_properties()` are not tracked by the garbage
   collector. That is only safe while a `Property` cannot be part of a
   reference cycle: `Property.parent` is a weak reference, and nothing else a

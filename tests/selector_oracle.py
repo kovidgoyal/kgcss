@@ -19,7 +19,9 @@ from kgcss.selectors import (
     ComplexSelector,
     CompoundSelector,
     IdSelector,
+    LangPseudoClass,
     NestingSelector,
+    NthPseudoClass,
     PseudoClass,
     PseudoElement,
     SelectorPseudoClass,
@@ -29,7 +31,21 @@ from kgcss.selectors import (
 
 type Element = Any
 WHITESPACE = ' \t\n\r\f'
-SUPPORTED_PSEUDO_CLASSES = frozenset(('root', 'scope', 'any-link', 'empty', 'first-child', 'last-child', 'only-child'))
+SUPPORTED_PSEUDO_CLASSES = frozenset(
+    (
+        'root',
+        'scope',
+        'any-link',
+        'empty',
+        'first-child',
+        'last-child',
+        'only-child',
+        'first-of-type',
+        'last-of-type',
+        'only-of-type',
+    )
+)
+XML_LANG = '{http://www.w3.org/XML/1998/namespace}lang'
 
 
 class Unsupported(Exception):
@@ -99,11 +115,14 @@ class Oracle:
                 ):
                     raise Unsupported(s.name)
             case SelectorPseudoClass():
-                if s.name == 'has':
-                    raise Unsupported('has')
-                if s.name == 'not':
+                if s.name in ('not', 'has'):
                     for inner in s.selectors:
                         self.check(inner)
+            case NthPseudoClass():
+                for inner in s.of or ():
+                    self.check(inner)
+            case LangPseudoClass():
+                pass
             case PseudoElement():
                 if not self.ignore or s.arguments is not None or s.name not in INAPPROPRIATE_PSEUDO_CLASSES:
                     raise Unsupported(s.name)
@@ -121,33 +140,40 @@ class Oracle:
             return False
         return True
 
-    def complex(self, selector: ComplexSelector, e: Element) -> bool:
-        return self.parts(selector.parts, len(selector.parts) - 1, e)
+    def complex(self, selector: ComplexSelector, e: Element, anchor: Element | None = None) -> bool:
+        return self.parts(selector.parts, len(selector.parts) - 1, e, anchor)
 
-    def parts(self, parts: tuple[tuple[Combinator | None, CompoundSelector], ...], k: int, e: Element) -> bool:
+    def parts(
+        self,
+        parts: tuple[tuple[Combinator | None, CompoundSelector], ...],
+        k: int,
+        e: Element,
+        anchor: Element | None = None,
+    ) -> bool:
         combinator, compound = parts[k]
         if not self.compound(compound, e):
             return False
         if k == 0:
-            return True
+            # In :has(), the first compound relates to the anchor by the combinator before it
+            return anchor is None or related(combinator, anchor, e)
         match combinator:
             case Combinator.CHILD:
                 p = parent(e)
-                return p is not None and self.parts(parts, k - 1, p)
+                return p is not None and self.parts(parts, k - 1, p, anchor)
             case Combinator.DESCENDANT:
                 p = parent(e)
                 while p is not None:
-                    if self.parts(parts, k - 1, p):
+                    if self.parts(parts, k - 1, p, anchor):
                         return True
                     p = parent(p)
                 return False
             case Combinator.NEXT_SIBLING:
                 sibs = siblings(e)
                 i = sibs.index(e)
-                return i > 0 and self.parts(parts, k - 1, sibs[i - 1])
+                return i > 0 and self.parts(parts, k - 1, sibs[i - 1], anchor)
             case Combinator.SUBSEQUENT_SIBLING:
                 sibs = siblings(e)
-                return any(self.parts(parts, k - 1, s) for s in sibs[: sibs.index(e)])
+                return any(self.parts(parts, k - 1, s, anchor) for s in sibs[: sibs.index(e)])
         return False
 
     def compound(self, compound: CompoundSelector, e: Element) -> bool:
@@ -169,6 +195,13 @@ class Oracle:
                 return e is self.scope
             case PseudoClass():
                 return self.pseudo_class(s.name, e)
+            case SelectorPseudoClass() if s.name == 'has':
+                return any(self.complex(r, x, e) for r in s.selectors for x in self.document.iter() if is_element(x))
+            case NthPseudoClass():
+                return self.nth(s, e)
+            case LangPseudoClass():
+                lang = self.language(e)
+                return lang is not None and any(language_matches(lang, r) for r in s.ranges)
             case SelectorPseudoClass():
                 matched = any(
                     self.complex(inner, e) for inner in s.selectors if s.name == 'not' or self.supported(inner)
@@ -177,6 +210,28 @@ class Oracle:
             case PseudoElement():
                 return all(self.simple(p, e) for p in s.pseudo_classes)
         raise AssertionError(s)
+
+    def nth(self, s: NthPseudoClass, e: Element) -> bool:
+        sibs = siblings(e)
+        if s.name.endswith('of-type'):
+            sibs = [x for x in sibs if local(x.tag) == local(e.tag)]
+        elif s.of is not None:
+            sibs = [x for x in sibs if any(self.complex(sel, x) for sel in s.of)]
+            if e not in sibs:
+                return False
+        if s.name.startswith('nth-last'):
+            sibs = sibs[::-1]
+        index = sibs.index(e) + 1
+        return any(s.a * n + s.b == index for n in range(index + abs(s.b) + 1))
+
+    def language(self, e: Element) -> str | None:
+        while e is not None:
+            for name in (XML_LANG, 'xml:lang', 'lang'):
+                value = e.get(name)
+                if value is not None:
+                    return str(value)
+            e = parent(e)
+        return None
 
     def pseudo_class(self, name: str, e: Element) -> bool:
         sibs = siblings(e)
@@ -197,6 +252,11 @@ class Oracle:
                 return sibs[-1] is e
             case 'only-child':
                 return len(sibs) == 1
+            case 'first-of-type' | 'last-of-type' | 'only-of-type':
+                same = [x for x in sibs if local(x.tag) == local(e.tag)]
+                if name == 'only-of-type':
+                    return len(same) == 1
+                return (same[0] if name == 'first-of-type' else same[-1]) is e
         # An ignored inappropriate pseudo-class
         return True
 
@@ -227,3 +287,44 @@ def attribute_matches(s: AttributeSelector, value: str) -> bool:
         case '*=':
             return bool(want) and want in value
     raise AssertionError(s.operator)
+
+
+def related(combinator: Combinator | None, anchor: Element, e: Element) -> bool:
+    match combinator:
+        case Combinator.DESCENDANT:
+            return anchor in e.iterancestors()
+        case Combinator.CHILD:
+            return parent(e) is anchor
+        case Combinator.NEXT_SIBLING:
+            sibs = siblings(e)
+            i = sibs.index(e)
+            return i > 0 and sibs[i - 1] is anchor
+        case Combinator.SUBSEQUENT_SIBLING:
+            sibs = siblings(e)
+            return anchor in sibs[: sibs.index(e)]
+    return True
+
+
+def language_matches(tag: str, range_: str) -> bool:
+    """Extended filtering, RFC 4647 section 3.3.2."""
+    if not tag or not range_:
+        return False
+    tags = lower(tag).split('-')
+    ranges = lower(range_).split('-')
+    if ranges[0] != '*' and ranges[0] != tags[0]:
+        return False
+    i, j = 1, 1
+    while i < len(ranges):
+        if ranges[i] == '*':
+            i += 1
+            continue
+        if not ranges[i] or j >= len(tags):
+            return False
+        if ranges[i] == tags[j]:
+            i += 1
+            j += 1
+            continue
+        if len(tags[j]) == 1:
+            return False
+        j += 1
+    return True

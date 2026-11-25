@@ -7,8 +7,9 @@
     taskset -c 0-2 uv run --group bench python bench/bench_parse.py run
     taskset -c 0-2 uv run --group bench python bench/bench_parse.py run --suite cssom
 
-prepare downloads the corpus and calibre's tinycss (pinned, checksummed) into
-bench/.cache, builds calibre's C tokenizer, and generates the synthetic
+prepare downloads the corpus, and calibre's tinycss and css_selectors
+(pinned, checksummed corpus) into bench/.cache, builds calibre's C
+tokenizer, and generates the synthetic
 sheets. run measures, for every library and corpus file, the syntax suite:
 
     tokenize  produce all tokens (tinycss2 has no flat tokenizer, so this is
@@ -65,10 +66,17 @@ TINYCSS_FILES = (
     '__init__.py', 'css21.py', 'decoding.py', 'parsing.py', 'token_data.py', 'tokenizer.py', 'version.py',
     'color3.py', 'color4.py', 'fonts3.py', 'media3.py', 'page3.py', 'tokenizer.c', 'color.c', 'color.h',
 )  # fmt: skip
-# Stand ins for the parts of calibre that tinycss imports
+# calibre's selector engine, for comparisons in benchmarks and tests (tests/test_select.py)
+CSS_SELECTORS_FILES = ('__init__.py', 'errors.py', 'ordered_set.py', 'parser.py', 'select.py')
+# Stand ins for the parts of calibre that tinycss and css_selectors import
 POLYGLOT_SHIMS = {
     'binary.py': 'def from_hex_bytes(x):\n    return bytes.fromhex(x.decode("ascii") if isinstance(x, bytes) else x)\n',
-    'builtins.py': 'def error_message(e):\n    return str(e)\n',
+    'builtins.py': (
+        'def error_message(e):\n    return str(e)\n'
+        'string_or_bytes = (str, bytes)\ncodepoint_to_chr = chr\nunicode_type = str\n'
+        'def iteritems(d):\n    return iter(d.items())\n'
+        'def itervalues(d):\n    return iter(d.values())\n'
+    ),
 }
 
 
@@ -151,6 +159,9 @@ def prepare() -> None:
     base = f'https://raw.githubusercontent.com/kovidgoyal/calibre/{CALIBRE_COMMIT}/src/tinycss/'
     for name in TINYCSS_FILES:
         download(base + name, CALIBRE / 'tinycss' / name)
+    base = f'https://raw.githubusercontent.com/kovidgoyal/calibre/{CALIBRE_COMMIT}/src/css_selectors/'
+    for name in CSS_SELECTORS_FILES:
+        download(base + name, CALIBRE / 'css_selectors' / name)
     for name, src in POLYGLOT_SHIMS.items():
         dest = CALIBRE / 'polyglot' / name
         dest.parent.mkdir(parents=True, exist_ok=True)

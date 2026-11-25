@@ -2,13 +2,14 @@
 
 """Matching selectors with Select (plan 03, milestone 3).
 
-test_select is ported from calibre's css_selectors (src/css_selectors/tests.py),
-the parts that need milestone 4 (nth, of-type, :has(), :lang()) are in
-test_select_milestone4. The random tests compare Select with the naive
-matcher in selector_oracle.py.
+test_select, test_select_nth_has_lang, test_select_level4 and
+test_select_shakespeare are ported from calibre's css_selectors
+(src/css_selectors/tests.py). The random tests compare Select with the naive
+matcher in selector_oracle.py, and with css_selectors itself.
 """
 
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 from hypothesis import given
@@ -30,6 +31,7 @@ from kgcss.selectors import INAPPROPRIATE_PSEUDO_CLASSES, build_tree, compile_se
 
 from .selector_oracle import Oracle, Unsupported
 
+DATA = Path(__file__).parent / 'data'
 HTML_IDS = """
 <html id="html"><head>
   <link id="link-href" href="foo" />
@@ -208,8 +210,8 @@ def test_select() -> None:
     assert tuple(select('li:not(:hover)')) == ()
 
 
-@pytest.mark.xfail(raises=ExpressionError, strict=True, reason='Needs milestone 4: nth, of-type, :has(), :lang()')
-def test_select_milestone4() -> None:
+def test_select_nth_has_lang() -> None:
+    # The rest of css_selectors' test_select
     document = ids_document()
     select = Select(document)
     pcss = Checker(select)
@@ -261,6 +263,244 @@ def test_select_milestone4() -> None:
         tuple(select('li:has(:unknown)'))
     with pytest.raises(ExpressionError):
         tuple(select('li:nth-child(1 of :unknown)'))
+
+
+HTML_LEVEL4 = """
+<html id="html"><body id="body">
+<div id="book">
+  <h1 id="chapter1" class="ChapterS">One</h1>
+  <h2 id="sub1" class="SubChapter">One A</h2>
+  <p id="p1" class="para">Text</p>
+  <p id="p2" class="para note">Text</p>
+  <h1 id="chapter2" class="ChapterS">Two</h1>
+  <p id="p3" class="para">Text</p>
+  <h1 id="chapter3" class="ChapterS">Three</h1>
+  <!-- comment -->
+  <h2 id="sub3" class="SubChapter">Three A</h2>
+  <section id="sec1">
+    <div id="sec1-div"><span id="sec1-span" class="hl">x</span></div>
+    <p id="sec1-p" class="para">y</p>
+  </section>
+  <section id="sec2">
+    <p id="sec2-p1" class="para">z</p>
+    <p id="sec2-p2" class="para note">w</p>
+    <p id="sec2-p3" class="para">v</p>
+    <p id="sec2-p4" class="para note">u</p>
+  </section>
+  <ul id="list">
+    <li id="li1" data-x="Alpha">a</li>
+    <li id="li2" data-x="beta gamma">b</li>
+    <li id="li3" data-x="ALPHA-one">c</li>
+  </ul>
+</div>
+</body></html>
+"""
+
+
+def test_select_level4() -> None:
+    parser = etree.XMLParser(recover=True, no_network=True, resolve_entities=False)
+    document = etree.fromstring(HTML_LEVEL4, parser=parser)
+    select = Select(document)
+    pcss = Checker(select)
+
+    # Look-behind using :has(), the comment between chapter3 and sub3 must be ignored
+    assert pcss('.ChapterS:has(+ .SubChapter)', '.ChapterS:has(+.SubChapter)', 'h1:has(+ h2)') == [
+        'chapter1', 'chapter3',
+    ]  # fmt: skip
+    assert pcss('.ChapterS:not(:has(+ .SubChapter))', 'h1:has(+ p)') == ['chapter2']
+    assert pcss('h1:has(~ section)', 'body > div:has(section) > h1') == ['chapter1', 'chapter2', 'chapter3']
+    assert pcss('h1:has(+ h2 + p)', 'h1:has(+ h2 + p.para ~ p.note)') == ['chapter1']
+    assert pcss('h1:has(+ h2 ~ section)') == ['chapter1', 'chapter3']
+    assert pcss('h1:has(+ h2 + section)') == ['chapter3']
+    assert pcss(
+        'section:has(span)', 'section:has(> div > span)', 'section:has(div span.hl)', 'section:has(> div span)',
+        'section:has(p):has(span)', 'section:has(> div + p)',
+    ) == ['sec1']  # fmt: skip
+    assert pcss(
+        'section:has(> span)', 'section:has(> p.note + p.note)', 'section:has(> p + div)',
+        'section:has(+ section + section)',
+    ) == []  # fmt: skip
+    assert pcss(
+        'section:has(> p.note)', 'section:has(> p + p.note + p)', 'section:has(> .note ~ .note)', 'section:has(+ ul)'
+    ) == ['sec2']
+    assert pcss('section:has(.note, .hl)', 'section:has(:is(.note, .hl))') == ['sec1', 'sec2']
+    assert pcss(':has(> .hl)') == ['sec1-div']
+    assert pcss('div:has(.hl)') == ['book', 'sec1-div']
+    assert pcss(':has(.hl)', ':has(span)') == ['html', 'body', 'book', 'sec1', 'sec1-div']
+    assert pcss('p:has(~ p.note)') == ['p1', 'sec2-p1', 'sec2-p2', 'sec2-p3']
+    assert pcss(':has(+ section)') == ['sub3', 'sec1']
+    assert pcss('ul:has(> li:nth-child(3))', 'ul:has(> li:nth-child(3 of [data-x]))') == ['list']
+    assert pcss(':has(> section) > h2') == ['sub1', 'sub3']
+    assert pcss('section:has(> p) p:has(+ p.note)') == ['sec2-p1', 'sec2-p3']
+
+    assert pcss('p:is(.note, #p3)') == ['p2', 'p3', 'sec2-p2', 'sec2-p4']
+    assert pcss(':is(section, ul) > :first-child') == ['sec1-div', 'sec2-p1', 'li1']
+    assert pcss(':where(section) p', 'section :is(p)', ':is(section p)') == [
+        'sec1-p', 'sec2-p1', 'sec2-p2', 'sec2-p3', 'sec2-p4',
+    ]  # fmt: skip
+    assert pcss('p:not(.note, section p)') == ['p1', 'p3']
+    assert pcss('p:not(:is(.note))', 'p:not(.note)') == ['p1', 'p3', 'sec1-p', 'sec2-p1', 'sec2-p3']
+
+    assert pcss('p:nth-child(2 of .note)') == ['sec2-p4']
+    assert pcss(':nth-child(1 of .note)') == ['p2', 'sec2-p2']
+    assert pcss(':nth-last-child(2 of .note)') == ['sec2-p2']
+    assert pcss(':nth-last-child(1 of .note)') == ['p2', 'sec2-p4']
+    assert pcss('p:nth-last-child(1 of .para)') == ['p3', 'sec1-p', 'sec2-p4']
+    assert pcss(':nth-child(odd of .para)', ':nth-child(2n+1 of p)') == ['p1', 'p3', 'sec1-p', 'sec2-p1', 'sec2-p3']
+    assert pcss('h1:nth-child(2 of h1)', '.ChapterS:nth-last-child(2 of h1)') == ['chapter2']
+    assert pcss(':nth-child(2 of h1, h2)') == ['sub1']
+    assert pcss(':nth-child(-n+2 of .ChapterS)') == ['chapter1', 'chapter2']
+    assert pcss('h1:nth-child(2 of .SubChapter)', 'li:nth-child(4 of li)') == []
+
+    assert pcss('li[data-x="alpha" i]', 'li[data-x="Alpha" s]', 'li[data-x="Alpha"]') == ['li1']
+    assert pcss('li[data-x="alpha"]', 'li[data-x="alpha" s]') == []
+    assert pcss('li[data-x|="alpha" i]', 'li[data-x^="ALP" i]', 'li[data-x*="PH" i]') == ['li1', 'li3']
+    assert pcss('li[data-x$="ONE" i]', 'li[data-x|="ALPHA" s]') == ['li3']
+    assert pcss('li[data-x~="GAMMA" i]', '[DATA-X="beta GAMMA" i]') == ['li2']
+    assert pcss('li[data-x~="" i]', 'li[data-x^="" i]', 'li[data-x~="beta gamma" i]') == []
+    assert pcss('[id="P1" i]') == ['p1']
+    assert pcss('[class~="NOTE" i]') == ['p2', 'sec2-p2', 'sec2-p4']
+
+    # Restricting matches to a subtree
+    sec2 = next(select('#sec2'))
+    assert [e.get('id') for e in select('p:has(+ .note)', root=sec2)] == ['sec2-p1', 'sec2-p3']
+
+
+def test_select_shakespeare() -> None:
+    document = html.document_fromstring((DATA / 'css_selectors_shakespeare.html').read_text(encoding='utf-8'))
+    # css_selectors matched classes case-insensitively
+    select = Select(document, quirks_mode=True)
+
+    def count(s: str) -> int:
+        return sum(1 for _ in select(s))
+
+    # Data borrowed from http://mootools.net/slickspeed/
+    assert count('*') == 249
+    assert count('div:only-child') == 22
+    assert count('div:nth-child(even)') == 106
+    assert count('div:nth-child(2n)') == 106
+    assert count('div:nth-child(odd)') == 137
+    assert count('div:nth-child(2n+1)') == 137
+    assert count('div:nth-child(n)') == 243
+    assert count('div:last-child') == 53
+    assert count('div:first-child') == 51
+    assert count('div > div') == 242
+    assert count('div + div') == 190
+    assert count('div ~ div') == 190
+    assert count('body') == 1
+    assert count('body div') == 243
+    assert count('div') == 243
+    assert count('div div') == 242
+    assert count('div div div') == 241
+    assert count('div, div, div') == 243
+    assert count('div, a, span') == 243
+    assert count('.dialog') == 51
+    assert count('div.dialog') == 51
+    assert count('div .dialog') == 51
+    assert count('div.character, div.dialog') == 99
+    assert count('div.direction.dialog') == 0
+    assert count('div.dialog.direction') == 0
+    assert count('div.dialog.scene') == 1
+    assert count('div.scene.scene') == 1
+    assert count('div.scene .scene') == 0
+    assert count('div.direction .dialog ') == 0
+    assert count('div .dialog .direction') == 4
+    assert count('div.dialog .dialog .direction') == 4
+    assert count('#speech5') == 1
+    assert count('div#speech5') == 1
+    assert count('div #speech5') == 1
+    assert count('div.scene div.dialog') == 49
+    assert count('div#scene1 div.dialog div') == 142
+    assert count('#scene1 #speech1') == 1
+    assert count('div[class]') == 103
+    assert count('div[class=dialog]') == 50
+    assert count('div[class^=dia]') == 51
+    assert count('div[class$=log]') == 50
+    assert count('div[class*=sce]') == 1
+    assert count('div[class|=dialog]') == 50
+    assert count('div[class~=dialog]') == 51
+
+    # Level 4 selectors
+    assert count(':is(div.character, div.dialog)') == 99
+    assert count('div:where(.character, .dialog)') == 99
+    assert count('div:not(.character, .dialog)') == 243 - 99
+    assert count('div:nth-child(n of .dialog)') == 51
+    assert count('div:nth-child(n of div)') == count('div')
+    assert count('div[CLASS=DIALOG i]') == 50
+
+    # Check :has() against a brute force implementation
+    def brute_has(anchor_selector: str, relation: str, target_selector: str) -> int:
+        targets = frozenset(select(target_selector))
+        ans = 0
+        for anchor in select(anchor_selector):
+            if relation == ' ':
+                candidates = list(anchor.iterdescendants('*'))
+            elif relation == '>':
+                candidates = list(anchor.iterchildren('*'))
+            elif relation == '+':
+                candidates = list(anchor.itersiblings('*'))[:1]
+            else:
+                candidates = list(anchor.itersiblings('*'))
+            if any(c in targets for c in candidates):
+                ans += 1
+        return ans
+
+    for anchor, target in (
+        ('div', '.dialog'), ('div', '.direction'), ('div.dialog', 'div.dialog'), ('*', 'h3'), ('div', '#speech5'),
+    ):  # fmt: skip
+        for relation in ' >+~':
+            expected = brute_has(anchor, relation, target)
+            rel = '' if relation == ' ' else relation
+            assert count(f'{anchor}:has({rel} {target})') == expected, (anchor, relation, target)
+    inner = frozenset(select('div.dialog:has(> div.direction)'))
+    expected = sum(1 for d in select('div') if any(c in inner for c in d.iterchildren('*')))
+    assert count('div:has(> div.dialog > div.direction)') == expected
+
+
+def test_lang() -> None:
+    xhtml = (
+        '<html xmlns="http://www.w3.org/1999/xhtml" lang="en-US"><body>'
+        '<p id="a">a</p>'
+        '<p id="b" xml:lang="fr-CH" lang="de">b<span id="c">c</span></p>'
+        '<p id="d" lang="">d</p>'
+        '<p id="e" xmlns:x="urn:x" x:lang="fr">e</p>'
+        '<p id="f" lang="de-Latn-CH-1996">f</p>'
+        '<p id="g" lang="de-x-CH">g</p>'
+        '</body></html>'
+    )
+    select = Select(etree.fromstring(xhtml))
+    pcss = Checker(select)
+    # html and body have no id
+    assert pcss(':lang(en)', ':lang("en-us")') == [None, None, 'a', 'e']
+    assert pcss('p:lang(EN)') == ['a', 'e']
+    # xml:lang wins over lang on the same element (css_selectors ignored xml:lang), and is inherited
+    assert pcss(':lang(fr)', ':lang(fr-ch)') == ['b', 'c']
+    assert pcss('p:lang(fr)') == ['b']
+    assert pcss('span:lang(fr)') == ['c']
+    assert pcss(':lang(de)') == ['f', 'g']
+    # lang="" is an unknown language. Only the lang of no namespace, or of the XML namespace, counts.
+    assert pcss('#d:lang(en)', '#d:lang("")', '#e:lang(fr)') == []
+    # Extended filtering (RFC 4647): ranges can skip subtags, but not past a singleton such as x
+    assert pcss(':lang("*-CH")') == ['b', 'c', 'f']
+    assert pcss(':lang(de-CH)', ':lang("de-*-CH")') == ['f']
+    assert pcss(':lang(en, de)') == [None, None, 'a', 'e', 'f', 'g']
+    # lxml.html keeps xml:lang as the attribute name
+    document = html.fromstring('<div lang="de"><p xml:lang="fr">x</p></div>')
+    assert [e.tag for e in Select(document)(':lang(fr)')] == ['p']
+
+
+def test_relative_and_nth_edges() -> None:
+    document = ids_document()
+    select = Select(next(Select(document)('#first-ol')))
+    # A selector that starts with a combinator, not from a nested rule, is relative to :scope
+    relative = parse_selectors('> .c, ~ ol', nested=True)
+    assert [e.get('id') for e in select(relative)] == ['third-li', 'fourth-li', 'second-ol']
+    pcss = Checker(Select(document))
+    # The root element has no siblings, and is the first and only of its kind (Selectors Level 4)
+    assert pcss('html:first-child', 'html:only-child', 'html:nth-child(1)', 'html:nth-last-of-type(1)') == ['html']
+    assert pcss('li:nth-child(-n+0)', 'li:nth-child(-2n)', 'li:nth-child(0n+0)', 'li:nth-child(99999999999)') == []
+    assert pcss('li:nth-child(-n+2)', 'li:nth-last-child(n+6)') == ['first-li', 'second-li']
+    assert pcss('li:nth-child(-2n+3)') == ['first-li', 'third-li']
 
 
 # ---------------------------------------------------------------------------
@@ -387,6 +627,8 @@ def test_inappropriate_set_matches_c() -> None:
 TAGS = ('div', 'p', 'span', 'a', 'li', 'area', 'link', 'DIV', 'P')
 CLASSES = ('x', 'X', 'y', 'x-y', 'é')
 VALUES = ('a', 'A', 'a-b', 'a b', '', 'ab', 'b a', 'x-y')
+LANGUAGES = ('en', 'en-US', 'EN-gb', 'fr-CH', 'de-Latn-CH', 'de-x-CH', '')
+XML_LANG = '{http://www.w3.org/XML/1998/namespace}lang'
 
 
 @st.composite
@@ -401,13 +643,15 @@ def trees(draw: st.DrawFn) -> etree._Element:
         if draw(st.booleans()):
             e.set('class', ' '.join(draw(st.lists(st.sampled_from(CLASSES), max_size=3))))
         if draw(st.booleans()):
-            e.set(
-                draw(st.sampled_from(('href', 'lang', 'data-x', 'HREF', '{urn:x}lang'))), draw(st.sampled_from(VALUES))
-            )
+            name = draw(st.sampled_from(('href', 'data-x', 'HREF', '{urn:x}lang')))
+            e.set(name, draw(st.sampled_from(VALUES)))
+        for name in ('lang', XML_LANG):
+            if draw(st.integers(0, 4)) == 0:
+                e.set(name, draw(st.sampled_from(LANGUAGES)))
         if draw(st.integers(0, 3)) == 0:
             e.text = draw(st.sampled_from(('', ' ', 't')))
         if depth < 4:
-            for _ in range(draw(st.integers(0, 3))):
+            for _ in range(draw(st.integers(0, 4))):
                 if draw(st.integers(0, 5)) == 0:
                     c = etree.Comment('c')
                     e.append(c)
@@ -419,54 +663,80 @@ def trees(draw: st.DrawFn) -> etree._Element:
     return element(0, None)
 
 
-simple = st.one_of(
-    st.sampled_from(('*', 'div', 'P', 'span', 'a', 'li', '*|li', 'ns|div', 'area')),
-    st.sampled_from(CLASSES).map(lambda c: '.' + c),
-    st.sampled_from(('a', 'A', 'b', 'é')).map(lambda i: '#' + i),
-    st.builds(
-        lambda n, op, v, f: f'[{n}{op}"{v}"{f}]' if op else f'[{n}]',
-        st.sampled_from(('href', 'lang', 'data-x', 'class', 'ID', 'xml|lang')),
-        st.sampled_from(('', '=', '~=', '|=', '^=', '$=', '*=')),
-        st.sampled_from(VALUES),
-        st.sampled_from(('', ' i', ' s')),
-    ),
-    st.sampled_from(
-        (
-            ':root',
-            ':scope',
-            ':any-link',
-            ':empty',
-            ':first-child',
-            ':last-child',
-            ':only-child',
-            ':hover',
-            '::before',
-            ':first-line',
-            '&',
-        )
-    ),
-)
+ANBS = ('1', '2', 'odd', 'even', '-n+2', 'n+2', '3n', '0', 'n')
+PLAIN_PSEUDO = (
+    ':root', ':scope', ':any-link', ':empty', ':first-child', ':last-child', ':only-child', ':first-of-type',
+    ':last-of-type', ':only-of-type', ':hover', '&',
+)  # fmt: skip
 
 
-def compound(inner: st.SearchStrategy[str]) -> st.SearchStrategy[str]:
-    pseudo = st.builds(lambda n, s: f':{n}({s})', st.sampled_from(('is', 'where', 'not')), inner)
-    return st.lists(st.one_of(simple, pseudo), min_size=1, max_size=3).map(''.join)
+LANG_RANGES = ('en', 'EN-US', 'fr', '"*-CH"', '"de-*-CH"', 'x', 'en, fr')
+PSEUDO_ELEMENTS = ('::before', ':first-line', '::marker')
 
 
-def selector_lists(inner: st.SearchStrategy[str]) -> st.SearchStrategy[str]:
-    complex_selector = st.builds(
-        lambda first, rest: first + ''.join(c + s for c, s in rest),
-        compound(inner),
-        st.lists(st.tuples(st.sampled_from((' ', ' > ', ' + ', ' ~ ')), compound(inner)), max_size=3),
-    )
-    return st.lists(complex_selector, min_size=1, max_size=3).map(', '.join)
+@st.composite
+def subclass_selector(draw: st.DrawFn, depth: int, in_has: bool) -> str:
+    kinds = ['class', 'id', 'attribute', 'pseudo', 'nth', 'lang']
+    if depth < 2:
+        kinds += ['is', 'nth-of']
+        if not in_has:  # :has() cannot be nested
+            kinds.append('has')
+    match draw(st.sampled_from(kinds)):
+        case 'class':
+            return '.' + draw(st.sampled_from(CLASSES))
+        case 'id':
+            return '#' + draw(st.sampled_from(('a', 'A', 'b', 'é')))
+        case 'attribute':
+            name = draw(st.sampled_from(('href', 'lang', 'data-x', 'class', 'ID', 'xml|lang')))
+            op = draw(st.sampled_from(('', '=', '~=', '|=', '^=', '$=', '*=')))
+            if not op:
+                return f'[{name}]'
+            return f'[{name}{op}"{draw(st.sampled_from(VALUES))}"{draw(st.sampled_from(("", " i", " s")))}]'
+        case 'pseudo':
+            return draw(st.sampled_from(PLAIN_PSEUDO))
+        case 'nth':
+            name = draw(st.sampled_from(('nth-child', 'nth-last-child', 'nth-of-type', 'nth-last-of-type')))
+            return f':{name}({draw(st.sampled_from(ANBS))})'
+        case 'nth-of':
+            name = draw(st.sampled_from(('nth-child', 'nth-last-child')))
+            return f':{name}({draw(st.sampled_from(ANBS))} of {draw(selector_list(depth + 1, False, in_has=in_has))})'
+        case 'lang':
+            return f':lang({draw(st.sampled_from(LANG_RANGES))})'
+        case 'is':
+            name = draw(st.sampled_from(('is', 'where', 'not')))
+            return f':{name}({draw(selector_list(depth + 1, False, in_has=in_has))})'
+    return f':has({draw(selector_list(depth + 1, False, relative=True, in_has=True))})'
 
 
-def _lists() -> st.SearchStrategy[str]:
-    return selector_lists(selector_lists(selector_lists(st.just('a'))))
+@st.composite
+def compound(draw: st.DrawFn, depth: int, in_has: bool) -> str:
+    # A type selector can only come first
+    text = draw(st.sampled_from(('', '', '*', 'div', 'P', 'span', 'a', 'li', '*|li', 'ns|div', 'area')))
+    for _ in range(draw(st.integers(0 if text else 1, 3))):
+        text += draw(subclass_selector(depth, in_has))
+    return text
 
 
-selectors = st.deferred(_lists)
+@st.composite
+def complex_selector(draw: st.DrawFn, depth: int, top: bool, relative: bool, in_has: bool) -> str:
+    text = draw(st.sampled_from(('', '> ', '+ ', '~ '))) if relative else ''
+    text += draw(compound(depth, in_has))
+    for _ in range(draw(st.integers(0, 3))):
+        text += draw(st.sampled_from((' ', ' > ', ' + ', ' ~ '))) + draw(compound(depth, in_has))
+    # Pseudo-elements are only valid at the end of a selector at the top level
+    if top and draw(st.integers(0, 5)) == 0:
+        text += draw(st.sampled_from(PSEUDO_ELEMENTS))
+    return text
+
+
+@st.composite
+def selector_list(
+    draw: st.DrawFn, depth: int = 0, top: bool = True, relative: bool = False, in_has: bool = False
+) -> str:
+    return ', '.join(draw(complex_selector(depth, top, relative, in_has)) for _ in range(draw(st.integers(1, 3))))
+
+
+selectors = selector_list()
 
 
 def oracle_result(document: etree._Element, css: str, ignore: bool, quirks: bool) -> list[etree._Element] | None:
