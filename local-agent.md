@@ -251,6 +251,7 @@ the C version must give exactly the same results:
   value and every ident, hash and function of the corpus.
 - `bench/bench_media.py` measures `parse_media_queries` (with and without
   its cache) and `media_matches` against tinycss's media3 parser.
+- `bench/bench_fonts.py` measures the font helpers against tinycss.fonts3.
 - Garbage collection is a large part of the cost of creating many Python
   objects, as every collection walks the tracked objects. In hot paths,
   avoid allocating container objects you do not keep. Note that

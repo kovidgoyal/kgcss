@@ -180,7 +180,46 @@ from kgcss import (
 
 ## 5. Milestones
 
-Status: decided, not started.
+Status: milestone 1 is done.
+
+Notes from milestone 1:
+- **Results**, `bench/bench_fonts.py` pinned to the fast cores, against
+  tinycss (the target of §6 was twice as fast):
+
+  | call | kgcss µs | tinycss µs |
+  |---|---:|---:|
+  | `parse_font_family('"Helvetica Neue", Arial, sans-serif')` | 1.87 | 13.91 |
+  | `parse_font('bold italic 12pt/1.4 "Helvetica Neue", serif')` | 4.15 | 24.68 |
+  | `serialize_font_family` | 1.11 | 1.24 |
+  | `serialize_font` | 1.92 | 2.04 |
+
+  The 10,310 font-family values of the corpus parse in 12.9 ms, against
+  91.8 ms for tinycss.
+- **The port** follows tinycss's algorithm step by step, on the component
+  values of kgcss's tokenizer, so functions and blocks are skipped as
+  tinycss skipped its containers. Two of tinycss's branches for the line
+  height could never run (a size has always been handled before them);
+  they are gone.
+- **Deliberate differences from tinycss**, besides D2:
+  - keywords are matched ASCII case-insensitively and returned in lower
+    case: tinycss took `BOLD` for a family name;
+  - only an ident can be a legacy system font: tinycss also took the
+    string `"caption"` for one;
+  - `serialize_font_family` quotes with `serialize_string`, which escapes
+    backslashes and control characters too; tinycss escaped only `"`, so
+    a name with a backslash did not come back;
+  - `serialize_font` quotes family names that are font keywords
+    (`"bold"`), which would otherwise be read as the keyword. The plain
+    `serialize_font_family` leaves them, as they are fine in
+    `font-family`.
+- **tinycss crashes** (`AttributeError`) on a `font` value that starts
+  with a function, such as `calc(1px) serif`. kgcss does not.
+- **Tests** (`tests/test_fonts.py`): the fonts3 tables, the font cases of
+  calibre's `normalize_css.py` through a port of its `normalize_font`;
+  round trips of family lists over random names and of `parse_font`
+  results; a differential test against tinycss on random font values,
+  of which 94% are compared (the rest crash tinycss), with up to five
+  longhands each.
 
 1. **Font helpers.** `kgcss.fonts`, the fonts3 tests, the differential
    test against tinycss, round trips, benchmarks.

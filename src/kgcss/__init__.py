@@ -65,6 +65,7 @@ from kgcss.cssom import (
 )
 from kgcss.decode import decode_stylesheet, lookup_encoding
 from kgcss.escaping import serialize_identifier, serialize_string
+from kgcss.fonts import FontDict, parse_font, parse_font_family, serialize_font, serialize_font_family
 from kgcss.matching import Select
 from kgcss.media import MediaFeature, MediaQuery, media_matches, parse_media_queries
 from kgcss.selectors import INAPPROPRIATE_PSEUDO_CLASSES, rename_classes, rename_ids
@@ -85,6 +86,7 @@ __all__ = [
     'DocumentRule',
     'ErrorHandler',
     'ExpressionError',
+    'FontDict',
     'FontFaceRule',
     'GroupingRule',
     'ImportFetcher',
@@ -126,6 +128,8 @@ __all__ = [
     'lookup_encoding',
     'media_matches',
     'parse_color',
+    'parse_font',
+    'parse_font_family',
     'parse_media_queries',
     'parse_rgba',
     'parse_rule',
@@ -140,6 +144,8 @@ __all__ = [
     'replace_urls_in_text',
     'resolve_imports',
     'serialize',
+    'serialize_font',
+    'serialize_font_family',
     'serialize_identifier',
     'serialize_string',
 ]
