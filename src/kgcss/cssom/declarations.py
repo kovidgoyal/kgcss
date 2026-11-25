@@ -14,6 +14,7 @@ from kgcss.tokenizer import ParseError, TokenType, tokenize
 
 if TYPE_CHECKING:
     from kgcss.cssom.rules import Comment, Rule
+    from kgcss.cssom.serializer import SerializeOptions
 
 CSS_WHITESPACE = ' \t\n\r\f'
 CLOSERS = frozenset((TokenType.RIGHT_CURLY, TokenType.RIGHT_PAREN, TokenType.RIGHT_SQUARE))
@@ -75,7 +76,17 @@ class Property:
     is checked when set, see check_value().
     """
 
-    __slots__ = ('_literal_priority', '_name', '_node', '_parsed', '_priority', '_value', '_value_from_node', 'parent')
+    __slots__ = (
+        '_dirty',
+        '_literal_priority',
+        '_name',
+        '_node',
+        '_parsed',
+        '_priority',
+        '_value',
+        '_value_from_node',
+        'parent',
+    )
 
     def __init__(self, name: str, value: str, priority: str = '', *, validate: bool = False) -> None:
         self._name = normalize_name(name)
@@ -86,6 +97,8 @@ class Property:
         # True while the value is still the one in the syntax node
         self._value_from_node = False
         self._parsed: PropertyValue | None = None
+        # True once changed, so its source text is stale
+        self._dirty = False
         self.parent: DeclarationBlock | None = None
 
     @classmethod
@@ -100,10 +113,12 @@ class Property:
         p._node = node
         p._value_from_node = True
         p._parsed = None
+        p._dirty = False
         p.parent = None
         return p
 
     def _changed(self) -> None:
+        self._dirty = True
         if self.parent is not None:
             self.parent._changed()
 
@@ -209,8 +224,15 @@ class Property:
         p = Property.__new__(Property)
         p._name, p._value, p._priority = self._name, self.value, self._priority
         p._literal_priority, p._node, p.parent = self._literal_priority, self._node, None
-        p._value_from_node, p._parsed = self._value_from_node, self._parsed
+        p._value_from_node, p._parsed, p._dirty = self._value_from_node, self._parsed, self._dirty
         return p
+
+    @property
+    def css_text(self) -> str:
+        """name: value, with !important if set, in the pretty format."""
+        from kgcss.cssom.serializer import DEFAULT_OPTIONS, property_text
+
+        return property_text(self, DEFAULT_OPTIONS)
 
     def __repr__(self) -> str:
         imp = ' !important' if self._priority else ''
@@ -404,6 +426,9 @@ class DeclarationBlock:
         value = check_value(name, value)
         current._value, current._priority = value, normalize_priority(priority)
         current._literal_priority = None
+        current._value_from_node = False
+        current._parsed = None
+        current._dirty = True
         self._remove_others(name, current)
         self._changed()
         return current
@@ -442,6 +467,30 @@ class DeclarationBlock:
         """Replace one specific declaration with several, at the same position (for shorthand expansion)."""
         i = self._items.index(prop)
         self._items[i : i + 1] = list(replacements)
+
+    @property
+    def css_text(self) -> str:
+        """The declarations in the pretty format: one per line, each ending with a semicolon."""
+        return self.to_css()
+
+    @css_text.setter
+    def css_text(self, text: str) -> None:
+        block, errors = parse_declarations(text, self.parent_rule, None)
+        self._items[:] = []
+        items = list(block._items)
+        block._items[:] = []
+        self._items[:] = items
+        self.errors = errors
+
+    def to_css(self, options: SerializeOptions | None = None, *, single_line: bool = False) -> str:
+        """Serialize the declarations. With single_line, they are on one line separated by '; ' and the
+        text is safe inside a double-quoted HTML attribute, as for style="" (comments are left out)."""
+        from kgcss.cssom.serializer import DEFAULT_OPTIONS, declaration_lines, declarations_single_line
+
+        options = options or DEFAULT_OPTIONS
+        if single_line:
+            return declarations_single_line(self, options)
+        return '\n'.join(declaration_lines(self, options))
 
     def copy(self) -> DeclarationBlock:
         """An unattached deep copy of this block."""

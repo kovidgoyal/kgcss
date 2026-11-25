@@ -182,6 +182,7 @@ class Builder:
                 self.invalid(node, f'@{name} must have a block')
                 return None
             grouping = cls(node.prelude.text.strip(CSS_WHITESPACE))
+            grouping._keyword = name
             self.init(grouping, node, parent)
             nodes = parse_block_contents(block)
             self.report_block_errors(nodes)
@@ -239,6 +240,7 @@ class Builder:
             supports, rest = rest[0].arguments.text.strip(CSS_WHITESPACE), rest[1:]
         media_text = self.stream.source[rest[0].pos : node.prelude.end].strip(CSS_WHITESPACE) if rest else ''
         rule = ImportRule(href, media_text, layer, supports)
+        rule._href_is_string = isinstance(values[0], Token) and values[0].type is TokenType.STRING
         self.init(rule, node, None)
         return rule
 

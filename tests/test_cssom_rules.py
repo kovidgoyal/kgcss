@@ -360,8 +360,8 @@ def test_preserve_serialization() -> None:
     # An unmodified sheet is written back exactly, even the parts that were dropped
     assert serialize(sheet, PRESERVE) == css
     assert [serialize(r, PRESERVE) for r in sheet] == ['@charset "x";', '/* c */', 'a{b:c}', '@media   x{ y {} }']
-    with pytest.raises(NotImplementedError):
-        serialize(sheet)
+    # The pretty format drops the empty @media rule
+    assert serialize(sheet) == '@charset "x";\n/* c */\na {\n  b: c;\n}'
 
 
 def test_bytes_input() -> None:

@@ -172,3 +172,30 @@ def test_parsed_values_of_declarations(css: str) -> None:
             parsed = item.parsed_value
             check_value_tree(parsed)
             assert parsed.css_text == item.value
+
+
+@given(css_text)
+def test_pretty_serialization_is_idempotent(css: str) -> None:
+    # requirements S2: ser(parse(ser(x))) == ser(x)
+    for options in (SerializeOptions(), SerializeOptions(normalize=False), SerializeOptions(drop_empty_rules=False)):
+        once = serialize(parse_stylesheet(css), options)
+        twice = serialize(parse_stylesheet(once), options)
+        assert twice == once, (css, options)
+
+
+@given(css_text)
+def test_declaration_serialization_is_idempotent(css: str) -> None:
+    block = parse_style(css)
+    multi = block.css_text
+    assert parse_style(multi).css_text == multi
+    single = block.to_css(single_line=True)
+    assert '"' not in single
+    assert '\n' not in single
+    assert parse_style(single).to_css(single_line=True) == single
+
+
+@given(css_text)
+def test_preserve_serialization_of_unchanged_rules(css: str) -> None:
+    sheet = parse_stylesheet(css)
+    for rule in sheet.iter_rules():
+        assert serialize(rule, PRESERVE) in css

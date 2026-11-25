@@ -279,16 +279,18 @@ FN(consume_numeric)(kg_tokenizer *s, uint32_t start) {
     } else kg_add_token(s, KG_TOK_NUMBER, start, s->pos, start, number_end, flags);
 }
 
-static void
+/* Returns KG_TF_UNCLOSED if the end of input was reached before a ) */
+static uint8_t
 FN(consume_bad_url_remnants)(kg_tokenizer *s) {
     while (s->pos < s->len) {
         uint32_t c = DATA[s->pos];
-        if (c == ')') { s->pos++; return; }
+        if (c == ')') { s->pos++; return 0; }
         if (c == '\\' && !kg_is_newline(FN(peek)(s, 1))) {
             s->pos++;
             FN(consume_escape)(s);
         } else s->pos++;
     }
+    return KG_TF_UNCLOSED;
 }
 
 /* Called with pos after "url(" and any leading whitespace consumed by the caller */
@@ -321,22 +323,22 @@ FN(consume_url)(kg_tokenizer *s, uint32_t start) {
                 kg_add_token(s, KG_TOK_URL, start, s->pos, vstart, vend, flags | KG_TF_UNCLOSED);
             } else {
                 kg_add_error(s, s->pos, KG_ERR_BAD_URL);
-                FN(consume_bad_url_remnants)(s);
-                kg_add_token(s, KG_TOK_BAD_URL, start, s->pos, start, s->pos, 0);
+                uint8_t unclosed = FN(consume_bad_url_remnants)(s);
+                kg_add_token(s, KG_TOK_BAD_URL, start, s->pos, start, s->pos, unclosed);
             }
             return;
         }
         if (c == '"' || c == '\'' || c == '(' || kg_is_non_printable(c)) {
             kg_add_error(s, s->pos, KG_ERR_BAD_URL);
-            FN(consume_bad_url_remnants)(s);
-            kg_add_token(s, KG_TOK_BAD_URL, start, s->pos, start, s->pos, 0);
+            uint8_t unclosed = FN(consume_bad_url_remnants)(s);
+            kg_add_token(s, KG_TOK_BAD_URL, start, s->pos, start, s->pos, unclosed);
             return;
         }
         if (c == '\\') {
             if (kg_is_newline(FN(peek)(s, 1))) {
                 kg_add_error(s, s->pos, KG_ERR_INVALID_ESCAPE);
-                FN(consume_bad_url_remnants)(s);
-                kg_add_token(s, KG_TOK_BAD_URL, start, s->pos, start, s->pos, 0);
+                uint8_t unclosed = FN(consume_bad_url_remnants)(s);
+                kg_add_token(s, KG_TOK_BAD_URL, start, s->pos, start, s->pos, unclosed);
                 return;
             }
             s->pos++;

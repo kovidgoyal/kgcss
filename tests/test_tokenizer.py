@@ -234,6 +234,10 @@ def test_urls() -> None:
     assert single('url(a"b)').type is T.BAD_URL
     assert single('url(a\\)b').type is T.URL
     assert toks('url(a b\\)c) d') == [(T.BAD_URL, None), (T.WHITESPACE, ' '), (T.IDENT, 'd')]
+    # A bad url ended by EOF rather than ) is not closed
+    assert not single('url(a b').closed
+    assert single('url(a b)').closed
+    assert not single('url(a"b\\)').closed
     u = single('url( a ')
     assert (u.value, u.closed) == ('a', False)
     assert [e.kind for e in u.stream.errors] == ['eof-in-url']

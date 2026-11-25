@@ -3,12 +3,16 @@
 """The Stylesheet class and parse_stylesheet()."""
 
 from collections.abc import Iterator
+from typing import TYPE_CHECKING
 
 from kgcss.cssom.rules import NamespaceRule, Rule, RuleList, RuleType
 from kgcss.cssom.state import ErrorHandler, SheetState, Source
 from kgcss.decode import Buffer
 from kgcss.syntax import parse_stylesheet as parse_syntax_tree
 from kgcss.tokenizer import ParseError
+
+if TYPE_CHECKING:
+    from kgcss.cssom.serializer import SerializeOptions
 
 
 class Stylesheet:
@@ -88,6 +92,22 @@ class Stylesheet:
             if parent is None:
                 return tuple(reversed(path))
             current = parent
+
+    @property
+    def css_text(self) -> str:
+        """The sheet serialized in the pretty format."""
+        from kgcss.cssom.serializer import serialize
+
+        return serialize(self)
+
+    def encode(self, options: SerializeOptions | None = None) -> bytes:
+        """The serialized sheet as bytes, in the encoding of its @charset rule (UTF-8 if none).
+        Characters that encoding cannot represent are written as CSS escapes (requirements S4)."""
+        from kgcss.cssom.rules import CharsetRule
+        from kgcss.cssom.serializer import DEFAULT_OPTIONS, encode_text, serialize
+
+        charset = next((r.encoding for r in self.rules if isinstance(r, CharsetRule)), None)
+        return encode_text(serialize(self, options or DEFAULT_OPTIONS), charset)
 
     def __repr__(self) -> str:
         href = f' {self.href!r}' if self.href else ''

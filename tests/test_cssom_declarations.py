@@ -325,13 +325,11 @@ def test_modification_and_preserve_serialization() -> None:
     _ = d.style.get_value('e')
     assert serialize(sheet, PRESERVE) == 'a { b: c } @media x { d { e: f } } g { h: i }'
     d.style.set('e', 'g')
-    # The changed rule, its ancestors and the sheet can no longer be written from source
-    for obj in (d, media, sheet):
-        with pytest.raises(NotImplementedError):
-            serialize(obj, PRESERVE)
+    # The changed rule and its ancestors are written in the pretty format, unchanged rules as they were
+    # The original whitespace between rules is kept
+    assert serialize(sheet, PRESERVE) == 'a { b: c } @media x {\n  d {\n    e: g;\n  }\n} g { h: i }'
     assert serialize(a, PRESERVE) == 'a { b: c }'
     prop = g.style.get_property('h')
     assert prop is not None
     prop.value = 'j'
-    with pytest.raises(NotImplementedError):
-        serialize(g, PRESERVE)
+    assert serialize(g, PRESERVE) == 'g {\n  h: j;\n}'

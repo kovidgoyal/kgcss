@@ -7,6 +7,7 @@ from enum import Enum, unique
 from typing import TYPE_CHECKING, ClassVar, final, overload
 
 from kgcss.cssom.declarations import DeclarationBlock, block_from_nodes, parse_declarations
+from kgcss.cssom.serializer import normalize_selector
 from kgcss.cssom.state import SheetState, SourceLike
 from kgcss.syntax import AtRule, Declaration, QualifiedRule, Token
 
@@ -82,6 +83,13 @@ class Rule:
     def child_rules(self) -> RuleList | None:
         """The rules nested directly in this rule, or None if it cannot contain rules."""
         return None
+
+    @property
+    def css_text(self) -> str:
+        """This rule serialized in the pretty format."""
+        from kgcss.cssom.serializer import serialize
+
+        return serialize(self)
 
     def __repr__(self) -> str:
         where = '' if self._source is None else f' at {self._source.line}:{self._source.column}'
@@ -249,21 +257,23 @@ class StyleRule(LazyBlockRule):
 
     def __init__(self, selector_text: str = '') -> None:
         super().__init__()
-        self._selector_text: str | None = selector_text
+        self._selector_text: str | None = normalize_selector(selector_text)
 
     @property
     def selector_text(self) -> str:
-        """The selector list, as text. For parsed rules it is read from the source on first access."""
+        """The selector list as text, with normalized whitespace (a, b and a > b) but escapes, case
+        and comments kept. For parsed rules it is read from the source on first access."""
         text = self._selector_text
         if text is None:
             owner = self._block_owner
             assert isinstance(owner, QualifiedRule)
-            self._selector_text = text = owner.prelude.text.strip(CSS_WHITESPACE)
+            self._selector_text = text = normalize_selector(owner.prelude.text)
         return text
 
     @selector_text.setter
     def selector_text(self, value: str) -> None:
-        self._selector_text = value
+        self._selector_text = normalize_selector(value)
+        self._changed()
 
     @property
     def rules(self) -> RuleList:
@@ -280,12 +290,20 @@ class StyleRule(LazyBlockRule):
 class GroupingRule(Rule):
     """Base of rules that contain a list of rules, such as @media and @supports."""
 
-    __slots__ = ('prelude_text', 'rules')
+    __slots__ = ('_keyword', 'prelude_text', 'rules')
+    default_keyword: ClassVar[str] = ''
 
     def __init__(self, prelude_text: str = '') -> None:
         super().__init__()
         self.prelude_text = prelude_text
         self.rules = RuleList()
+        # The at-keyword as written, lowercased, for rules with more than one (@-moz-document)
+        self._keyword: str | None = None
+
+    @property
+    def at_keyword_name(self) -> str:
+        """The at-keyword without the @, such as 'media' or '-moz-document'."""
+        return self._keyword or self.default_keyword
 
     def child_rules(self) -> RuleList:
         return self.rules
@@ -300,6 +318,7 @@ class MediaRule(GroupingRule):
 
     __slots__ = ('media',)
     type = RuleType.MEDIA
+    default_keyword = 'media'
 
     def __init__(self, media_text: str = '') -> None:
         super().__init__(media_text)
@@ -312,6 +331,7 @@ class SupportsRule(GroupingRule):
 
     __slots__ = ()
     type = RuleType.SUPPORTS
+    default_keyword = 'supports'
 
     @property
     def condition_text(self) -> str:
@@ -324,6 +344,7 @@ class ContainerRule(GroupingRule):
 
     __slots__ = ()
     type = RuleType.CONTAINER
+    default_keyword = 'container'
 
 
 @final
@@ -332,6 +353,7 @@ class LayerBlockRule(GroupingRule):
 
     __slots__ = ()
     type = RuleType.LAYER_BLOCK
+    default_keyword = 'layer'
 
     @property
     def name(self) -> str:
@@ -344,6 +366,7 @@ class ScopeRule(GroupingRule):
 
     __slots__ = ()
     type = RuleType.SCOPE
+    default_keyword = 'scope'
 
 
 @final
@@ -352,6 +375,7 @@ class StartingStyleRule(GroupingRule):
 
     __slots__ = ()
     type = RuleType.STARTING_STYLE
+    default_keyword = 'starting-style'
 
 
 @final
@@ -360,6 +384,7 @@ class DocumentRule(GroupingRule):
 
     __slots__ = ()
     type = RuleType.DOCUMENT
+    default_keyword = 'document'
 
 
 @final
@@ -413,7 +438,7 @@ class LayerStatementRule(Rule):
 class ImportRule(Rule):
     """An @import rule."""
 
-    __slots__ = ('href', 'layer', 'media', 'supports')
+    __slots__ = ('_href_is_string', 'href', 'layer', 'media', 'supports')
     type = RuleType.IMPORT
 
     def __init__(
@@ -425,6 +450,8 @@ class ImportRule(Rule):
         # None if no layer was given, '' for an anonymous layer
         self.layer = layer
         self.supports = supports
+        # @import "a" is written back as a string, @import url(a) as url()
+        self._href_is_string = False
 
     def _repr_detail(self) -> str:
         return f' {self.href!r}'
@@ -518,12 +545,26 @@ class MarginRule(LazyBlockRule):
 class Comment(Rule):
     """A comment between rules. text is the content, without the /* and */."""
 
-    __slots__ = ('text',)
+    __slots__ = ('_text',)
     type = RuleType.COMMENT
 
     def __init__(self, text: str = '') -> None:
         super().__init__()
-        self.text = text
+        if '*/' in text:
+            raise ValueError('A comment cannot contain */')
+        self._text = text
+
+    @property
+    def text(self) -> str:
+        """The text between /* and */."""
+        return self._text
+
+    @text.setter
+    def text(self, value: str) -> None:
+        if '*/' in value:
+            raise ValueError('A comment cannot contain */')
+        self._text = value
+        self._changed()
 
     def _repr_detail(self) -> str:
         return f' {self.text[:30]!r}'

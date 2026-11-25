@@ -468,7 +468,85 @@ class SerializeOptions:
 
 ## 8. Milestones
 
-Status: milestones 1 to 3 are done.
+Status: milestones 1 to 4 are done.
+
+Notes from milestone 4:
+- **Format.** It was checked against calibre's settings
+  (`setup_css_parser_serialization`: indent, no indented closing brace, a
+  semicolon after the last declaration) and its tests. The kepubify CSS
+  round trips byte for byte. `DeclarationBlock.css_text` is
+  `name: value;` lines, which calibre's `rstrip(';')` comparisons expect.
+  Selector text such as `p#id_x-2, [id="id_x-2"]` matches structure.py, and
+  `'xxx'` becomes `"xxx"` as cascade.py expects.
+- **One iterative token serializer** (`TokenWriter`) writes every value,
+  selector, prelude and unknown at-rule, in three modes: value, selector
+  and verbatim. It applies S3:
+  - strings in double quotes;
+  - `url()` quoted only when needed;
+  - numbers: `.5` to `0.5`, `1.0` to `1`, `010` to `10`, `-0.0` to `0`,
+    `+1px` kept;
+  - zero lengths written without a unit, at the top level of a value only,
+    so never inside `calc()` or any other function;
+  - hex colors shortened when every pair repeats;
+  - function names lowercased;
+  - `, ` after commas;
+  - spaces around combinators in selectors, none around attribute
+    operators.
+
+  Escapes are always kept from the source. Custom properties and unknown
+  at-rules are written verbatim. `@import "a"` stays a string. The keyword
+  of `@-moz-document` is kept.
+- **The output is always well formed.** Anything unclosed is closed:
+  brackets, strings, url(), bad url() and comments. A bad string or lone
+  backslash keeps the newline it needs. Unknown at-rules end with `;` or
+  `}`. A value can never swallow what follows it.
+- **Emptiness.** `drop_empty_rules` (on by default, Kobo relies on it)
+  drops rules with no declarations and no child rules. Comments never count
+  as content.
+- **Single-line output** (`to_css(single_line=True)`) is safe inside a
+  double-quoted HTML attribute:
+  - strings use single quotes, and `"` is written as `\22 `;
+  - comments are dropped;
+  - whitespace is collapsed;
+  - declarations that cannot be written on one line (a bad string, a lone
+    backslash, a newline in a bad url) are left out.
+- **`preserve`** writes unchanged rules and declarations exactly as they
+  were. It keeps the whitespace between rules that are still in source
+  order, and pretty prints only what changed. This needs property-level
+  modification tracking and a `Comment.text` setter.
+- **More:** `css_text` on sheets, rules, blocks and properties, and
+  `DeclarationBlock.css_text` can be assigned. `Stylesheet.encode()`
+  encodes in the `@charset` encoding, writing characters it cannot
+  represent as CSS escapes, through a registered `kgcss-css-escape` error
+  handler.
+- **Idempotence property tests** run at sheet and block level, for single
+  lines, with and without normalization, and with empty rules kept. They
+  found 12 bugs, each now a regression test:
+  - names are stored unescaped, so `\31 x` must be escaped again;
+  - a bad url ended by EOF must be closed (a tokenizer change: `BAD_URL`
+    tokens get `KG_TF_UNCLOSED`);
+  - doubled newlines after bad strings;
+  - a backslash at EOF must be written as `\fffd `;
+  - trimming removed the escaped space of `a:\ `, so trimming now only
+    removes whitespace that came from whitespace tokens;
+  - a final hex escape must get its terminating space before ` {` or
+    ` !important`;
+  - a nested rule with the selector `a:` would be read back as a
+    declaration. It is invalid, so it is left out;
+  - rewriting a number could merge it with a touching neighbour
+    (`\ -.5em`), so numbers are only rewritten when that cannot happen;
+  - comments counting as content in one pass but not the next;
+  - and the single-line cases above.
+- **Performance, the main task for milestone 8.**
+  - Pretty serialization of the 1.55 MB calibre-style sheet takes about
+    400 ms, against 18.9 s for css_parser (47 times faster). The target is
+    under 100 ms.
+  - The profile is almost entirely the per-value `TokenWriter`, Python work
+    for every token of 53k values. This is the case the plan foresaw:
+    `TokenWriter` should move to C.
+  - Keep the Python `TokenWriter` as the reference implementation, and
+    check the C version against it on hypothesis input, as the tokenizer is
+    checked against the Python grouping.
 
 Notes from milestone 3:
 - **Where values live.** `kgcss.cssom.values` has `PropertyValue` and the
