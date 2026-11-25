@@ -67,6 +67,8 @@ typedef struct {
     PyObject *SelectorParseError;
     PyTypeObject *Snapshot_type;
     PyObject *MatchError;
+    PyTypeObject *RGBA_type;
+    PyObject *str_currentColor;
     PyTypeObject *TokenStream_type, *Token_type, *ParseError_type;
     PyTypeObject *Block_type, *Function_type, *ComponentValueList_type;
     PyTypeObject *AtRule_type, *QualifiedRule_type, *Declaration_type, *NodeList_type;

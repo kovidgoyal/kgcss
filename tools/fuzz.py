@@ -3,18 +3,20 @@
 
 """Build and run the libFuzzer harnesses in fuzz/.
 
-    python tools/fuzz.py build [--target tokenizer|selectors]
-    python tools/fuzz.py run --seconds 300 [--target tokenizer|selectors] [-- extra libFuzzer options]
+    python tools/fuzz.py build [--target tokenizer|selectors|colors]
+    python tools/fuzz.py run --seconds 300 [--target tokenizer|selectors|colors] [-- extra libFuzzer options]
 
 Targets:
 
     tokenizer  the C tokenizer (fuzz/fuzz_tokenizer.c), the default
     selectors  the selector parser (fuzz/fuzz_selectors.c), with the whole
                extension compiled in and the Python package from src/
+    colors     the color parser (fuzz/fuzz_colors.c), likewise
 
 Needs clang with libFuzzer. The corpus lives in build/fuzz/<target>/corpus
 and is seeded the first time: from the conformance suite inputs for the
-tokenizer, and from the selector test tables for the selectors. Crashing
+tokenizer, from the selector test tables for the selectors, and from the
+color tests and the color files of the suite for the colors. Crashing
 inputs are written to build/fuzz/<target>/ as crash-*; reproduce one with
 build/fuzz/<target>/fuzz_<target> build/fuzz/<target>/crash-<hash>.
 """
@@ -27,7 +29,7 @@ import sysconfig
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-TARGETS = ('tokenizer', 'selectors')
+TARGETS = ('tokenizer', 'selectors', 'colors')
 
 
 def out_dir(target: str) -> Path:
@@ -66,14 +68,17 @@ def seed_corpus(target: str) -> Path:
     corpus.mkdir(parents=True, exist_ok=True)
     if any(corpus.iterdir()):
         return corpus
-    if target == 'selectors':
+    if target in ('selectors', 'colors'):
         import ast
 
-        # The selectors in the tables of the selector tests
-        tree = ast.parse((ROOT / 'tests' / 'test_selectors.py').read_text(encoding='utf-8'))
+        # The strings in the tables of the tests
+        tree = ast.parse((ROOT / 'tests' / f'test_{target}.py').read_text(encoding='utf-8'))
         texts = {
             node.value for node in ast.walk(tree) if isinstance(node, ast.Constant) and isinstance(node.value, str)
         }
+        if target == 'colors':
+            for path in (ROOT / 'tests' / 'css-parsing-tests').glob('color_*.json'):
+                texts.update(x for x in json.loads(path.read_text(encoding='utf-8'))[::2] if isinstance(x, str))
         for i, text in enumerate(sorted(texts)):
             (corpus / f'seed-{i}').write_bytes(text.encode('utf-8', 'surrogatepass'))
         return corpus

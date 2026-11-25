@@ -362,7 +362,67 @@ corpus.
 
 ## 8. Milestones
 
-Status: decided, not started.
+Status: milestone 1 is done.
+
+Notes from milestone 1:
+- **Results**, `bench/bench_color.py` pinned to the fast cores, against
+  calibre's `parse_css4_color_string` (the target of §4.3):
+
+  | input | kgcss ns | calibre ns |
+  |---|---:|---:|
+  | `red` | 119 | 132 |
+  | `#ff0000` | 112 | 119 |
+  | `rgb(255, 0, 0)` | 173 | 207 |
+  | `oklch(0.628 0.2577 29.23)` | 287 | 375 |
+  | `color(display-p3 0.9 0.2 0.1)` | 328 | 435 |
+  | `margin` | 49 | 47 |
+  | `rgb(var(--x))` | 38 | 34 |
+  | `AliceBlue` | 129 | 142 |
+  | `rgba(0, 0, 0, .5)` | 214 | 259 |
+
+  | workload | texts | kgcss ms | calibre ms |
+  |---|---:|---:|---:|
+  | color-values: every `*color` value of the corpus | 23,506 | 5.63 | 6.55 |
+  | components: every ident, hash and function of the corpus | 121,166 | 25.82 | 26.79 |
+
+  - The short inputs that are not colors are 2 to 6 ns slower per call,
+    within noise: over 5 million calls of `foo(1)`, kgcss runs fewer
+    instructions than calibre (5.66 G against 6.14 G, Python included),
+    and the cycle counts swing either way from run to run. They are under
+    the 60 ns target.
+- **Two changes made the difference:**
+  - `RGBA` objects are allocated with `tp_alloc` and filled like tuples.
+    `PyStructSequence_New()` looks the field counts up in the type's dict
+    on every call, which made simple colors 5% slower than calibre's plain
+    tuples;
+  - integers of up to 15 digits, most `rgb()` arguments, are converted
+    directly. Others go through `PyOS_string_to_double()`.
+- **A bug in calibre's parser:** it converts numbers with `strtod()`,
+  which uses the locale, and calibre's GUI sets the locale from the
+  environment. With a decimal comma, `strtod("0.5")` stops at the dot,
+  so `rgb(0 0 0 / 0.5)` would be fully transparent. kgcss uses `PyOS_string_to_double()`. No such locale is installed
+  here, so there is no test for it.
+- **Escapes (D2)**: text with a backslash or a non-ASCII character is
+  tokenized, then rebuilt as ASCII: names, units and hash values decoded,
+  whitespace and comments as single spaces. Decoded names must still look
+  like names (`\31 23` is not the number 123), and hash values like hex.
+  So `r\65 d` is `red`, and so is `red /* é */`, which calibre's parser
+  rejects because of the non-ASCII comment.
+- **The two steps of §2.1:** the parser fills a `kg_color` with the space
+  and the specified channels (with the clamping that CSS Color 4 does at
+  parse time: rgb channels to 0..255, lightness, negative chroma), then
+  `to_srgb()` converts and clips. hsl() and hwb() are converted to the
+  `rgb` space while parsing, as CSS specifies. Milestone 2 builds `Color`
+  on the first step.
+- **Tests** (`tests/test_colors.py`): the tinycss color4 tables, with
+  the escape cases moved to the valid side; the CSS 3 keyword and hex
+  files of the suite; the CSS 3 superset check; calibre's
+  `convert_color` and `convert_color_for_font_tag` tests; property tests
+  for any text, escaped names, and equality with calibre's parser on
+  random color-like text (about 60% valid colors, in every function),
+  which the free-threaded run skips, as calibre's extension is not built
+  for it. A thread test, and the `colors` fuzz target, which also checks
+  that ASCII case does not change the result: 9 million runs, no failures.
 
 1. **The color parser in C.** Port `color.c` into `csrc/color.c` with the
    two-step design of §2.1. `parse_rgba` and `RGBA`. The escape fallback

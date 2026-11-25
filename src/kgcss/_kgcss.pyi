@@ -8,6 +8,8 @@ from types import NotImplementedType
 from typing import Any, Final, Literal, Self, TypeVar, final
 from weakref import ReferenceType
 
+from _typeshed import structseq
+
 from kgcss.cssom.declarations import DeclarationBlock
 from kgcss.cssom.values import PropertyValue
 from kgcss.enums import TokenType
@@ -27,6 +29,20 @@ def build_properties(
     nodes: NodeList | list[Declaration | Token], cls: type[_P], parent: ReferenceType[Any] | None, /
 ) -> tuple[list[_P | Declaration | Token], bool]: ...
 def parse_selectors(text: str, nested: bool, /) -> tuple[CompiledSelector, ...]: ...
+
+@final
+class RGBA(structseq[float], tuple[float, float, float, float]):
+    __match_args__: Final = ('red', 'green', 'blue', 'alpha')
+    @property
+    def red(self) -> float: ...
+    @property
+    def green(self) -> float: ...
+    @property
+    def blue(self) -> float: ...
+    @property
+    def alpha(self) -> float: ...
+
+def parse_rgba(text: str, /) -> RGBA | Literal['currentColor'] | None: ...
 
 class SelectorParseError(ValueError): ...
 class MatchError(ValueError): ...

@@ -110,6 +110,9 @@ Before you report work as done, all of the following must pass:
   indices (requirements.md T2, T7).
 - Parsers must never read past the end of input, and must handle any input,
   including invalid UTF-16 surrogates, NUL and huge inputs, without crashing.
+- Do not use `strtod()` or other locale-dependent functions: calibre's GUI
+  sets the locale from the environment, and in a locale with a decimal
+  comma `strtod("0.5")` stops at the dot. Use `PyOS_string_to_double()`.
 
 ### Free-threading (no GIL)
 
@@ -155,12 +158,14 @@ uv run python tools/sanitize_tests.py -n auto
 
 This builds into a temporary directory and leaves the normal build alone. It
 runs with `PYTHONMALLOC=malloc`, so ASan also sees Python object
-allocations. For changes to the tokenizer (`csrc/tokenizer*`) or the
-selector parser (`csrc/selectors.c`), fuzz for a few minutes too:
+allocations. For changes to the tokenizer (`csrc/tokenizer*`), the
+selector parser (`csrc/selectors.c`) or the color parser (`csrc/color.c`),
+fuzz for a few minutes too:
 
 ```sh
 uv run python tools/fuzz.py run --seconds 300
 uv run python tools/fuzz.py run --target selectors --seconds 300
+uv run python tools/fuzz.py run --target colors --seconds 300
 ```
 
 If the fuzzer finds a crash, add the input as a regression test in
@@ -240,6 +245,10 @@ the C version must give exactly the same results:
   construction, whole sheets against a document as calibre's stylizer
   does, and level 4 selectors) against calibre's css_selectors. Its
   workloads also work with `ab_compare.py --workload`.
+- `bench/bench_color.py` measures `parse_rgba` against calibre's C color
+  parser (`calibre_extensions.tokenizer.parse_css4_color_string`, which
+  `prepare` downloads): single inputs in nanoseconds, and every color
+  value and every ident, hash and function of the corpus.
 - Garbage collection is a large part of the cost of creating many Python
   objects, as every collection walks the tracked objects. In hot paths,
   avoid allocating container objects you do not keep. Note that

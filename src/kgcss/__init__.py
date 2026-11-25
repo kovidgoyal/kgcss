@@ -8,6 +8,7 @@ kgcss.syntax (component values and the generic CSS Syntax parse tree).
 """
 
 from kgcss._version import __version__
+from kgcss.colors import RGBA, parse_rgba
 from kgcss.cssom import (
     CharsetRule,
     Comment,
@@ -70,6 +71,7 @@ from kgcss.tokenizer import ParseError
 
 __all__ = [
     'INAPPROPRIATE_PSEUDO_CLASSES',
+    'RGBA',
     'CSSSyntaxError',
     'CharsetRule',
     'Comment',
@@ -117,6 +119,7 @@ __all__ = [
     'invalid_selectors',
     'iter_urls',
     'lookup_encoding',
+    'parse_rgba',
     'parse_rule',
     'parse_selectors',
     'parse_style',

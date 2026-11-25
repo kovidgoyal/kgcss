@@ -67,6 +67,9 @@ static PyMethodDef module_methods[] = {
     {"parse_one_declaration", (PyCFunction)(void (*)(void))kg_parse_one_declaration, METH_FASTCALL | METH_KEYWORDS,
      "parse_one_declaration(source: str, /, *, comments: bool = True) -> Declaration | ParseError\n\n"
      "Parse one declaration (CSS Syntax 'parse a declaration'). Input after a top level ; is ignored."},
+    {"parse_rgba", kg_parse_rgba, METH_O,
+     "parse_rgba(text: str, /) -> RGBA | Literal['currentColor'] | None\n\n"
+     "A CSS color as sRGB, clipped to 0..1. 'currentColor' for currentColor in any case, None if text is not a color."},
     {NULL, NULL, 0, NULL}
 };
 
@@ -83,6 +86,7 @@ module_exec(PyObject *module) {
     if (kg_properties_init(module) != 0) return -1;
     if (kg_selectors_init(module) != 0) return -1;
     if (kg_select_init(module) != 0) return -1;
+    if (kg_color_init(module) != 0) return -1;
     return kg_syntax_init(module);
 }
 
@@ -94,6 +98,7 @@ module_traverse(PyObject *module, visitproc visit, void *arg) {
     if (kg_properties_traverse(module, visit, arg) != 0) return -1;
     if (kg_selectors_traverse(module, visit, arg) != 0) return -1;
     if (kg_select_traverse(module, visit, arg) != 0) return -1;
+    if (kg_color_traverse(module, visit, arg) != 0) return -1;
     if (kg_types_traverse(module, visit, arg) != 0) return -1;
     if (kg_values_traverse(module, visit, arg) != 0) return -1;
     return kg_syntax_traverse(module, visit, arg);
@@ -107,6 +112,7 @@ module_clear(PyObject *module) {
     kg_properties_clear(module);
     kg_selectors_clear(module);
     kg_select_clear(module);
+    kg_color_clear(module);
     kg_types_clear(module);
     kg_values_clear(module);
     kg_syntax_clear(module);
