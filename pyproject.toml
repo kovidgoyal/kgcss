@@ -106,6 +106,6 @@ quote-style = "single"
 [tool.mypy]
 python_version = "3.14"
 strict = true
-files = ["src", "tests"]
+files = ["src", "tests", "tools"]
 mypy_path = "src"
 warn_unreachable = true

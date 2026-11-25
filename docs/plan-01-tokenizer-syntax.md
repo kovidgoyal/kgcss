@@ -294,7 +294,29 @@ bench/
 
 ## 5. Milestones
 
-Status: milestones 1 to 3 are done.
+Status: milestones 1 to 4 are done.
+
+Notes from milestone 4:
+- `kgcss.parse_stylesheet()` is a Python wrapper. It accepts `str` or any
+  bytes-like object, and for bytes calls `decode_stylesheet()`, then passes
+  the text and encoding name to the C parser. The encoding is exposed as
+  `NodeList.encoding`, which is None for text input.
+- `src/kgcss/_encodings.py` is generated from the WHATWG `encodings.json`
+  and `indexes.json` (`tools/generate_encodings.py`). All 28 single-byte
+  encodings decode with the exact WHATWG tables through
+  `codecs.charmap_decode`. This matters: Python's `cp1252` leaves 5 bytes
+  undefined that WHATWG windows-1252 (the meaning of `latin1`, `ascii` and
+  `iso-8859-1` on the web) maps to C1 controls. Multi-byte legacy encodings
+  use the closest Python codec (gb18030, big5hkscs, euc_jp, iso2022_jp,
+  cp932, cp949). The `replacement` and `x-user-defined` encodings are
+  implemented. CPython's UTF-8 `replace` follows the WHATWG maximal subpart
+  rule, checked against eight test vectors.
+- Label matching is ASCII case-insensitive only, so for example a KELVIN
+  SIGN does not match `k`.
+- All 28 `stylesheet_bytes.json` cases pass.
+- Decoding 1.3 MB of UTF-8 takes 0.3 ms (windows-1252: 0.8 ms), compared
+  with about 5 ms to parse. Decoding once and keeping a single tokenizer
+  (§2) costs little.
 
 Notes from milestone 3:
 - Rule blocks stay raw (`Block`). What a block holds depends on the rule,

@@ -2,6 +2,8 @@
 
 """Run the vendored css-parsing-tests conformance suite."""
 
+from collections.abc import Callable
+
 import pytest
 
 from kgcss import (
@@ -9,6 +11,7 @@ from kgcss import (
     Block,
     Declaration,
     Function,
+    NodeList,
     ParseError,
     QualifiedRule,
     Token,
@@ -104,7 +107,7 @@ SYNTAX_DIFFERENCES: dict[str, dict[str, tuple[JSON, str]]] = {
     },
 }
 
-LIST_PARSERS = {
+LIST_PARSERS: dict[str, Callable[..., NodeList]] = {
     'stylesheet.json': parse_stylesheet,
     'rule_list.json': parse_rule_list,
     'blocks_contents.json': parse_block_contents,
@@ -145,3 +148,23 @@ def test_syntax_single(name: str, css: str, expected: JSON) -> None:
 def test_syntax_differences_are_in_suite() -> None:
     for name, diffs in SYNTAX_DIFFERENCES.items():
         assert set(diffs) <= {css for css, _ in load_cases(name)}
+
+
+def bytes_case_id(value: object) -> str:
+    if isinstance(value, dict):
+        return repr(value.get('comment') or value['css_bytes'])[:40]
+    return ''
+
+
+@pytest.mark.parametrize(('case', 'expected'), load_cases('stylesheet_bytes.json'), ids=bytes_case_id)
+def test_stylesheet_bytes(case: JSON, expected: JSON) -> None:
+    assert isinstance(case, dict)
+    css_bytes = case['css_bytes']
+    assert isinstance(css_bytes, str)
+    protocol, environment = case.get('protocol_encoding'), case.get('environment_encoding')
+    assert protocol is None or isinstance(protocol, str)
+    assert environment is None or isinstance(environment, str)
+    nodes = parse_stylesheet(
+        css_bytes.encode('latin-1'), comments=False, protocol_encoding=protocol, environment_encoding=environment
+    )
+    assert [node_list_to_json(nodes), nodes.encoding] == normalize_expected(expected)

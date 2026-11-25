@@ -24,7 +24,7 @@ from kgcss import (
 
 SUITE_DIR = Path(__file__).parent / 'css-parsing-tests'
 
-type JSON = str | int | float | bool | list[JSON] | None
+type JSON = str | int | float | bool | list[JSON] | dict[str, JSON] | None
 
 # The suite predates the removal of these tokens from CSS Syntax 3. Each is
 # equivalent to the two DELIM tokens it is made of.

@@ -35,8 +35,8 @@ static PyMethodDef module_methods[] = {
      "Parse source as exactly one component value, ignoring surrounding whitespace and comments. "
      "Returns a ParseError of kind 'empty' or 'extra-input' if there is not exactly one."},
     {"parse_stylesheet", (PyCFunction)(void (*)(void))kg_parse_stylesheet, METH_VARARGS | METH_KEYWORDS,
-     "parse_stylesheet(source: str, /, *, comments: bool = True) -> NodeList\n\n"
-     "Parse a stylesheet into at-rules and qualified rules (CSS Syntax 'parse a stylesheet'). CDO/CDC are ignored between rules. With comments=True, top level comments are included as COMMENT tokens."},
+     "parse_stylesheet(source: str, /, *, comments: bool = True, encoding: str | None = None) -> NodeList\n\n"
+     "Parse a stylesheet into at-rules and qualified rules (CSS Syntax 'parse a stylesheet'). CDO/CDC are ignored between rules. With comments=True, top level comments are included as COMMENT tokens. encoding is recorded as NodeList.encoding; use kgcss.parse_stylesheet() to parse bytes."},
     {"parse_rule_list", (PyCFunction)(void (*)(void))kg_parse_rule_list, METH_VARARGS | METH_KEYWORDS,
      "parse_rule_list(source: str | Block, /, *, comments: bool = True) -> NodeList\n\n"
      "Parse a list of rules. Like parse_stylesheet() but CDO/CDC are not special (CSS Syntax 2021 'parse a list of rules')."},

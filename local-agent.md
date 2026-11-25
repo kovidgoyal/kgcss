@@ -19,6 +19,9 @@ section before you implement a feature.
 | `csrc/types.c` | Python heap types `TokenStream`, `Token`, `ParseError` and `tokenize()` |
 | `csrc/values.c` | `Block`, `Function`, `ComponentValueList` and the component value parse functions |
 | `csrc/syntax.c` | CSS Syntax parse algorithms: `AtRule`, `QualifiedRule`, `Declaration`, `NodeList` |
+| `src/kgcss/decode.py` | Decoding stylesheet bytes: BOM, protocol/`@charset`/environment encodings, WHATWG decoders |
+| `src/kgcss/_encodings.py` | **Generated** by `tools/generate_encodings.py` from WHATWG data. Do not edit by hand |
+| `tools/` | Developer scripts (code generators). Typed and linted like the rest of the code |
 | `src/kgcss/enums.py` | Enums shared with C (imported by the extension at init, so it must not import kgcss) |
 | `tests/css-parsing-tests/` | Vendored CC0 conformance suite. Do not edit; record differences in the runners |
 | `tests/` | pytest test suite |

@@ -3,6 +3,7 @@
 """kgcss: fast and comprehensive CSS handling with a C99 backend."""
 
 from kgcss._version import __version__
+from kgcss.decode import decode_stylesheet, lookup_encoding
 from kgcss.serialize import serialize_identifier, serialize_string
 from kgcss.syntax import (
     AtRule,
@@ -41,6 +42,8 @@ __all__ = [
     'TokenStream',
     'TokenType',
     '__version__',
+    'decode_stylesheet',
+    'lookup_encoding',
     'parse_block_contents',
     'parse_component_value_list',
     'parse_one_component_value',
