@@ -175,6 +175,14 @@ def source_is_complete(source: object) -> bool:
     return False
 
 
+def one_line(text: str) -> str:
+    """In tokens that can contain escapes, a newline can only be the whitespace ending a hex escape,
+    which can be any whitespace: make it a space."""
+    if '\n' in text or '\r' in text or '\f' in text:
+        return text.replace('\r\n', ' ').replace('\n', ' ').replace('\r', ' ').replace('\f', ' ')
+    return text
+
+
 def tokens_merge(before: str, after: str) -> bool:
     """Whether two pieces of text tokenize differently when written next to each other."""
     from kgcss.tokenizer import tokenize
@@ -342,6 +350,8 @@ class TokenWriter:
                     pending_space, at_start = False, False
                     continue
                 name_text = item.source_text[: item.arguments.pos - item.pos]
+                if self.attribute_safe:
+                    name_text = one_line(name_text)
                 if self.normalize:
                     name_text = name_text.rstrip(CSS_WHITESPACE)  # url( with whitespace is handled above
                     if item.name.isascii() and not item.name.startswith('--') and name_text == item.name + '(':
@@ -376,6 +386,8 @@ class TokenWriter:
     def verbatim_token(self, tok: Token) -> str:
         """The source text of a token, closing it if it was ended by EOF."""
         text = self.verbatim_text(tok)
+        if self.attribute_safe and tok.type in ESCAPABLE:
+            text = one_line(text)
         if self.attribute_safe and (
             '"' in text
             or tok.type is TokenType.BAD_STRING
@@ -420,6 +432,8 @@ class TokenWriter:
                 return shorten_color(tok)
         text = self.verbatim_text(tok)
         if safe:
+            if t in ESCAPABLE:
+                text = one_line(text)
             # A " can only be an escape here (strings were handled above): use the hex form
             text = text.replace('\\"', '\\22 ')
             if '"' in text or any(c in text for c in '\n\r\f'):

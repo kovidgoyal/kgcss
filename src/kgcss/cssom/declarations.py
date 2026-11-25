@@ -158,6 +158,14 @@ class Property:
         self._literal_priority = None
         self._changed()
 
+    def _replace_value(self, value: str) -> None:
+        """Set the value without checking it, for changes that cannot alter its structure, such as
+        replacing a URL (its value may come from a source that was left open by EOF)."""
+        self._value = value
+        self._value_from_node = False
+        self._parsed = None
+        self._changed()
+
     @property
     def parsed_value(self) -> PropertyValue:
         """The value as a sequence of components, parsed on first access."""

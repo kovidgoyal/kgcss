@@ -37,6 +37,7 @@ from kgcss.cssom.selector_list import Selector, SelectorList
 from kgcss.cssom.serializer import SerializeOptions, serialize
 from kgcss.cssom.state import ErrorHandler
 from kgcss.cssom.stylesheet import NamespaceMap, Stylesheet, parse_rule, parse_stylesheet
+from kgcss.cssom.urls import iter_urls, remove_url_values, replace_urls, replace_urls_in_text
 from kgcss.cssom.values import Component, PropertyValue, parse_value
 
 __all__ = [
@@ -76,9 +77,13 @@ __all__ = [
     'Stylesheet',
     'SupportsRule',
     'UnknownAtRule',
+    'iter_urls',
     'parse_rule',
     'parse_style',
     'parse_stylesheet',
     'parse_value',
+    'remove_url_values',
+    'replace_urls',
+    'replace_urls_in_text',
     'serialize',
 ]

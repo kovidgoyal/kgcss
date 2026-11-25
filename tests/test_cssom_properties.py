@@ -261,3 +261,32 @@ def test_edits_keep_preserve_output_equivalent(css: str, edits: list[tuple[objec
     assert serialize(parse_stylesheet(serialize(sheet, PRESERVE))) == pretty
     assert serialize(parse_stylesheet(pretty)) == pretty
     assert serialize(sheet.copy()) == pretty
+
+
+@given(css_text)
+def test_url_rewriting_changes_only_urls(css: str) -> None:
+    from kgcss import iter_urls, replace_urls, replace_urls_in_text
+    from kgcss.cssom.urls import find_urls
+    from kgcss.syntax import parse_component_value_list
+
+    def mapped(url: str) -> str:
+        return 'X' + url
+
+    out = replace_urls_in_text(css, mapped)
+    assert replace_urls_in_text(css, lambda u: u) is css
+
+    # Outside the URLs, found separately in the input and the output, the text is unchanged
+    def outside_urls(text: str) -> str:
+        parts, pos = [], 0
+        for span in find_urls(parse_component_value_list(text), top_level_rules=True):
+            parts.append(text[pos : span.start])
+            pos = span.end
+        return ''.join(parts) + text[pos:]
+
+    assert outside_urls(out) == outside_urls(css)
+    # The object model sees the same URLs, mapped
+    sheet = parse_stylesheet(css)
+    urls = list(iter_urls(sheet))
+    assert list(iter_urls(parse_stylesheet(out))) == [mapped(u) for u in urls]
+    replace_urls(sheet, mapped)
+    assert list(iter_urls(sheet)) == [mapped(u) for u in urls]

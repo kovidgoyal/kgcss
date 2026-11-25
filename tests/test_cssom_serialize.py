@@ -346,6 +346,7 @@ def test_css_syntax_error_is_exported() -> None:
         'a:!IMPORTANT/* x */(',  # dropping a comment must not merge tokens
         'a:a/* x */1e3',  # a dropped comment in a value acts as whitespace
         'k { &:hover { l: m } /* c */ }',
+        'a:b\\0\n(',  # a newline ending a hex escape becomes a space on a single line
     ],
 )
 def test_found_by_property_tests(css: str) -> None:

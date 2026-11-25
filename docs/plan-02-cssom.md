@@ -468,7 +468,48 @@ class SerializeOptions:
 
 ## 8. Milestones
 
-Status: milestones 1 to 5 are done.
+Status: milestones 1 to 6 are done.
+
+Notes from milestone 6:
+- **`kgcss.cssom.urls`** has `iter_urls()`, `replace_urls()`,
+  `replace_urls_in_text()` and `remove_url_values()`, also exported at the
+  top level.
+- **One token-level finder** (`find_urls`) works on the grouped syntax tree
+  and returns exact spans. It covers:
+  - `url(x)` and `url("x")` at any depth of functions (`image-set()`,
+    `cross-fade()`);
+  - bare strings directly inside `image-set()`, which are URLs by spec;
+  - at the top level of a sheet, `@import` strings.
+
+  It skips `@namespace` URIs, comments, look-alike strings and bad URLs.
+- **Coverage (U3).** `iter_urls` and `replace_urls` walk every rule at
+  every depth: `@import`, every declaration block (style, `@page`, margin,
+  `@font-face`, nested rules, nested declarations), the preludes of
+  grouping rules other than `@media` (`@supports (background: url(x))`),
+  and the prelude and block of unknown at-rules (`@keyframes`).
+- **`replace_urls`** splices new URLs into the text of only the affected
+  properties and attributes. A new URL keeps its form (`url()` or string)
+  and is quoted only when needed. Values the source left open (`f(` at
+  EOF) are updated without the usual structural check, since replacing a
+  URL token cannot change structure. It returns whether anything changed
+  (U2).
+- **`replace_urls_in_text`** (U4) never builds a CSSOM. Outside the
+  replaced URL tokens the text is byte identical, which a property test
+  checks by finding URLs in the input and the output separately. It
+  returns the same object when nothing changed. A quick substring test
+  skips tokenizing: 0.2 us for a typical style attribute.
+- **`remove_url_values`** (U5) removes top-level components containing a
+  matching URL, and the declaration if nothing is left. calibre's
+  `test_remove_property_value` gives `background: black fixed`.
+- **Bugs found by property tests:**
+  - a newline ending a hex escape in single-line output; escapable tokens
+    and function names now turn it into a space in attribute-safe mode;
+  - `replace_urls` raising on values left open by EOF.
+- **Performance, for milestone 8.** `replace_urls_in_text` takes 144 ms on
+  the 1.55 MB calibre-style sheet. Tokenizing takes 6 ms; the rest is
+  Python walking every token object to find the few URLs. A C helper
+  returning URL spans from a `TokenStream` would remove that, alongside the
+  C `TokenWriter`. `iter_urls` on a parsed sheet takes about 36 ms.
 
 Notes from milestone 5:
 - **`RuleList`** is a mutable sequence owned by a sheet or rule. Its
