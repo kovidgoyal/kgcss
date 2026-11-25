@@ -171,24 +171,26 @@ type Workload = Callable[[str], int]
 
 def kgcss_workloads() -> dict[str, Workload]:
     import kgcss
+    import kgcss.syntax
+    import kgcss.tokenizer
 
     def tokenize(css: str) -> int:
-        return len(kgcss.tokenize(css))
+        return len(kgcss.tokenizer.tokenize(css))
 
     def parse(css: str) -> int:
-        return len(kgcss.parse_stylesheet(css))
+        return len(kgcss.syntax.parse_stylesheet(css))
 
     def full(css: str) -> int:
         count = 0
-        stack = [kgcss.parse_stylesheet(css)]
+        stack = [kgcss.syntax.parse_stylesheet(css)]
         while stack:
             for node in stack.pop():
-                if isinstance(node, kgcss.Declaration):
+                if isinstance(node, kgcss.syntax.Declaration):
                     count += 1
                     _ = (node.name, node.value.text, node.important)
-                elif isinstance(node, kgcss.AtRule | kgcss.QualifiedRule) and node.block is not None:
+                elif isinstance(node, kgcss.syntax.AtRule | kgcss.syntax.QualifiedRule) and node.block is not None:
                     _ = node.prelude.text
-                    stack.append(kgcss.parse_block_contents(node.block))
+                    stack.append(kgcss.syntax.parse_block_contents(node.block))
         return count
 
     return {'tokenize': tokenize, 'parse': parse, 'full': full}

@@ -459,7 +459,7 @@ Notes from milestone 5:
   line table, which is guarded by a critical section.
 
 Notes from milestone 4:
-- `kgcss.parse_stylesheet()` is a Python wrapper. It accepts `str` or any
+- `kgcss.parse_stylesheet()` (since CSSOM milestone 1: `kgcss.syntax.parse_stylesheet()`) is a Python wrapper. It accepts `str` or any
   bytes-like object, and for bytes calls `decode_stylesheet()`, then passes
   the text and encoding name to the C parser. The encoding is exposed as
   `NodeList.encoding`, which is None for text input.

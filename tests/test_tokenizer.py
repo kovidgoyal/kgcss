@@ -4,7 +4,8 @@ import random
 
 import pytest
 
-from kgcss import ParseError, Token, TokenStream, TokenType, _kgcss, tokenize
+from kgcss import ParseError, _kgcss
+from kgcss.tokenizer import Token, TokenStream, TokenType, tokenize
 
 T = TokenType
 
@@ -39,9 +40,19 @@ def test_token_type_enum_matches_c() -> None:
 
 
 def test_types_cannot_be_instantiated() -> None:
-    for cls in (Token, TokenStream, ParseError):
+    for cls in (Token, TokenStream):
         with pytest.raises(TypeError):
             cls()
+
+
+def test_parse_error_construction() -> None:
+    # The CSSOM layer reports its own errors as ParseError
+    e = ParseError('misplaced-rule', 'msg', 5, line=2, column=3)
+    assert (e.kind, e.message, e.offset, e.line, e.column) == ('misplaced-rule', 'msg', 5, 2, 3)
+    assert repr(e) == '<ParseError misplaced-rule at 2:3: msg>'
+    assert ParseError('k', 'm').offset == 0
+    with pytest.raises(TypeError):
+        ParseError(1, 'm')  # type: ignore[arg-type]
 
 
 def test_rejects_non_str() -> None:

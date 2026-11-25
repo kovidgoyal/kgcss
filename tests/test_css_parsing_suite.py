@@ -6,15 +6,14 @@ from collections.abc import Callable
 
 import pytest
 
-from kgcss import (
+from kgcss import ParseError
+from kgcss.syntax import (
     AtRule,
     Block,
     Declaration,
     Function,
     NodeList,
-    ParseError,
     QualifiedRule,
-    Token,
     parse_block_contents,
     parse_component_value_list,
     parse_one_component_value,
@@ -23,6 +22,7 @@ from kgcss import (
     parse_rule_list,
     parse_stylesheet,
 )
+from kgcss.tokenizer import Token
 
 from .suite import (
     JSON,

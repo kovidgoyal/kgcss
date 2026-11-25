@@ -7,30 +7,24 @@ from collections.abc import Callable
 from hypothesis import given
 from hypothesis import strategies as st
 
-from kgcss import (
+from kgcss import ParseError, decode_stylesheet, lookup_encoding, serialize_identifier, serialize_string
+from kgcss._encodings import LABELS
+from kgcss.syntax import (
     AtRule,
     Block,
     ComponentValueList,
     Declaration,
     Function,
     NodeList,
-    ParseError,
     QualifiedRule,
-    Token,
-    TokenType,
-    decode_stylesheet,
-    lookup_encoding,
     parse_block_contents,
     parse_component_value_list,
     parse_one_declaration,
     parse_one_rule,
     parse_rule_list,
     parse_stylesheet,
-    serialize_identifier,
-    serialize_string,
-    tokenize,
 )
-from kgcss._encodings import LABELS
+from kgcss.tokenizer import Token, TokenType, tokenize
 
 from .strategies import any_char, css_text
 from .suite import group_tokens, values_to_json

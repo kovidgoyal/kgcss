@@ -75,6 +75,7 @@ __all__ = [
     'ParseError',
     'QualifiedRule',
     'Rule',
+    'Token',
     'parse_block_contents',
     'parse_component_value_list',
     'parse_one_component_value',

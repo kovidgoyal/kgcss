@@ -4,17 +4,9 @@ import random
 
 import pytest
 
-from kgcss import (
-    Block,
-    ComponentValueList,
-    Function,
-    ParseError,
-    Token,
-    TokenType,
-    parse_component_value_list,
-    parse_one_component_value,
-    tokenize,
-)
+from kgcss import ParseError
+from kgcss.syntax import Block, ComponentValueList, Function, parse_component_value_list, parse_one_component_value
+from kgcss.tokenizer import Token, TokenType, tokenize
 
 from .suite import group_tokens, values_to_json
 

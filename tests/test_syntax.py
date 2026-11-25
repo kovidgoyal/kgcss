@@ -4,21 +4,20 @@ import random
 
 import pytest
 
-from kgcss import (
+from kgcss import ParseError
+from kgcss.syntax import (
     AtRule,
     Block,
     Declaration,
     NodeList,
-    ParseError,
     QualifiedRule,
-    Token,
-    TokenType,
     parse_block_contents,
     parse_one_declaration,
     parse_one_rule,
     parse_rule_list,
     parse_stylesheet,
 )
+from kgcss.tokenizer import Token, TokenType
 
 
 def summary(nodes: NodeList) -> list[str]:
@@ -313,12 +312,14 @@ def test_random_input_invariants() -> None:
 
 def test_argument_handling() -> None:
     import kgcss
+    import kgcss.syntax
+    import kgcss.tokenizer
     from kgcss import _kgcss
 
     parsers = (
-        kgcss.tokenize,
-        kgcss.parse_component_value_list,
-        kgcss.parse_one_component_value,
+        kgcss.tokenizer.tokenize,
+        kgcss.syntax.parse_component_value_list,
+        kgcss.syntax.parse_one_component_value,
         _kgcss.parse_stylesheet,
         parse_rule_list,
         parse_block_contents,
@@ -338,8 +339,8 @@ def test_argument_handling() -> None:
         # comments takes any truth value
         fn('/* c */ a', comments=0)  # type: ignore[arg-type]
         fn('/* c */ a', comments=[])  # type: ignore[arg-type]
-    assert len(kgcss.tokenize('/* c */', comments=0)) == 0  # type: ignore[arg-type]
-    assert len(kgcss.tokenize('/* c */', comments='yes')) == 1  # type: ignore[arg-type]
+    assert len(kgcss.tokenizer.tokenize('/* c */', comments=0)) == 0  # type: ignore[arg-type]
+    assert len(kgcss.tokenizer.tokenize('/* c */', comments='yes')) == 1  # type: ignore[arg-type]
     with pytest.raises(TypeError, match="unexpected keyword argument 'encoding'"):
         parse_rule_list('a', encoding='utf-8')  # type: ignore[call-arg]
     with pytest.raises(TypeError, match='encoding must be a str or None'):

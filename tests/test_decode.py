@@ -5,9 +5,10 @@ from array import array
 
 import pytest
 
-from kgcss import AtRule, QualifiedRule, decode_stylesheet, lookup_encoding, parse_stylesheet
+from kgcss import decode_stylesheet, lookup_encoding
 from kgcss._encodings import LABELS, SINGLE_BYTE
 from kgcss.decode import CHARMAPS, PYTHON_CODECS, decode_with
+from kgcss.syntax import AtRule, QualifiedRule, parse_stylesheet
 
 
 @pytest.mark.parametrize(

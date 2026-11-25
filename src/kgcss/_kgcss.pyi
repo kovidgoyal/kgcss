@@ -25,6 +25,7 @@ def parse_one_component_value(source: str, /, *, comments: bool = True) -> Token
 
 @final
 class ParseError:
+    def __init__(self, kind: str, message: str, offset: int = 0, line: int = 0, column: int = 0) -> None: ...
     @property
     def offset(self) -> int: ...
     @property

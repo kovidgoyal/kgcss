@@ -429,6 +429,25 @@ ParseError_dealloc(PyObject *o) {
     Py_DECREF(tp);
 }
 
+/* ParseError(kind, message, offset=0, line=0, column=0), for errors found
+ * outside the C parser, such as by the CSSOM layer */
+static PyObject *
+ParseError_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
+    static char *kwlist[] = {"kind", "message", "offset", "line", "column", NULL};
+    PyObject *kind, *message;
+    Py_ssize_t offset = 0, line = 0, column = 0;
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "UU|nnn:ParseError", kwlist, &kind, &message, &offset, &line, &column))
+        return NULL;
+    kg_ParseError *self = (kg_ParseError *)type->tp_alloc(type, 0);
+    if (self == NULL) return NULL;
+    self->kind = Py_NewRef(kind);
+    self->message = Py_NewRef(message);
+    self->offset = offset;
+    self->line = line;
+    self->column = column;
+    return (PyObject *)self;
+}
+
 static PyObject *
 ParseError_repr(PyObject *o) {
     kg_ParseError *self = (kg_ParseError *)o;
@@ -446,16 +465,18 @@ static PyMemberDef ParseError_members[] = {
 
 static PyType_Slot ParseError_slots[] = {
     {Py_tp_dealloc, ParseError_dealloc},
+    {Py_tp_new, ParseError_new},
     {Py_tp_repr, ParseError_repr},
     {Py_tp_members, ParseError_members},
-    {Py_tp_doc, (void *)"A recoverable error found while parsing CSS."},
+    {Py_tp_doc, (void *)"ParseError(kind, message, offset=0, line=0, column=0)\n\n"
+                        "A recoverable error found while parsing CSS."},
     {0, NULL}
 };
 
 static PyType_Spec ParseError_spec = {
     .name = "kgcss.ParseError",
     .basicsize = sizeof(kg_ParseError),
-    .flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_IMMUTABLETYPE | Py_TPFLAGS_DISALLOW_INSTANTIATION,
+    .flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_IMMUTABLETYPE,
     .slots = ParseError_slots,
 };
 

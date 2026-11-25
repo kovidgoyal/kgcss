@@ -395,9 +395,9 @@ def remove_url_values(block: DeclarationBlock, predicate: Callable[[str], bool])
 @dataclass(frozen=True, slots=True, kw_only=True)
 class SerializeOptions:
     style: Literal['pretty', 'preserve'] = 'pretty'
-    indent: str = '  '                 # S1: per call, e.g. the editor's tab width
-    normalize: bool = True             # the S3 normalisations below
-    drop_empty_rules: bool = True      # calibre's current behaviour, D6
+    indent: str = '  '  # S1: per call, e.g. the editor's tab width
+    normalize: bool = True  # the S3 normalisations below
+    drop_empty_rules: bool = True  # calibre's current behaviour, D6
     keep_comments: bool = True
 ```
 
@@ -468,6 +468,56 @@ class SerializeOptions:
 
 ## 8. Milestones
 
+Status: milestone 1 is done.
+
+Notes from milestone 1:
+- **Layout.** The package is `src/kgcss/cssom/`. Top-level `kgcss` exports
+  the CSSOM, and the syntax and tokenizer layers moved to `kgcss.syntax` and
+  `kgcss.tokenizer` (D2). The old `kgcss/serialize.py` became
+  `kgcss/escaping.py`, because importing a submodule named `serialize`
+  rebinds the package attribute and shadowed the new `serialize()`
+  function.
+- **`ParseError`** can now be constructed from Python
+  (`ParseError(kind, message, offset, line, column)`), so the CSSOM reports
+  its own problems in the same way. The new error kinds are
+  `misplaced-rule`, for @charset, @import and @namespace in the wrong place
+  (P5), plus `invalid-rule` and `invalid-declaration` for rules and
+  declarations in the wrong context.
+- **Errors are reported in source order.** The batch from the initial parse
+  is sorted before it is logged. Errors from lazily parsed blocks are
+  reported when the block is first accessed, and only syntax-level errors
+  are reported then, because tokenizer errors were already reported for the
+  whole sheet.
+- **What is lazy.**
+  - Style, `@page`, `@font-face` and margin rules keep their syntax node and
+    parse their block on first access, under the sheet's `RLock`. That
+    includes the nested rules of style rules.
+  - `StyleRule.selector_text` is also read from the node on first access.
+  - Grouping rules build their children eagerly.
+  - Parsed rules keep their syntax node as their source, which has `pos`,
+    `end`, `line`, `column` and `source_text`. `Source` is only used for
+    nested declarations, which span several nodes.
+- **Nesting (D8).** Declarations after a nested rule become
+  `NestedDeclarationsRule`s. Inside grouping rules that are themselves
+  inside style rules, declarations are valid nested declarations. In
+  grouping rules at the top level they are dropped with
+  `invalid-declaration`.
+- **`preserve` output.** For an unmodified sheet it is exactly the source,
+  including rules that were dropped. Nothing is lost in editors. A property
+  test checks this.
+- **Performance.**
+  - A quadratic loop in the top-level placement check made a 0.8 MB sheet
+    take seconds. It is fixed, and a scaling test now guards against
+    regressions of that kind.
+  - `RuleType` uses identity hashing, because `Enum.__hash__` is Python
+    code.
+  - The CSSOM parse of the 1.55 MB calibre-style sheet takes 17-26 ms
+    (noisy machine), against 6 ms for the syntax tree alone. Materializing
+    every nested rule and selector takes about 100 ms.
+- **Packaging.** `pyproject.toml` used `packages = ["kgcss"]`, so wheels
+  silently left out `kgcss.cssom`. The editable install hid this, and the
+  wheel based free-threaded run found it. It now uses package discovery.
+
 Each milestone ends with ruff, mypy and pytest passing, regular and
 free-threaded, with hypothesis properties for its invariants and benchmark
 numbers where relevant.
@@ -517,9 +567,11 @@ numbers where relevant.
 
 ---
 
-## 9. Decisions for you
+## 9. Decisions
 
-| # | Question | Recommendation |
+All the recommendations below were accepted on 2026-11-25.
+
+| # | Question | Decision |
 |---|---|---|
 | D1 | A css_parser-compatible camelCase facade for Edit book plugins, or document the break? | Pythonic core only. Add a thin `kgcss.compat` as an optional last step, if plugin compatibility matters to you. |
 | D2 | Top-level `kgcss.parse_stylesheet()` returns the CSSOM, and the syntax tree moves to `kgcss.syntax`? | Yes (§2.4) |

@@ -9,18 +9,9 @@ import json
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 
-from kgcss import (
-    AtRule,
-    Block,
-    ComponentValueList,
-    Declaration,
-    Function,
-    NodeList,
-    ParseError,
-    QualifiedRule,
-    Token,
-    TokenType,
-)
+from kgcss import ParseError
+from kgcss.syntax import AtRule, Block, ComponentValueList, Declaration, Function, NodeList, QualifiedRule
+from kgcss.tokenizer import Token, TokenType
 
 SUITE_DIR = Path(__file__).parent / 'css-parsing-tests'
 
