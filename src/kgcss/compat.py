@@ -1,4 +1,4 @@
-# License: GPLv3 Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
+# License: BSD-3-Clause Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
 """A css_parser-style facade over kgcss, for code written for css_parser (cssutils).
 

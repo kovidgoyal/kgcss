@@ -1,4 +1,4 @@
-# License: GPLv3 Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
+# License: BSD-3-Clause Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
 """CSS colors, as CSS Color Module Level 4 defines them.
 

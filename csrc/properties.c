@@ -2,7 +2,7 @@
  * properties.c
  * Copyright (C) 2026 Kovid Goyal <kovid at kovidgoyal.net>
  *
- * Distributed under terms of the GPL3 license.
+ * Distributed under terms of the BSD 3-Clause license.
  *
  * PropertyData, the C base of kgcss.cssom.declarations.Property, which holds
  * its fields, and build_properties(), which creates the properties of a

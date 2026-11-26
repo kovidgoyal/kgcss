@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# License: GPLv3 Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
+# License: BSD-3-Clause Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
 """Benchmark kgcss against calibre's tinycss (with its C tokenizer), tinycss2 and css_parser.
 

@@ -2,7 +2,7 @@
  * writer.c
  * Copyright (C) 2026 Kovid Goyal <kovid at kovidgoyal.net>
  *
- * Distributed under terms of the GPL3 license.
+ * Distributed under terms of the BSD 3-Clause license.
  *
  * The token writer of the CSSOM serializer, working directly on the token
  * records of a ComponentValueList, so no Token objects are created. This is

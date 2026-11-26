@@ -1,4 +1,4 @@
-# License: GPLv3 Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
+# License: BSD-3-Clause Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
 # Type stubs for the C extension module built from csrc/. Keep in sync with
 # the method tables, types and constants in csrc/module.c and csrc/types.c.

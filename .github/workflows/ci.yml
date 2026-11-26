@@ -14,19 +14,22 @@ jobs:
       - run: uv run mypy
 
   test:
-    # The package as users install it (built from the checkout, with KGCSS_WERROR), on regular and
-    # free-threaded Python. lxml is only installed on regular Python: importing it re-enables the GIL,
-    # which the free-threaded run must not have. The tests that need lxml skip themselves without it.
+    # The package as users install it (built from the checkout, with KGCSS_WERROR, which MSVC ignores),
+    # on regular and free-threaded Python. lxml is only installed on regular Python: importing it
+    # re-enables the GIL, which the free-threaded run must not have. The tests that need lxml skip
+    # themselves without it.
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
         python: ["3.14", "3.14t"]
         include:
           - python: "3.14"
             extra: --with lxml
     steps:
+      # Test the files as they are in the repository: no CRLF line endings on Windows
+      - run: git config --global core.autocrlf false
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
       - name: Run tests

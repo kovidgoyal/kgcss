@@ -1,4 +1,4 @@
-# License: GPLv3 Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
+# License: BSD-3-Clause Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
 """Media queries (docs/plan-04-media-colors.md, §5).
 

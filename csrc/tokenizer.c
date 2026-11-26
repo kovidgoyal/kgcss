@@ -2,7 +2,7 @@
  * tokenizer.c
  * Copyright (C) 2026 Kovid Goyal <kovid at kovidgoyal.net>
  *
- * Distributed under terms of the GPL3 license.
+ * Distributed under terms of the BSD 3-Clause license.
  *
  * Dispatch over PEP 393 kinds to the template tokenizer in tokenizer_impl.h,
  * plus management of the output arrays.

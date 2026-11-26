@@ -2,7 +2,7 @@
  * selectors.c
  * Copyright (C) 2026 Kovid Goyal <kovid at kovidgoyal.net>
  *
- * Distributed under terms of the GPL3 license.
+ * Distributed under terms of the BSD 3-Clause license.
  *
  * The selector parser (Selectors Level 4 and CSS Nesting, see
  * docs/plan-03-selectors.md). It works on the token records of the
@@ -90,7 +90,7 @@ next_item(const sp *p, uint32_t i, uint32_t end) {
 }
 
 /* Record an error about token i of a range ending at end. Always returns false. */
-static bool fail(sp *p, uint32_t i, uint32_t end, const char *fmt, ...) __attribute__((format(printf, 4, 5)));
+static bool fail(sp *p, uint32_t i, uint32_t end, const char *fmt, ...) KG_PRINTF_FORMAT(4, 5);
 
 static bool
 fail(sp *p, uint32_t i, uint32_t end, const char *fmt, ...) {
@@ -107,7 +107,7 @@ fail(sp *p, uint32_t i, uint32_t end, const char *fmt, ...) {
 }
 
 /* fail() for messages that need no ", got ..." */
-static bool fail_plain(sp *p, uint32_t i, uint32_t end, const char *fmt, ...) __attribute__((format(printf, 4, 5)));
+static bool fail_plain(sp *p, uint32_t i, uint32_t end, const char *fmt, ...) KG_PRINTF_FORMAT(4, 5);
 
 static bool
 fail_plain(sp *p, uint32_t i, uint32_t end, const char *fmt, ...) {

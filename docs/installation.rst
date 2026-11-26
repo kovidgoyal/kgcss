@@ -9,7 +9,8 @@ kgcss needs Python 3.14 or later. It works on both regular and free-threaded
    pip install kgcss
 
 kgcss has a C extension. If there is no wheel for your platform, pip builds
-it from source, which needs a C compiler that supports C99.
+it from source, which needs a C compiler: GCC or clang, or on Windows, Visual
+Studio 2019 16.8 or later.
 
 Optional dependencies
 ---------------------

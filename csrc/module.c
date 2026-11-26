@@ -2,7 +2,7 @@
  * module.c
  * Copyright (C) 2026 Kovid Goyal <kovid at kovidgoyal.net>
  *
- * Distributed under terms of the GPL3 license.
+ * Distributed under terms of the BSD 3-Clause license.
  *
  * Module definition for kgcss._kgcss. Uses multi-phase initialisation
  * (PEP 489) and per-module state so that it works with sub-interpreters and

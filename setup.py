@@ -23,7 +23,8 @@ def c_headers() -> list[str]:
 
 def compile_args() -> list[str]:
     if sys.platform == 'win32':
-        return ['/W4']
+        # MSVC: C11 is the first standard it implements, and has every C99 feature the code uses
+        return ['/std:c11', '/W4']
     args = [
         '-std=c99',
         '-Wall',

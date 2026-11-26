@@ -2,7 +2,7 @@
  * urls.c
  * Copyright (C) 2026 Kovid Goyal <kovid at kovidgoyal.net>
  *
- * Distributed under terms of the GPL3 license.
+ * Distributed under terms of the BSD 3-Clause license.
  *
  * Finding the URLs in component values: a port of find_urls() in
  * src/kgcss/cssom/urls.py, which remains the reference implementation. It

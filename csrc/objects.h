@@ -2,7 +2,7 @@
  * objects.h
  * Copyright (C) 2026 Kovid Goyal <kovid at kovidgoyal.net>
  *
- * Distributed under terms of the GPL3 license.
+ * Distributed under terms of the BSD 3-Clause license.
  *
  * Layouts of the Python visible objects, shared between types.c and values.c.
  */

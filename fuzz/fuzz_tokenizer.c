@@ -2,7 +2,7 @@
  * fuzz_tokenizer.c
  * Copyright (C) 2026 Kovid Goyal <kovid at kovidgoyal.net>
  *
- * Distributed under terms of the GPL3 license.
+ * Distributed under terms of the BSD 3-Clause license.
  *
  * libFuzzer harness for the C tokenizer (csrc/tokenizer.c). Build and run it
  * with tools/fuzz.py. Each input is tokenized as PEP 393 kind 1, 2 and 4 data

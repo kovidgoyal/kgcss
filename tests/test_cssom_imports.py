@@ -1,4 +1,4 @@
-# License: GPLv3 Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
+# License: BSD-3-Clause Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
 """CSSOM milestone 7: @import (requirements P10, P11, L1, L2)."""
 

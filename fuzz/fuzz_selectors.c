@@ -2,7 +2,7 @@
  * fuzz_selectors.c
  * Copyright (C) 2026 Kovid Goyal <kovid at kovidgoyal.net>
  *
- * Distributed under terms of the GPL3 license.
+ * Distributed under terms of the BSD 3-Clause license.
  *
  * libFuzzer harness for the selector parser (csrc/selectors.c). Build and
  * run it with tools/fuzz.py --target selectors. The whole extension is

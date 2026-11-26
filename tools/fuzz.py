@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# License: GPLv3 Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
+# License: BSD-3-Clause Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
 """Build and run the libFuzzer harnesses in fuzz/.
 

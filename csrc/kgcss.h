@@ -2,7 +2,7 @@
  * kgcss.h
  * Copyright (C) 2026 Kovid Goyal <kovid at kovidgoyal.net>
  *
- * Distributed under terms of the GPL3 license.
+ * Distributed under terms of the BSD 3-Clause license.
  *
  * Shared declarations for the kgcss C extension. Every .c file in csrc/
  * must include this header before anything else.
@@ -47,11 +47,16 @@
 #define KG_LIKELY(x) __builtin_expect(!!(x), 1)
 #define KG_UNLIKELY(x) __builtin_expect(!!(x), 0)
 
+/* printf-style format checking, where the compiler has it */
+#define KG_PRINTF_FORMAT(fmt, args) __attribute__((format(printf, fmt, args)))
+
 #if !defined(__GNUC__) && !defined(__clang__)
 #undef KG_LIKELY
 #undef KG_UNLIKELY
+#undef KG_PRINTF_FORMAT
 #define KG_LIKELY(x) (x)
 #define KG_UNLIKELY(x) (x)
+#define KG_PRINTF_FORMAT(fmt, args)
 #endif
 
 /* ---------------------------------------------------------------------------

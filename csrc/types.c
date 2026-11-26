@@ -2,7 +2,7 @@
  * types.c
  * Copyright (C) 2026 Kovid Goyal <kovid at kovidgoyal.net>
  *
- * Distributed under terms of the GPL3 license.
+ * Distributed under terms of the BSD 3-Clause license.
  *
  * Python visible types of the tokenizer: TokenStream, Token and ParseError,
  * plus the tokenize() entry point.

@@ -2,7 +2,7 @@
  * tokenizer_impl.h
  * Copyright (C) 2026 Kovid Goyal <kovid at kovidgoyal.net>
  *
- * Distributed under terms of the GPL3 license.
+ * Distributed under terms of the BSD 3-Clause license.
  *
  * Template body of the tokenizer, following CSS Syntax Level 3 §4.
  * Included by tokenizer.c once per PEP 393 kind, with CHAR_T set to the

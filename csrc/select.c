@@ -2,7 +2,7 @@
  * select.c
  * Copyright (C) 2026 Kovid Goyal <kovid at kovidgoyal.net>
  *
- * Distributed under terms of the GPL3 license.
+ * Distributed under terms of the BSD 3-Clause license.
  *
  * Matching selectors against element trees (docs/plan-03-selectors.md, §5).
  *

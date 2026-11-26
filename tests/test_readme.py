@@ -1,4 +1,4 @@
-# License: GPLv3 Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
+# License: BSD-3-Clause Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
 """The example in README.md must work. The examples of the documentation are doctests, run by the
 docs job of CI (sphinx-build -b doctest)."""
