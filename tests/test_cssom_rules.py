@@ -431,8 +431,11 @@ def test_rule_at_browser_index_path() -> None:
         '@charset "utf-8"; /* c */ @namespace x url(y); a{} @media x { /* c */ b{} @supports (c:d) { e{} } }'
     )
     assert sheet.rule_at_browser_index_path((0,)).type is kgcss.RuleType.NAMESPACE
-    assert sheet.rule_at_browser_index_path((2, 0)).selector_text == 'b'  # type: ignore[attr-defined]
+    b = sheet.rule_at_browser_index_path((2, 0))
+    assert isinstance(b, kgcss.StyleRule)
+    assert b.selector_text == 'b'
     e = sheet.rule_at_browser_index_path((2, 1, 0))
+    assert isinstance(e, kgcss.StyleRule)
     assert e.selector_text == 'e'
     assert e.line == 1
     for bad in ((), (9,), (1, 0), (2, 5), (-1,)):
