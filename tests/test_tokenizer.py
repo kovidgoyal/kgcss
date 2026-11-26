@@ -341,7 +341,7 @@ def test_large_input() -> None:
 
 
 def test_random_inputs_round_trip() -> None:
-    # Cheap fuzzing until the hypothesis based tests of milestone 5
+    # Cheap fuzzing, beside the hypothesis based tests in test_properties.py
     rng = random.Random(1234)
     alphabet = [
         *'ab-_\\/*"\'()[]{}<>!@#%+.,:;= \t\n\r\f0123456789eEuUrlL\x00\x7f',

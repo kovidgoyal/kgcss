@@ -1,6 +1,6 @@
 # License: BSD-3-Clause Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
-"""The font helpers (docs/plan-05-fonts-grammar.md, §2.1).
+"""The font helpers.
 
 The cases come from tinycss/tests/fonts3.py and the font tests of calibre's
 normalize_css.py. A differential test compares with tinycss.fonts3, from the
@@ -63,7 +63,7 @@ def test_parse_font_family(css: str, expected: list[str]) -> None:
         (['a\\b'], '"a\\\\b"'),
         (['1as'], '"1as"'),
         (['_a'], '"_a"'),
-        # D2: names that start with and are not quoted; CSS-wide keywords and default are
+        # Names that start with and are not quoted (tinycss did, for css_parser); CSS-wide keywords and default are
         (['andale', 'And'], 'andale, And'),
         (['inherit', 'Initial', 'unset', 'revert', 'revert-layer', 'default'], ', '.join(
             f'"{n}"' for n in ('inherit', 'Initial', 'unset', 'revert', 'revert-layer', 'default'))),

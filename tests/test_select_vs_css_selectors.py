@@ -7,7 +7,7 @@ css_selectors comes from the benchmark cache: run
 it, these tests are skipped.
 
 The known differences are kept out of the inputs rather than allowed for
-in the comparison (docs/plan-03-selectors.md, notes of milestones 3 and 4):
+in the comparison:
 
 - css_selectors does not match :first-child, :nth-child() and the like on the
   root element, which has no parent. Trees are wrapped in an element that

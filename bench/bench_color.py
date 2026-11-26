@@ -11,7 +11,7 @@ calibre_extensions.tokenizer, whose parse_css4_color_string is what
 tinycss.color4 uses. The workloads:
 
     single inputs   one call each, in nanoseconds, the inputs of
-                    docs/plan-04-media-colors.md §2.1 and a few more
+                    common colors, and text that is not a color
     color-values    the value of every declaration of the corpus whose
                     property name ends in color: mostly colors
     components      the text of every ident, hash and function in every

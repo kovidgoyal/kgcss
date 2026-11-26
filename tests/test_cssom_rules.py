@@ -1,6 +1,6 @@
 # License: BSD-3-Clause Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
-"""CSSOM milestone 1: building the rule tree."""
+"""The object model: building the rule tree."""
 
 import codecs
 import logging

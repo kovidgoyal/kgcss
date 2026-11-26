@@ -1,6 +1,6 @@
 # License: BSD-3-Clause Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
-"""CSSOM milestone 2: declaration blocks and properties."""
+"""The object model: declaration blocks and properties."""
 
 import gc
 import weakref

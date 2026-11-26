@@ -1,6 +1,6 @@
 # License: BSD-3-Clause Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
-"""parse_rgba() and parse_color(): CSS Color 4 colors (docs/plan-04-media-colors.md, §4).
+"""parse_rgba() and parse_color(): CSS Color 4 colors.
 
 The cases come from calibre's tinycss color4 tests and its callers' tests, the
 color files of the CSS parsing suite, and a differential test against
@@ -84,7 +84,7 @@ COLOR4 = [
     ('red /* unterminated', (255, 0, 0, 255)),
     ('rgb(255 0 0', (255, 0, 0, 255)),
     ('transparent', (0, 0, 0, 0)),
-    # Escapes are decoded, as in CSS (D2). tinycss gives None for these.
+    # Escapes are decoded, as in CSS. tinycss gives None for these.
     ('r\\65 d', (255, 0, 0, 255)),
     ('r\\65 d', (255, 0, 0, 255)),
     ('\\72\\65\\64', (255, 0, 0, 255)),
@@ -218,7 +218,7 @@ def rgb_function(text: str) -> tuple[float, ...]:
 @pytest.mark.parametrize('name', ['color_keywords_3.json', 'color_keywords_4.json', 'color_hexadecimal_3.json',
                                   'color_hexadecimal_4.json'])  # fmt: skip
 def test_suite_keywords_and_hex(name: str) -> None:
-    # The serializations of these are all rgb() and rgba(); the other files are for Color, in milestone 2
+    # The serializations of these are all rgb() and rgba(); the other files are tested through Color, below
     for css, expected in load_cases(name):
         ans = parse_rgba(css)
         if expected is None:
@@ -564,7 +564,7 @@ def test_suite(name: str) -> None:
 
 
 def test_suite_level_5() -> None:
-    # CSS Color 5 is out of scope (§1): device-cmyk(), light-dark() and custom spaces are not colors
+    # CSS Color 5 is not supported: device-cmyk(), light-dark() and custom spaces are not colors
     for css, _ in load_cases('color_functions_5.json'):
         assert parse_color(css) is None, css
 

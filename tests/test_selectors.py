@@ -1,6 +1,6 @@
 # License: BSD-3-Clause Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
-"""Selector parsing, the selector tree and specificity (plan 03, milestone 1).
+"""Selector parsing, the selector tree and specificity.
 
 The parser, pseudo-element, specificity and parse error tests are ported
 from calibre's css_selectors (src/css_selectors/tests.py). The trees are
@@ -393,7 +393,7 @@ PARSE_ERRORS = [
     ('[a=b i x]', 7),
     ('[a i]', 3),
     # Not in css_selectors
-    ('[a!=b]', 2),  # != is not CSS (plan 03, D6); css_selectors parsed it and failed to match it
+    ('[a!=b]', 2),  # != is not CSS; css_selectors parsed it and failed to match it
     ('#1', 0),  # an ID must be an identifier
     ('a)', 1),
     ('a{', 1),
@@ -632,7 +632,7 @@ def test_selector_objects() -> None:
 
 
 def test_invalid_selectors_in_sheets() -> None:
-    # Rules with selectors that do not parse are kept (D4), they raise when parsed
+    # Rules with selectors that do not parse are kept, they raise when parsed
     sheet = parse_stylesheet('a!b, c { x: y } @media print { d e!f { x: y } } g { x: y }')
     rule = sheet.rules[0]
     assert isinstance(rule, StyleRule)

@@ -4,7 +4,7 @@
  *
  * Distributed under terms of the BSD 3-Clause license.
  *
- * Token records produced by the tokenizer. See docs/plan-01-tokenizer-syntax.md.
+ * Token records produced by the tokenizer.
  */
 
 #pragma once

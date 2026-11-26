@@ -1,6 +1,6 @@
 # License: BSD-3-Clause Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
-"""Media queries (docs/plan-04-media-colors.md, §5).
+"""Media queries.
 
 The cases come from calibre's tinycss media3 tests and stylizer.media_ok(), and
 from Media Queries Level 4. Property tests check the round trip through
@@ -34,7 +34,7 @@ MEDIA3: list[tuple[str, list[Expected]]] = [
     ('', []),  # tinycss: [all]. An empty list has no queries, and matches, as all does
     ('all', [('all', False, [])]),
     ('screen', [('screen', False, [])]),
-    (', screen', [None, ('screen', False, [])]),  # tinycss: [all, screen]. The spec, D5: the empty query is malformed
+    (', screen', [None, ('screen', False, [])]),  # tinycss: [all, screen]. The spec: the empty query is malformed
     ('screen, ', [('screen', False, []), None]),  # likewise
     ('screen and (color)', [('screen', False, [('color', None)])]),
     ('all and (min-width:500px)', [('all', False, [('min-width', '500px')])]),

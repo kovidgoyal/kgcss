@@ -1,8 +1,8 @@
 # License: BSD-3-Clause Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
-"""A naive selector matcher, the oracle for the C matcher (docs/plan-03-selectors.md, §7).
+"""A naive selector matcher, the oracle for the C matcher.
 
-It is written directly from the rules of §5, on lxml trees and the parsed
+It is written directly from the rules of Selectors Level 4, on lxml trees and the parsed
 selector tree, without snapshots, indexes or caches: for each element and
 each selector it walks the tree recursively. It is slow and meant to be
 obviously right.
@@ -101,7 +101,7 @@ class Oracle:
             self.check(s)
         return [e for e in self.document.iter() if is_element(e) and any(self.complex(s, e) for s in selectors)]
 
-    # Whether a selector can be matched at all, as in §5.5
+    # Whether a selector can be matched at all: unknown pseudo-classes raise, inappropriate ones only if not ignored
     def check(self, selector: ComplexSelector) -> None:
         for _, compound in selector.parts:
             for s in compound:

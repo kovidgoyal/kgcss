@@ -4,7 +4,7 @@
  *
  * Distributed under terms of the BSD 3-Clause license.
  *
- * CSS Color Module Level 4 colors (docs/plan-04-media-colors.md, §4).
+ * CSS Color Module Level 4 colors.
  *
  * Ported from calibre's src/tinycss/color.c. A color is parsed in two steps:
  * first into a kg_color, which keeps the color space and the specified

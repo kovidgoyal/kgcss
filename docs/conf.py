@@ -17,8 +17,7 @@ extensions = [
     'sphinx.ext.viewcode',
 ]
 
-# The plan documents in this directory are for contributors, written in Markdown, and not part of the docs
-exclude_patterns = ['_build', 'plan-*.md']
+exclude_patterns = ['_build']
 templates_path: list[str] = []
 
 html_theme = 'sphinx_rtd_theme'

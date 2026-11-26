@@ -1,6 +1,6 @@
 # License: BSD-3-Clause Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
-"""CSSOM milestone 6: URLs (requirements §7)."""
+"""The object model: URLs (requirements §7)."""
 
 import pytest
 

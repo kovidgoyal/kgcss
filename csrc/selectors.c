@@ -4,8 +4,7 @@
  *
  * Distributed under terms of the BSD 3-Clause license.
  *
- * The selector parser (Selectors Level 4 and CSS Nesting, see
- * docs/plan-03-selectors.md). It works on the token records of the
+ * The selector parser (Selectors Level 4 and CSS Nesting). It works on the token records of the
  * tokenizer and produces, for each complex selector of a list, an immutable
  * CompiledSelector: a flat array of nodes in pre-order, each with its kind,
  * its span in the text and the index just past its subtree. The Python tree

@@ -388,7 +388,7 @@ def parse_selectors(text: str, *, nested: bool = False) -> SelectorList:
 def invalid_selectors(sheet: Stylesheet) -> list[tuple[StyleRule, Selector, SelectorSyntaxError]]:
     """The selectors of the style rules of a sheet, at any depth, that are not valid, with the error
     for each. Its pos is the offset in the selector's text; rule.line and rule.column say where the
-    rule is. Parsing a sheet keeps such rules (see docs/plan-03-selectors.md, D4)."""
+    rule is. Parsing a sheet keeps such rules, for fidelity, and they raise when they are matched."""
     from kgcss.cssom.rules import RuleType, StyleRule
 
     ans = []

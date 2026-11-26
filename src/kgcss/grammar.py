@@ -87,7 +87,7 @@ LINE_STYLES: Final = frozenset(
     ('none', 'hidden', 'dotted', 'dashed', 'solid', 'double', 'groove', 'ridge', 'inset', 'outset')
 )
 LINE_WIDTHS: Final = frozenset(('thin', 'medium', 'thick'))
-# Words that cannot be a counter style name in list-style-type: they would make list-style ambiguous (D4)
+# Words that cannot be a counter style name in list-style-type: they would make list-style ambiguous
 NOT_COUNTER_STYLES: Final = CSS_WIDE_KEYWORDS | {'none', 'inside', 'outside', 'default'}
 FONT_STYLES: Final = frozenset(('normal', 'italic', 'oblique'))
 FONT_VARIANTS: Final = frozenset(('normal', 'none', 'small-caps', 'all-small-caps', 'petite-caps',

@@ -1,6 +1,6 @@
 # License: BSD-3-Clause Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
-"""Shorthand expansion and condensation (docs/plan-05-fonts-grammar.md, §2.3 and §2.4).
+"""Shorthand expansion and condensation.
 
 The tests of calibre's ebooks/oeb/normalize_css.py are ported here, with
 calibre's DEFAULTS as the initial values. The differences are marked.

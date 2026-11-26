@@ -1,6 +1,6 @@
 # License: BSD-3-Clause Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
-"""The value grammar of the longhands (docs/plan-05-fonts-grammar.md, §2.2)."""
+"""The value grammar of the longhands."""
 
 import doctest
 import timeit
@@ -91,7 +91,7 @@ def test_general() -> None:
         ('currentColor', True),
         ('lab(50 1 2)', True),
         ('hsl(1, 2%, 3%)', True),
-        # D5: not inherit, which css_parser's CSS 2 profile accepts
+        # Not inherit, which css_parser's CSS 2 profile accepts
         ('inherit', False),
         ('canvas', False),  # a system color, but it has no RGB: matches() takes it as a <color>
         ('1px', False),
@@ -113,7 +113,7 @@ DIFFERENCES = [
     ('border-top-color', 'lab(1 2 3)', True),
     ('border-top-color', 'canvas', True),  # system colors
     ('border-top-color', 'ActiveBorder', True),
-    ('list-style-type', 'foo', True),  # D4: any counter style name, CSS Lists 3
+    ('list-style-type', 'foo', True),  # any counter style name, CSS Lists 3
     ('list-style-type', 'hebrew', True),
     ('list-style-type', '"x"', True),
     ('list-style-type', 'symbols(cyclic "*")', True),
@@ -154,7 +154,7 @@ def test_doctests() -> None:
 
 
 def test_speed() -> None:
-    # §6: under 2 µs for a keyword, 5 µs for a color, with the cache warm (generous bounds, for slow machines)
+    # Under 2 µs for a keyword, 5 µs for a color, with the cache warm (generous bounds, for slow machines)
     for value, bound in (('solid', 2e-6), ('rgb(1 2 3)', 5e-6)):
         matches('border-top-style', value)
         t = min(timeit.repeat(partial(matches, 'border-top-style', value), number=1000, repeat=5)) / 1000

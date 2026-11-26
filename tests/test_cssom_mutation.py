@@ -1,6 +1,6 @@
 # License: BSD-3-Clause Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
-"""CSSOM milestone 5: modifying the object model."""
+"""The object model: modifying it."""
 
 import copy
 

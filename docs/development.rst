@@ -65,4 +65,3 @@ Documentation
    uv run --with-requirements docs/requirements.txt sphinx-build -W -b html docs build/docs
    uv run --with-requirements docs/requirements.txt sphinx-build -W -b doctest docs build/doctest
 
-The design of each part is in the ``docs/plan-*.md`` documents.

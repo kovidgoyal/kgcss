@@ -1,6 +1,6 @@
 # License: BSD-3-Clause Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
-"""Parsed selectors (Selectors Level 4 and CSS Nesting), see docs/plan-03-selectors.md.
+"""Parsed selectors (Selectors Level 4 and CSS Nesting).
 
 Selectors are parsed in C (csrc/selectors.c) into a flat array of nodes.
 This module turns that into a tree of immutable objects, on demand. Every

@@ -1,6 +1,6 @@
 # License: BSD-3-Clause Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
-"""CSSOM milestone 3: parsed values."""
+"""The object model: parsed values."""
 
 import pytest
 

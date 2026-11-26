@@ -4,7 +4,7 @@
  *
  * Distributed under terms of the BSD 3-Clause license.
  *
- * Matching selectors against element trees (docs/plan-03-selectors.md, §5).
+ * Matching selectors against element trees.
  *
  * Snapshot walks an ElementTree-style tree (lxml, html5-parser, or the
  * standard library) once and records each element in compact arrays: tree

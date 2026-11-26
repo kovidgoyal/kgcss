@@ -1,6 +1,6 @@
 # License: BSD-3-Clause Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
-"""Matching selectors with Select (plan 03, milestone 3).
+"""Matching selectors with Select.
 
 test_select, test_select_nth_has_lang, test_select_level4 and
 test_select_shakespeare are ported from calibre's css_selectors

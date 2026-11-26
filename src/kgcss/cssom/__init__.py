@@ -2,7 +2,7 @@
 
 """The CSS object model: a mutable tree of stylesheets, rules and declarations.
 
-See docs/plan-02-cssom.md. The tree is built from the generic syntax tree of
+The tree is built from the generic syntax tree of
 kgcss.syntax. Blocks are parsed on first access, under a per-sheet lock.
 """
 

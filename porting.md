@@ -4,7 +4,7 @@ This is a guide for a coding agent that ports calibre from css_parser, tinycss
 and css_selectors to kgcss. It is written for work in the **calibre**
 repository. kgcss itself is complete for this purpose: every capability in
 `requirements.md` exists, and the decisions about quirks have been made
-(§9 below). If you find something kgcss cannot do, stop and report it rather
+(§9 and §11 below). If you find something kgcss cannot do, stop and report it rather
 than working around it in calibre.
 
 File and line references to calibre (`stylizer.py:213`) come from
@@ -12,19 +12,12 @@ File and line references to calibre (`stylizer.py:213`) come from
 moved; search for the code they describe. Paths are relative to
 `src/calibre/` unless they start with another top-level directory.
 
-Read these kgcss documents before starting a phase. They explain the
-behaviour this guide only summarises:
-
-| Topic | kgcss document |
-|---|---|
-| Tokens, positions, decoding bytes | `docs/plan-01-tokenizer-syntax.md` |
-| The object model, serialization, URLs, imports, logging | `docs/plan-02-cssom.md` |
-| Selectors, specificity, `Select` | `docs/plan-03-selectors.md` |
-| Media queries and colors | `docs/plan-04-media-colors.md` |
-| Fonts, value grammar, shorthands | `docs/plan-05-fonts-grammar.md` |
-
-Each plan ends with an appendix that maps old names to kgcss names. §3 here
-collects them.
+Before starting a phase, read the part of the kgcss documentation that
+covers it (in `docs/`, published on Read the Docs): the guide explains the
+behaviour this document only summarises, and the API reference has every
+signature. §3 here maps the old names to kgcss names, §11 records the design
+decisions that matter for the port, and §12 the measurements against the old
+libraries.
 
 ---
 
@@ -328,7 +321,7 @@ Sheet `css_text` is `str`. Remove `css_text()`/`force_unicode` round trips
 use `sheet.encode()`. kepubify's assignment of bytes to `style.text`
 (`kepubify.py:364,383,393`) becomes a `str` assignment.
 
-### 6.2 Specificity is a 3-tuple (3.3, D3 of plan 03)
+### 6.2 Specificity is a 3-tuple (3.3, decision SEL3)
 
 `(ids, classes, types)`, as Selectors Level 4 defines it, with `:is`,
 `:not`, `:has`, `:where` and `of S` handled properly and legacy
@@ -338,7 +331,7 @@ inline styles in the same order (`stylizer.py:213`, `cascade.py:164-166`,
 `css.py:571`), build the 4-tuple yourself: `(0, *selector.specificity)` for
 rules and `(1, 0, 0, 0)` for `style=""`.
 
-### 6.3 Selector matching (§9, D5 and D7 of plan 03)
+### 6.3 Selector matching (§9, decisions SEL5 and SEL7)
 
 - **Ids and classes are case-sensitive by default**, as in standards mode.
   css_selectors matched them case-insensitively. To keep today's results,
@@ -354,6 +347,23 @@ rules and `(1, 0, 0, 0)` for `style=""`.
   `StopIteration` and `elem in select(...)` keep working
   (`jump_to_class.py:42`).
 - Do not change the tree while a `Select` is in use; make a new one.
+- **Smaller differences from css_selectors**, found by comparing the two on
+  random trees and selectors (`tests/test_select_vs_css_selectors.py`); in
+  each, kgcss follows the spec:
+  - css_selectors does not match `:first-child`, `:nth-child()` and the
+    like on the root element, which has no parent; kgcss does;
+  - css_selectors ignores the rest of a compound with `:root` or `:scope`
+    (`div:root` matched a `html` root); kgcss does not;
+  - css_selectors counts comments and processing instructions as siblings
+    for `:first-child`, `:nth-child()` and the like; kgcss counts only
+    elements;
+  - css_selectors raises `ExpressionError` for `:hover` and the like only
+    when matching reaches them (`div div:hover` raised nothing without a
+    `div div`); kgcss always raises, unless the pseudo-class is ignored;
+  - css_selectors did not always return elements in document order; kgcss
+    does;
+  - css_selectors strips namespaces from tag and attribute names only when
+    the root element has one; kgcss always matches local names.
 
 ### 6.4 Selector text (3.3)
 
@@ -370,22 +380,36 @@ keeps its rule (P9 quirk fixed). Tests that expected decoded escapes change.
   `filter: progid:...` is a valid declaration and kept.
 - The S3 normalisations are kept and deterministic, so most expected
   strings in calibre's tests should not change. If one does, check it
-  against `docs/plan-02-cssom.md` §6 before changing the test.
+  against this list before changing the test. With `normalize=True`, the
+  default:
+  - property names are lowercased, except custom properties;
+  - `!important` is written in lowercase;
+  - strings are double-quoted, with `"` escaped;
+  - `url()` is quoted only when needed;
+  - `@import "a"` keeps its string;
+  - numbers are normalised: `.5` becomes `0.5`, `1.0` becomes `1`, `0px`
+    and `-0.0px` become `0`, `010` becomes `10`, and `+1px` is kept;
+  - hex colors are shortened when nothing is lost (`#ff0000` to `#f00`);
+  - `RGB( 1 ,2,3 )` becomes `rgb(1, 2, 3)`;
+  - selector whitespace is normalised (§6.4);
+  - the case of values is kept, and nothing changes where it could change
+    the meaning: `0px` stays inside `calc()`, and custom property values
+    are written verbatim.
 - Invalid media text is kept as written (M2 quirk fixed).
 
-### 6.6 Colors (§12, plan 04)
+### 6.6 Colors (§12)
 
 `parse_rgba(text)` returns `RGBA` (a tuple subclass with `red`, `green`,
 `blue`, `alpha`, each 0 to 1), the string `'currentColor'`, or `None`.
 Callers keep their `isinstance(val, tuple)` checks. Differences from
 tinycss: CSS escapes are decoded (`r\65 d` is red) and non-ASCII text in
-comments is accepted (D2 of plan 04). Update the calibre test that expects
+comments is accepted (decision MC2). Update the calibre test that expects
 `None` for `r\65 d`. Callers: `docx/writer/utils.py:22-60`,
 `mobi/utils.py:647-675`, `gui2/tweak_book/editor/syntax/css.py:195-213`.
 `parse_color(text)` gives the specified color (`Color`) if a caller ever
 needs the color space or out-of-gamut values.
 
-### 6.7 Fonts (§11, plan 05)
+### 6.7 Fonts (§11)
 
 Same functions, same results, faster, with these differences:
 - `serialize_font_family` no longer quotes names that start with `and` (a
@@ -414,7 +438,7 @@ Callers: `cascade.py:206`, `polish/fonts.py:34,47,74,78,84,90,119`,
 - Drop `stylizer.py:315-316` (custom profiles, G3) and `validate=True`
   parsing (G4).
 
-### 6.9 Shorthands (`normalize_css.py`, plan 05 milestone 3)
+### 6.9 Shorthands (`normalize_css.py`)
 
 Replace the normalizers and condensers with `expand_shorthand`,
 `longhands` and `condense_shorthands`. Port `normalize_css.py`'s tests;
@@ -432,7 +456,7 @@ differ:
 Pass calibre's `DEFAULTS` as `initial=` to keep its initial values
 (`currentColor` and so on); kgcss's own `INITIAL_VALUES` follow the specs.
 
-### 6.10 Empty rules (D6 of plan 02)
+### 6.10 Empty rules (decision OM6)
 
 Empty rules are dropped on output by default, as css_parser did. Kobo's
 `@page` blanking (`kobo/driver.py:2913`) relies on it: `rule.style = ''`
@@ -623,11 +647,120 @@ Left for calibre to fix while porting (they are bugs in calibre's code):
   and `rename_ids_in_selector` (`tests/test_selectors.py`). If one of them
   fails after porting, the difference is in the calibre glue code, not in
   kgcss.
-- **Performance.** In the plans' measurements kgcss is faster than what it
-  replaces, usually by a wide margin, and never slower by more than noise
-  (the plans' notes have the numbers). If a calibre operation gets
+- **Performance.** In the measurements of §12 kgcss is faster than what it
+  replaces, usually by a wide margin, and never slower by more than noise. If a calibre operation gets
   slower after the port, look for reparsing or re-serializing that the old
   code needed and kgcss does not: kgcss objects can be kept and mutated
   across the pipeline (`flatcss.py:136`, `mobi/writer8/main.py:103-108`,
   `embed_fonts.py:223` reparse sheets only to copy them; use
   `sheet.copy()`).
+
+---
+
+## 11. Design decisions
+
+These were made with the maintainer while kgcss was built. The ones about
+calibre's quirks are in §9. IDs are used in this document.
+
+### The tokenizer and parser
+
+| ID | Decision |
+|---|---|
+| TOK1 | No unicode-range tokens, as in the current CSS Syntax: `<urange>` is parsed at the value level, for `unicode-range` |
+| TOK2 | Blocks are parsed as the current CSS Syntax says, with nesting |
+| TOK3 | Line and column are 1-based, counted in code points; offsets are Python string indexes |
+| TOK4 | One parse handles up to 4 GiB of input |
+| TOK5 | Every non-ASCII code point can be part of an identifier, as in browsers |
+| TOK6 | A token stream has no EOF token: every token has `end` (what T7 used the next token's `pos` for) |
+| TOK7 | Bytes are decoded as CSS Syntax says: BOM, protocol encoding, `@charset`, environment encoding, UTF-8, with the WHATWG encoding labels (so `latin1` means `windows-1252`) |
+
+### The object model (OM)
+
+| ID | Question | Decision |
+|---|---|---|
+| OM1 | A css_parser-compatible facade? | A Pythonic core, plus `kgcss.compat`, live css_parser-style views (§7.1) |
+| OM2 | What `kgcss.parse_stylesheet()` returns | The object model; the syntax tree is in `kgcss.syntax` |
+| OM3 | `block['x']` for a missing property | `KeyError`, with `get_value()` returning `''` |
+| OM4 | Inserting a rule owned by another sheet | Insert a copy, and return it |
+| OM5 | The S3 normalisations | All kept, deterministic, and switched off with `normalize=False` (§6.5) |
+| OM6 | Empty rules on output (Kobo relies on their removal) | Dropped by default, `drop_empty_rules=True` |
+| OM7 | IE hacks such as `*zoom: 1` (P16) | Dropped and logged, as the spec and calibre do; `filter: progid:...` is valid and kept |
+| OM8 | CSS nesting | Supported in the object model and the serializer |
+
+### Selectors (SEL)
+
+| ID | Question | Decision |
+|---|---|---|
+| SEL1 | How to match | A snapshot of the tree, indexed and matched in C, without the GIL |
+| SEL2 | How to parse | One parser, in C; the Python tree (`selector.parsed`) is built from its output on demand |
+| SEL3 | Specificity | The 3-tuple `(ids, classes, types)` of Selectors Level 4 |
+| SEL4 | Rules whose selectors do not parse | Kept, with their text; they raise when matched, and `invalid_selectors(sheet)` lists them. Assigning invalid `selector_text` raises |
+| SEL5 | Case of ids and classes | Case-sensitive by default, as in standards mode; `quirks_mode=True` per `Select` for calibre's current behaviour |
+| SEL6 | The `!=` attribute operator | A syntax error: it is not CSS |
+| SEL7 | `:lang()` | Honours `xml:lang`, then `lang`, inherited |
+| SEL8 | lxml | Not a dependency: `Select` works on any ElementTree-style tree |
+| SEL9 | A bulk `match_all()` for the stylizer | Not built: the overhead of a `select()` call is under 1 µs |
+| SEL10 | A `css_selectors` compatibility module | Not in kgcss: `Select`, the exceptions and `INAPPROPRIATE_PSEUDO_CLASSES` keep their names, so calibre's shim is a few lines (§7.2) |
+
+### Media queries and colors (MC)
+
+| ID | Question | Decision |
+|---|---|---|
+| MC1 | The color parser | calibre's C `color.c`, ported |
+| MC2 | Escapes in colors (`r\65 d`) | Decoded, as CSS says: `r\65 d` is red; calibre's test that expects `None` changes |
+| MC3 | Only `RGBA`, or also the specified color | Both: `parse_rgba` for calibre, `parse_color` for the specified `Color` |
+| MC4 | Evaluating media queries | In kgcss, with Level 4's three-valued logic; calibre gives its policy as callbacks (§5.3) |
+| MC5 | An empty query between commas (`, screen`) | Malformed, as the spec says (tinycss read it as `all`) |
+| MC6 | Names | `parse_rgba` and `parse_color`, not tinycss's `parse_color_string` |
+| MC7 | Logging malformed media queries | Not while parsing a sheet: queries are parsed when first used, and `MediaQuery.error` says what is wrong |
+
+### Fonts and the value grammar (FG)
+
+| ID | Question | Decision |
+|---|---|---|
+| FG1 | What `parse_font` returns | tinycss's dict, typed as `FontDict` |
+| FG2 | Quoting names that start with `and` (a css_parser workaround) | Dropped: only what CSS needs is quoted, plus the CSS-wide keywords and `default` |
+| FG3 | How much property grammar | The value types and the longhands of the shorthands, with `None` for other properties |
+| FG4 | `list-style-type` | Any counter style name (CSS Lists 3), except the words that would make `list-style` ambiguous |
+| FG5 | `validate_color` | `is_color()`, on `parse_rgba`: CSS 4 colors are valid, `inherit` is not |
+| FG6 | Shorthand expansion and condensation | In kgcss, with calibre's tests |
+| FG7 | Initial values for expansion | The specs', with `font-family: serif`; calibre passes its `DEFAULTS` as `initial=` |
+
+---
+
+## 12. Measurements
+
+How kgcss compares with what it replaces, measured while it was built,
+pinned to the fast cores of one machine. The corpus is bootstrap, tailwind, and
+a synthetic 1.5 MB sheet in the style of calibre's conversion output, in
+three variants (plain, CJK, emoji): about 8.6 MB in all.
+`bench/bench_parse.py prepare` fetches and generates it. Use them to judge a slowdown after
+the port: the same work in kgcss should never be slower.
+
+| Work | kgcss | Old library |
+|---|---:|---:|
+| Tokenize and parse the corpus, reading every declaration | 20 to 30 times faster than calibre's tinycss (with its C tokenizer) | 20 to 45 times faster than tinycss2, about 140 times faster than css_parser |
+| Parse the corpus into the object model (`cssom-parse`) | 17 ms | 7.0 s for css_parser |
+| Parse and read everything (`cssom-full`) | 95 ms | 24 s for css_parser |
+| Find and rewrite every URL (`cssom-urls`) | 39 ms | 7.2 s for css_parser |
+| Serialize, pretty (`cssom-serialize`) | 62 ms | 29 s for css_parser |
+| `replace_urls_in_text` on the corpus | about 12 ms | (no equivalent: css_parser re-serializes) |
+| The stylizer: a fresh `Select`, then the first 2,000 selectors of the calibre-style sheet against a 4.6k-element chapter | 7.9 ms | 290.6 ms for css_selectors |
+| The same with bootstrap's 3,000 selectors against the Shakespeare document | 6.1 ms | 37.8 ms for css_selectors |
+| `Select(root)` on a 4.6k-element chapter | 4.7 ms | (css_selectors builds its indexes lazily) |
+| One `select()` call, cached selector that matches nothing | 0.9 µs | |
+| `parse_rgba` of a named, hex or `rgb()` color | 110 to 170 ns | 120 to 210 ns for calibre's C parser |
+| `parse_rgba` of `oklch()`, `color()` | 290 to 330 ns | 375 to 435 ns |
+| Every `*color` value of the corpus (23,506) | 5.6 ms | 6.6 ms |
+| A typical media query, parsed / cached / `media_matches` | 13.7 µs / 0.06 µs / 1 µs | 41 µs for tinycss (no cache) |
+| Every media list of the corpus (1,030) | 7.8 ms | 19.7 ms for tinycss |
+| `parse_font_family('"Helvetica Neue", Arial, sans-serif')` | 1.9 µs | 13.9 µs for tinycss |
+| `parse_font('bold italic 12pt/1.4 "Helvetica Neue", serif')` | 4.2 µs | 24.7 µs for tinycss |
+| Every font-family value of the corpus (10,310) | 12.9 ms | 91.8 ms for tinycss |
+| `matches()` for a longhand, cached / uncached | 0.2 µs / 2.4 to 5.5 µs | 0.6 µs for css_parser's `profile.validate` |
+| `expand_shorthand('border', '1px solid red')` | 9.1 µs | |
+| Condensing a block with nothing to merge | about 1 µs | |
+
+The benchmarks are in `bench/`: `bench_parse.py` (parsing and the object
+model), `bench_select.py`, `bench_color.py`, `bench_media.py`,
+`bench_fonts.py`, and `ab_compare.py` to compare two revisions.

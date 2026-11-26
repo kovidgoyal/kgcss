@@ -9,15 +9,15 @@ section before you implement a feature.
 | Path | Contents |
 |---|---|
 | `src/kgcss/` | The Python package. The top level (`__init__.py`) exports the CSSOM API. The lower layers are only available as `kgcss.tokenizer` and `kgcss.syntax` |
-| `src/kgcss/cssom/` | The CSS object model (plan 02): `rules.py` (rule classes), `build.py` (syntax tree to CSSOM), `stylesheet.py`, `serializer.py`, `state.py` (per sheet lock, errors, sources), `declarations.py`, `values.py`, `selector_list.py`, `urls.py` (finding and rewriting URLs), `imports.py` (loading and inlining @import) |
-| `src/kgcss/selectors.py` | Parsed selectors (plan 03): the selector tree, `compile_selectors()` (the cached parse) and `build_tree()` |
-| `src/kgcss/matching.py` | `Select`: matching selectors against ElementTree-style trees (plan 03) |
+| `src/kgcss/cssom/` | The CSS object model: `rules.py` (rule classes), `build.py` (syntax tree to CSSOM), `stylesheet.py`, `serializer.py`, `state.py` (per sheet lock, errors, sources), `declarations.py`, `values.py`, `selector_list.py`, `urls.py` (finding and rewriting URLs), `imports.py` (loading and inlining @import) |
+| `src/kgcss/selectors.py` | Parsed selectors: the selector tree, `compile_selectors()` (the cached parse) and `build_tree()` |
+| `src/kgcss/matching.py` | `Select`: matching selectors against ElementTree-style trees |
 | `src/kgcss/escaping.py` | `serialize_string()` and `serialize_identifier()`, the CSSOM escaping idioms |
-| `src/kgcss/colors.py` | `parse_rgba()`, `parse_color()` and `Color` (plan 04), on the C parser in `csrc/color.c` |
-| `src/kgcss/media.py` | Media queries (plan 04): the parser, the model and three-valued evaluation |
-| `src/kgcss/fonts.py` | The font helpers that replace tinycss.fonts3 (plan 05) |
-| `src/kgcss/grammar.py` | `matches()` and `is_color()`: value grammar for the longhands of the shorthands (plan 05) |
-| `src/kgcss/shorthands.py` | Shorthand expansion and condensation (plan 05) |
+| `src/kgcss/colors.py` | `parse_rgba()`, `parse_color()` and `Color`, on the C parser in `csrc/color.c` |
+| `src/kgcss/media.py` | Media queries: the parser, the model and three-valued evaluation |
+| `src/kgcss/fonts.py` | The font helpers that replace tinycss.fonts3 |
+| `src/kgcss/grammar.py` | `matches()` and `is_color()`: value grammar for the longhands of the shorthands |
+| `src/kgcss/shorthands.py` | Shorthand expansion and condensation |
 | `src/kgcss/compat.py` | The css_parser-style facade: live camelCase views of kgcss objects, `wrap()` and `unwrap()` |
 | `src/kgcss/_kgcss.pyi` | Type stubs for the C extension. **Must** match `csrc/` exactly |
 | `csrc/` | C99 sources of the `kgcss._kgcss` extension module |
@@ -44,7 +44,6 @@ section before you implement a feature.
 | `tests/css-parsing-tests/` | Vendored CC0 conformance suite. Do not edit; record differences in the runners |
 | `tests/` | pytest test suite |
 | `setup.py` | Builds the extension only; all metadata lives in `pyproject.toml` |
-| `docs/plan-*.md` | Implementation plans. Read the relevant one before starting work on a feature |
 | `docs/*.rst`, `docs/guide/` | The user documentation (Sphinx, built by Read the Docs from `.readthedocs.yaml`). Update it with any change to the public API: the guide's examples are doctests, run by `sphinx-build -b doctest`, and the API reference lists members explicitly in `docs/api.rst` |
 
 ## Workflow
@@ -223,8 +222,8 @@ the C version must give exactly the same results:
   round trips, positions, and agreement with reference implementations. For
   important changes, run them with `HYPOTHESIS_PROFILE=thorough`.
   Check that a new strategy actually produces the structures a property is
-  about. Count them, as the milestone 5 notes in
-  `docs/plan-01-tokenizer-syntax.md` describe.
+  about: generate a few thousand examples and count them by kind, as
+  the property tests of `tests/test_colors.py` and `tests/test_shorthands.py` were checked.
 - Warnings are errors (`filterwarnings = error`).
 - When you port behaviour from the calibre tests listed in requirements.md
   §16, keep the original inputs and expected outputs. If a quirk from §18 is
