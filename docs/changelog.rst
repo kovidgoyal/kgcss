@@ -1,8 +1,8 @@
 Changelog
 =========
 
-Unreleased
-----------
+1.2.2
+-----
 
 - :meth:`kgcss.Stylesheet.browser_index_path` and
   :meth:`kgcss.Stylesheet.rule_at_browser_index_path` skip the rules that
