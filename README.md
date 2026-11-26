@@ -1,5 +1,10 @@
 # kgcss
 
+[![CI](https://github.com/kovidgoyal/kgcss/actions/workflows/ci.yml/badge.svg)](https://github.com/kovidgoyal/kgcss/actions/workflows/ci.yml)
+[![Documentation](https://readthedocs.org/projects/kgcss/badge/?version=latest)](https://kgcss.readthedocs.io/en/latest/)
+[![PyPI](https://img.shields.io/pypi/v/kgcss)](https://pypi.org/project/kgcss/)
+[![Python versions](https://img.shields.io/pypi/pyversions/kgcss)](https://pypi.org/project/kgcss/)
+
 A fast and comprehensive CSS library for Python, with a C99 backend. It
 parses CSS as browsers do, gives a mutable object model of sheets, rules,
 selectors, declarations and values, and writes it back, reformatted or
