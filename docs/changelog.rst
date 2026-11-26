@@ -6,10 +6,18 @@ Unreleased
 
 - :data:`kgcss.CSS_WIDE_KEYWORDS`, the set of CSS-wide keywords, is now
   exported.
-- :func:`kgcss.parse_font` reads a line height only after a ``/``, as the
-  grammar says. Before, ``12px inherit`` gave ``line-height: inherit``. Now
-  other words after the size are the family list, and a CSS-wide keyword or a
-  number there makes the value invalid.
+- :func:`kgcss.parse_font` follows the grammar of the ``font`` shorthand in
+  CSS Fonts 4, where it used to read what it could, as tinycss did. A value
+  that does not match the grammar now gives ``{}``: one without a size or a
+  family (``serif``), with a line height after the size but no ``/``
+  (``12px 1.4 serif``), or with a CSS-wide keyword in it (``12px inherit``).
+  Everything after the size and line height is the family list, so
+  ``12px bold serif`` is the family ``bold serif``. It also reads the CSS
+  Fonts 4 values: ``oblique`` with an angle, ``left``, ``right``, any weight
+  from 1 to 1000, ``xxx-large``, ``math`` and math functions.
+- :func:`kgcss.matches` types math functions by their contents, so
+  ``calc(10deg)`` is not a length. It accepts ``left`` and ``right`` for
+  ``font-style`` and checks that an ``oblique`` angle is within 90 degrees.
 
 1.0.0
 -----

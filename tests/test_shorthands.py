@@ -49,10 +49,11 @@ def expand(name: str, value: str) -> dict[str, str] | None:
 @pytest.mark.parametrize(
     ('raw', 'expected'),
     [
-        ('some_font', {'font-family': 'some_font'}),
+        # calibre gave these a font-family, but the font shorthand needs a size: CSS ignores them
+        ('some_font', None),
         ('inherit', dict.fromkeys(FONT_COMPOSITION, 'inherit')),
         ('1.2pt/1.4 A_Font', {'font-family': 'A_Font', 'font-size': '1.2pt', 'line-height': '1.4'}),
-        ('bad font', {'font-family': '"bad font"'}),
+        ('bad font', None),
         ('10% serif', {'font-family': 'serif', 'font-size': '10%'}),
         ('12px "My Font", serif', {'font-family': '"My Font", serif', 'font-size': '12px'}),
         (
@@ -76,7 +77,10 @@ def expand(name: str, value: str) -> dict[str, str] | None:
         ('condensed 12pt a', {'font-stretch': 'condensed', 'font-size': '12pt', 'font-family': 'a'}),
     ],
 )  # fmt: skip
-def test_font_normalization(raw: str, expected: dict[str, str]) -> None:
+def test_font_normalization(raw: str, expected: dict[str, str] | None) -> None:
+    if expected is None:
+        assert expand('font', raw) is None
+        return
     base = {} if raw == 'inherit' else {k: DEFAULTS[k] for k in FONT_COMPOSITION}
     assert expand('font', raw) == {**base, **expected}
 
@@ -260,6 +264,9 @@ def test_border_condensation() -> None:
         ('list-style', 'none disc url(x)'),
         ('font', ''),
         ('font', 'var(--f)'),
+        ('font', '12px inherit'),
+        ('font', '12px 1.4 serif'),
+        ('font', 'bold serif'),
         ('color', 'red'),
         ('margin', ''),
     ],

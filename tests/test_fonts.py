@@ -10,9 +10,8 @@ benchmark cache.
 import doctest
 import importlib
 import sys
-from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from hypothesis import assume, given
@@ -20,9 +19,7 @@ from hypothesis import strategies as st
 
 import kgcss
 import kgcss.fonts
-from kgcss import FontDict, parse_font, parse_font_family, serialize_font, serialize_font_family
-from kgcss.syntax import Token, parse_component_value_list
-from kgcss.tokenizer import TokenType
+from kgcss import FontDict, matches, parse_font, parse_font_family, serialize_font, serialize_font_family
 
 CALIBRE = Path(__file__).parent.parent / 'bench' / '.cache' / 'calibre'
 GENERIC = frozenset(('serif', 'sans-serif', 'cursive', 'fantasy', 'monospace'))
@@ -85,7 +82,6 @@ def font(**kw: str | list[str]) -> FontDict:
     ('css', 'expected'),
     [
         ('caption', font(family=['sans-serif'])),
-        ('serif', font(family=['serif'])),
         ('12pt/14pt sans-serif', font(size='12pt', height='14pt', family=['sans-serif'])),
         ('80% sans-serif', font(size='80%', family=['sans-serif'])),
         (
@@ -94,7 +90,7 @@ def font(**kw: str | list[str]) -> FontDict:
         ),
         (
             'bold italic large Palatino, serif',
-            font(weight='bold', style='italic', size='large', family=['Palatino', 'serif']),
+            font(style='italic', weight='bold', size='large', family=['Palatino', 'serif']),
         ),
         (
             'normal small-caps 120%/120% fantasy',
@@ -102,37 +98,92 @@ def font(**kw: str | list[str]) -> FontDict:
         ),
         (
             'condensed oblique 12pt Helvetica Neue, serif',
-            font(stretch='condensed', style='oblique', size='12pt', family=['Helvetica Neue', 'serif']),
+            font(style='oblique', stretch='condensed', size='12pt', family=['Helvetica Neue', 'serif']),
         ),
         (
             '300 italic 1.3em/1.7em FB Armada, sans-serif',
-            font(weight='300', style='italic', size='1.3em', height='1.7em', family=['FB Armada', 'sans-serif']),
+            font(style='italic', weight='300', size='1.3em', height='1.7em', family=['FB Armada', 'sans-serif']),
         ),
         # Beyond tinycss's tests. Keywords are case-insensitive, unlike in tinycss.
         ('BOLD 12PT Serif', font(weight='bold', size='12PT', family=['Serif'])),
+        ('  Caption ', font(family=['sans-serif'])),
         ('12pt/normal a', font(size='12pt', height='normal', family=['a'])),
         ('12pt / 1.5 a', font(size='12pt', height='1.5', family=['a'])),
-        ('"caption" 12pt', font(family=['caption'])),
-        ('', {}),
-        # Unlike tinycss, a line height needs a /: other words after the size are the family, and a CSS-wide keyword
-        # or a number there makes the value invalid, so it gives what was read before
+        ('12px /**/ / 2 a', font(size='12px', height='2', family=['a'])),
+        # normal sets the first longhand that nothing else sets, and there can be four of them
+        ('normal 12px a', font(style='normal', size='12px', family=['a'])),
+        ('bold normal italic 12px a', font(style='italic', variant='normal', weight='bold', size='12px', family=['a'])),
+        (
+            'normal normal normal normal 12px a',
+            font(style='normal', variant='normal', weight='normal', stretch='normal', size='12px', family=['a']),
+        ),
+        # CSS Fonts 4
+        ('oblique 10deg 12px a', font(style='oblique 10deg', size='12px', family=['a'])),
+        ('oblique -1.5rad 12px a', font(style='oblique -1.5rad', size='12px', family=['a'])),
+        ('oblique calc(10deg) 12px a', font(style='oblique calc(10deg)', size='12px', family=['a'])),
+        ('Left 12px a', font(style='left', size='12px', family=['a'])),
+        ('450.5 12px a', font(weight='450.5', size='12px', family=['a'])),
+        ('calc(2 * 300) 12px a', font(weight='calc(2 * 300)', size='12px', family=['a'])),
+        ('calc(1em + 2px)/calc(1.2) a', font(size='calc(1em + 2px)', height='calc(1.2)', family=['a'])),
+        ('xxx-large a', font(size='xxx-large', family=['a'])),
+        ('math math, ui-serif', font(size='math', family=['math', 'ui-serif'])),
+        ('0 a', font(size='0', family=['a'])),  # a unitless zero is a length
+        ('12px/0 a', font(size='12px', height='0', family=['a'])),
+        # After the size, without a /, everything is the family
         ('12px normal', font(size='12px', family=['normal'])),
         ('12px bold serif', font(size='12px', family=['bold serif'])),
         ('12px large a', font(size='12px', family=['large a'])),
-        ('12px inherit', font(size='12px')),
-        ('12px Inherit', font(size='12px')),
-        ('12px unset, x', font(size='12px')),
-        ('12px revert-layer', font(size='12px')),
-        ('12px 1.4 a', font(size='12px')),
-        ('12px 14px a', font(size='12px')),
-        ('12px 120% a', font(size='12px')),
-        ('12px, a', font(size='12px', family=['a'])),
-        ('12px /**/ / 2 a', font(size='12px', height='2', family=['a'])),
+        ('12px Red\\/Black, "X \\"Y", "", a  b', font(size='12px', family=['Red/Black', 'X "Y', '', 'a b'])),
+        ('12px caption', font(size='12px', family=['caption'])),  # system fonts are only keywords alone
+        # Invalid values give nothing. These were partly read by tinycss.
+        ('', {}),
+        ('serif', {}),  # no size
+        ('bold serif', {}),
+        ('"caption" 12pt', {}),
+        ('caption 12px a', {}),
+        ('inherit', {}),  # valid, but not a font
+        ('12px var(--f)', {}),
+        ('var(--f)', {}),
+        ('12px inherit', {}),
+        ('12px Inherit', {}),
+        ('12px unset, x', {}),
+        ('12px revert-layer', {}),
+        ('12px a, inherit', {}),
+        ('12px Inherit Sans', {}),
+        ('12px default', {}),
+        ('inherit 12px a', {}),
+        ('12px 1.4 a', {}),
+        ('12px 14px a', {}),
+        ('12px 120% a', {}),
+        ('12px, a', {}),
+        ('12px a,', {}),
+        ('12px a,,b', {}),
+        ('12px "a" b', {}),
+        ('12px a / b', {}),
+        ('12px/ a', {}),
+        ('12px/inherit a', {}),
+        ('12px/-1 a', {}),
+        ('12px/1.4/2 a', {}),
+        ('12px a!', {}),
+        ('12px calc(1px) a', {}),
+        ('-1px a', {}),
+        ('12deg a', {}),
+        ('calc(10deg) a', {}),
+        ('italic italic 12px a', {}),
+        ('bold 500 12px a', {}),
+        ('normal normal normal normal normal 12px a', {}),
+        ('bold normal normal normal normal 12px a', {}),
+        ('1001 12px a', {}),
+        ('oblique 91deg 12px a', {}),
+        ('50% 12px a', {}),  # font-width percentages are not in the shorthand
+        ('all-small-caps 12px a', {}),  # nor are the font-variant values after CSS 2.1
+        ('(x) 12px a', {}),
     ],
 )
 def test_parse_font(css: str, expected: FontDict) -> None:
     assert parse_font(css) == expected
-    assert normalized(parse_font(serialize_font(expected))) == normalized(expected)
+    if expected and 'font-size' in expected:
+        assert parse_font(serialize_font(expected)) == normalized(expected)
 
 
 def test_css_wide_keywords() -> None:
@@ -176,10 +227,11 @@ def normalize_font(val: str) -> dict[str, Any]:
 @pytest.mark.parametrize(
     ('raw', 'expected'),
     [
-        ('some_font', {'font-family': 'some_font'}),
+        # calibre gave these a font-family, but the font shorthand needs a size: CSS ignores them
+        ('some_font', {}),
         ('inherit', dict.fromkeys(FONT_DEFAULTS, 'inherit')),
         ('1.2pt/1.4 A_Font', {'font-family': 'A_Font', 'font-size': '1.2pt', 'line-height': '1.4'}),
-        ('bad font', {'font-family': '"bad font"'}),
+        ('bad font', {}),
         ('10% serif', {'font-family': 'serif', 'font-size': '10%'}),
         ('12px "My Font", serif', {'font-family': '"My Font", serif', 'font-size': '12px'}),
         (
@@ -228,16 +280,20 @@ def normalized(d: FontDict) -> FontDict:
     """The font with generic family names as serialize_font_family() writes them."""
     ans = dict(d)
     if 'font-family' in d:
-        ans['font-family'] = parse_font_family(serialize_font_family(d['font-family']))
-    return ans  # type: ignore[return-value]
+        ans['font-family'] = [
+            'sans-serif' if n.lower() == 'sansserif' else n.lower() if n.lower() in GENERIC else n
+            for n in d['font-family']
+        ]
+    return cast('FontDict', ans)
 
 
 WORDS = (
-    'normal', 'inherit', 'initial', 'unset', 'italic', 'oblique', 'small-caps', 'bold', 'bolder', 'lighter',
-    'condensed', 'ultra-expanded', 'small', 'x-large', 'larger', 'caption', 'menu', 'serif', 'sans-serif',
-    'Arial', 'Helvetica', 'Neue', 'a_b', '€42', r'Red\/Black',
-    '100', '400', '900', '450', '0', '1.5', '+700', '12pt', '1.3em', '80%', '0.6em', '-1px', '/', ',', ',',
-    '"A B"', '"bold"', '""', '"X \\"Y"', 'calc(1px)', '(x)', '!',
+    'normal', 'inherit', 'initial', 'unset', 'revert', 'default', 'italic', 'oblique', 'left', 'small-caps',
+    'all-small-caps', 'bold', 'bolder', 'lighter', 'condensed', 'ultra-expanded', 'small', 'x-large', 'xxx-large',
+    'larger', 'math', 'caption', 'menu', 'serif', 'sans-serif', 'Arial', 'Helvetica', 'Neue', 'a_b', '€42',
+    r'Red\/Black', '100', '400', '900', '450', '1001', '0', '1.5', '+700', '12pt', '1.3em', '80%', '0.6em', '-1px',
+    '10deg', '-1rad', '100deg', '/', '/', ',', ',', '"A B"', '"bold"', '""', '"X \\"Y"', 'calc(1px)', 'calc(2 * 300)',
+    'calc(1px + 1%)', 'calc(10deg)', 'var(--x)', '(x)', '!',
 )  # fmt: skip
 
 
@@ -248,10 +304,84 @@ def font_texts(draw: st.DrawFn) -> str:
     return ''.join(s + p for s, p in zip(seps, parts, strict=True)).strip()
 
 
-@given(font_texts())
+BEFORE_SIZE_VALUES = {
+    'font-style': ('italic', 'left', 'right', 'oblique', 'oblique 10deg', 'oblique -1.5rad', 'OBLIQUE calc(90deg)'),
+    'font-variant': ('small-caps', 'Small-Caps'),
+    'font-weight': ('bold', 'bolder', 'lighter', '1', '450.5', '1000', 'calc(2 * 300)'),
+    'font-stretch': ('condensed', 'ultra-expanded', 'semi-condensed'),
+}
+SIZES = ('12pt', '0', '80%', 'x-large', 'xxx-large', 'smaller', 'math', 'calc(1em + 2px)', 'calc(10%)', '1Q')
+HEIGHTS = ('normal', '0', '1.4', '120%', '1.2em', 'calc(1.2)')
+FAMILY_IDENTS = ('a', 'Arial', 'serif', 'bold', 'normal', 'caption', 'x-large', r'Red\/Black', '€42')
+FAMILY_STRINGS = ('"A B"', '"inherit"', '""', '"X \\"Y"')
+
+
+@st.composite
+def valid_fonts(draw: st.DrawFn) -> tuple[str, FontDict]:
+    """A valid value of the font shorthand that is not a system font, and what parse_font() gives for it"""
+    names = draw(st.lists(st.sampled_from(tuple(BEFORE_SIZE_VALUES)), unique=True))
+    explicit = {n: draw(st.sampled_from(BEFORE_SIZE_VALUES[n])) for n in names}
+    normals = draw(st.integers(0, 4 - len(explicit)))
+    parts = draw(st.permutations([*explicit.values(), *(['NORMAL'] * normals)]))
+    expected: dict[str, str | list[str]] = {}
+    for name in BEFORE_SIZE_VALUES:
+        if name in explicit:
+            v = explicit[name]
+            expected[name] = v if v[0].isdigit() or v.startswith('calc') else v.lower()
+        elif normals:
+            normals -= 1
+            expected[name] = 'normal'
+    expected['font-size'] = size = draw(st.sampled_from(SIZES))
+    if draw(st.booleans()):
+        expected['line-height'] = height = draw(st.sampled_from(HEIGHTS))
+        size += draw(st.sampled_from(('/', ' / ', '/**/ /'))) + height
+    parts.append(size)
+    families = draw(
+        st.lists(st.one_of(st.lists(st.sampled_from(FAMILY_IDENTS), min_size=1, max_size=3),
+                           st.sampled_from(FAMILY_STRINGS)), min_size=1, max_size=3)
+    )  # fmt: skip
+    parts.append(', '.join(f if isinstance(f, str) else ' '.join(f) for f in families))
+    # parse_font_family() gives the names, except that it drops an empty one
+    expected['font-family'] = [(parse_font_family(f) or [''])[0] if isinstance(f, str) else
+                               parse_font_family(' '.join(f))[0] for f in families]  # fmt: skip
+    return ' '.join(parts), cast('FontDict', expected)
+
+
+@st.composite
+def nearly_valid_fonts(draw: st.DrawFn) -> str:
+    """A valid font with one word replaced or inserted: mostly invalid, but close to the grammar"""
+    words = draw(valid_fonts())[0].split(' ')
+    i = draw(st.integers(0, len(words)))
+    words[i : i + draw(st.integers(0, 1))] = [draw(st.sampled_from(WORDS))]
+    return ' '.join(words)
+
+
+@given(st.one_of(font_texts(), nearly_valid_fonts()))
 def test_font_round_trip(text: str) -> None:
     d = parse_font(text)
-    assert normalized(parse_font(serialize_font(d))) == normalized(d), (text, serialize_font(d))
+    if 'font-size' in d:
+        assert parse_font(serialize_font(d)) == normalized(d), (text, serialize_font(d))
+
+
+@given(st.one_of(font_texts(), nearly_valid_fonts()))
+def test_font_values_match_longhands(text: str) -> None:
+    """Every value that parse_font() reads is valid for its longhand"""
+    d = parse_font(text)
+    if 'font-size' not in d:
+        assert d in ({}, {'font-family': ['sans-serif']})
+        return
+    for name, value in d.items():
+        if name == 'font-family':
+            assert matches(name, serialize_font_family(cast('list[str]', value))), text
+        else:
+            assert matches(name, cast('str', value)), (text, name, value)
+
+
+@given(valid_fonts())
+def test_valid_fonts(case: tuple[str, FontDict]) -> None:
+    text, expected = case
+    assert parse_font(text) == expected
+    assert parse_font(serialize_font(expected)) == normalized(expected)
 
 
 @given(st.text())
@@ -271,37 +401,8 @@ if (CALIBRE / 'tinycss').exists():
         sys.path.remove(str(CALIBRE))
 
 
-def follows_size_without_slash(text: str, font: FontDict) -> bool:
-    """Whether something other than a / follows the size, where kgcss differs from tinycss on purpose"""
-    if (size := font.get('font-size')) is None or 'line-height' in font:
-        return False
-    items = [
-        x for x in parse_component_value_list(text)
-        if not (isinstance(x, Token) and x.type in (TokenType.WHITESPACE, TokenType.COMMENT))
-    ]  # fmt: skip
-    for i, item in enumerate(items):
-        if isinstance(item, Token) and item.source_text == size:
-            following = items[i + 1 : i + 2]
-            return bool(following) and not (isinstance(following[0], Token) and following[0].source_text == '/')
-    return False
-
-
 @pytest.mark.skipif(tinycss_fonts is None, reason='tinycss is not in the benchmark cache')
 @given(font_texts())
-def test_same_as_tinycss(text: str) -> None:
-    # Differences: tinycss reads a string "caption" as the legacy font; WORDS has no upper case keywords; tinycss
-    # reads a line height after the size without a /
-    assume('"caption"' not in text)
-    tinycss_parse_font: Callable[[str], dict[str, object]] = tinycss_fonts.parse_font
-    try:
-        expected = tinycss_parse_font(text)
-    except AttributeError:
-        # tinycss fails when the value starts with a function, such as calc(1px)
-        return
-    actual = parse_font(text)
-    if actual != expected and follows_size_without_slash(text, actual):
-        before_size = ('font-style', 'font-variant', 'font-weight', 'font-stretch')
-        assert {k: actual.get(k) for k in before_size} == {k: expected.get(k) for k in before_size}, text
-    else:
-        assert actual == expected, text
+def test_font_family_same_as_tinycss(text: str) -> None:
+    # parse_font() follows the grammar, where tinycss read what it could, so only parse_font_family() is compared
     assert parse_font_family(text) == tinycss_fonts.parse_font_family(text), text

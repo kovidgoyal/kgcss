@@ -2,8 +2,9 @@
 
 """Font family lists and the font shorthand.
 
-These replace calibre's tinycss.fonts3 helpers, with the same results, on kgcss's
-tokenizer.
+These replace calibre's tinycss.fonts3 helpers. parse_font_family() and the serializers
+give the same results; parse_font() follows the grammar of CSS Fonts 4, where tinycss
+read what it could.
 
 >>> parse_font_family('"Helvetica Neue", Arial, sans-serif')
 ['Helvetica Neue', 'Arial', 'sans-serif']
@@ -17,10 +18,20 @@ tokenizer.
 
 import re
 from collections.abc import Iterable, Sequence
-from typing import Final, TypedDict
+from typing import Final, TypedDict, cast
 
+from kgcss.cssom.values import Component, Ident, Separator, String, parse_value
 from kgcss.escaping import serialize_string
-from kgcss.grammar import CSS_WIDE_KEYWORDS
+from kgcss.grammar import (
+    CSS_WIDE_KEYWORDS,
+    FONT_SIZES,
+    font_family,
+    font_size,
+    font_weight,
+    is_angle,
+    keyword,
+    line_height,
+)
 from kgcss.syntax import Block, Token, parse_component_value_list
 from kgcss.syntax import Function as SyntaxFunction
 from kgcss.tokenizer import TokenType
@@ -44,37 +55,27 @@ FontDict.__doc__ = """The longhands of the font shorthand that a value sets, as 
 
 type Item = Token | Block | SyntaxFunction
 
-GLOBAL_IDENTS: Final = frozenset(('inherit', 'initial', 'unset', 'normal'))
-STYLE_IDENTS: Final = frozenset(('italic', 'oblique'))
-VARIANT_IDENTS: Final = frozenset(('small-caps',))
-WEIGHT_IDENTS: Final = frozenset(('bold', 'bolder', 'lighter'))
-STRETCH_IDENTS: Final = frozenset(
-    [
-        'ultra-condensed',
-        'extra-condensed',
-        'condensed',
-        'semi-condensed',
-        'semi-expanded',
-        'expanded',
-        'extra-expanded',
-        'ultra-expanded',
-    ]
-)
-BEFORE_SIZE_IDENTS: Final = STYLE_IDENTS | VARIANT_IDENTS | WEIGHT_IDENTS | STRETCH_IDENTS
-SIZE_IDENTS: Final = frozenset(
-    ['xx-small', 'x-small', 'small', 'medium', 'large', 'x-large', 'xx-large', 'larger', 'smaller']
-)
-WEIGHT_SIZES: Final = frozenset(range(100, 1000, 100))
-LEGACY_FONTS: Final = frozenset(('caption', 'icon', 'menu', 'message-box', 'small-caption', 'status-bar'))
+STRETCH_KEYWORDS: Final = (
+    'ultra-condensed', 'extra-condensed', 'condensed', 'semi-condensed', 'semi-expanded', 'expanded', 'extra-expanded',
+    'ultra-expanded',
+)  # fmt: skip
+# The keywords that can come before the size in the font shorthand, other than normal and oblique, and what they set
+BEFORE_SIZE_KEYWORDS: Final = {
+    'italic': 'font-style', 'left': 'font-style', 'right': 'font-style', 'small-caps': 'font-variant',
+    'bold': 'font-weight', 'bolder': 'font-weight', 'lighter': 'font-weight',
+    **dict.fromkeys(STRETCH_KEYWORDS, 'font-stretch'),
+}  # fmt: skip
+SYSTEM_FONTS: Final = frozenset(('caption', 'icon', 'menu', 'message-box', 'small-caption', 'status-bar'))
 GENERIC_FAMILIES: Final = frozenset(('serif', 'sans-serif', 'sansserif', 'cursive', 'fantasy', 'monospace'))
 # Names that mean something else unquoted in font-family: the CSS-wide keywords, and default, which is reserved
 RESERVED_NAMES: Final = CSS_WIDE_KEYWORDS | {'default'}
-# Names that mean something else unquoted in the font shorthand
-FONT_KEYWORDS: Final = GLOBAL_IDENTS | BEFORE_SIZE_IDENTS | SIZE_IDENTS | LEGACY_FONTS
+# Names that are keywords elsewhere in the font shorthand. Only the reserved names need quotes in its family
+# list, but quoting these too keeps the value clear to readers and to parsers that are less strict.
+FONT_KEYWORDS: Final = (
+    RESERVED_NAMES | BEFORE_SIZE_KEYWORDS.keys() | FONT_SIZES | SYSTEM_FONTS | {'normal', 'oblique', 'math'}
+)
 SIMPLE_NAME: Final = re.compile(r'[a-zA-Z][a-zA-Z0-9_-]*')
 IGNORED: Final = frozenset((TokenType.WHITESPACE, TokenType.COMMENT))
-# Tokens that make a font shorthand invalid right after the size, where there is no /
-AFTER_SIZE_INVALID: Final = frozenset((TokenType.NUMBER, TokenType.DIMENSION, TokenType.PERCENTAGE))
 
 
 def family_names(items: Iterable[Item]) -> list[str]:
@@ -126,125 +127,98 @@ def serialize_font_family(names: Iterable[str]) -> str:
     return ', '.join(map(serialize_single_font_family, names))
 
 
-def keyword(item: Token) -> str | None:
-    return str(item.value).lower() if item.type is TokenType.IDENT else None
-
-
 def parse_font(text: str) -> FontDict:
-    """The longhands that a value of the font shorthand sets, as in CSS Fonts 3, with only the keys
-    that it sets. Keywords are lowercased. The legacy system fonts, such as caption, give
-    {'font-family': ['sans-serif']}. Values that do not parse give what could be read before the
-    problem. A line height is only read after a ``/``: other words after the size are the family,
-    and a CSS-wide keyword or a number there makes the value invalid. A value that is a CSS-wide
-    keyword alone is not a font: check for one first with :data:`CSS_WIDE_KEYWORDS`."""
-    style = variant = weight = stretch = size = height = None
-    slash = False
-    items: list[Item] = [
-        x for x in parse_component_value_list(text) if not (isinstance(x, Token) and x.type in IGNORED)
-    ]
-    if items and isinstance(items[0], Token) and keyword(items[0]) in LEGACY_FONTS:
+    """The longhands that a value of the font shorthand sets, with only the keys that it sets, as in
+    CSS Fonts 4::
+
+        [ [ <'font-style'> || <font-variant-css2> || <'font-weight'> || <font-width-css3> ]?
+          <'font-size'> [ / <'line-height'> ]? <'font-family'># ] | <system-font-family-name>
+
+    Keywords are lowercased, other values are as written. A normal before the size sets the first of
+    style, variant, weight and stretch that no other value sets. A system font, such as caption, gives
+    {'font-family': ['sans-serif']}, as kgcss cannot know the system's fonts.
+
+    A value that does not match the grammar gives {}, as CSS ignores the whole declaration. So does a
+    value with var() and the like, which is not known before computing, and one that is a CSS-wide
+    keyword: that sets every longhand, but is not a font. Check for those first with
+    :data:`CSS_WIDE_KEYWORDS`. A math function is typed by its contents: calc(2px / 1px) is taken to
+    be a length."""
+    items = parse_value(text).items
+    if not items:
+        return {}
+    if len(items) == 1 and keyword(items[0]) in SYSTEM_FONTS:
         return {'font-family': ['sans-serif']}
-    # As tinycss does: take the items before the family one by one, then the rest are the family
-    pos = 0
+    found: dict[str, str] = {}
+    normals = pos = 0
     while pos < len(items):
-        tok = items[pos]
+        c = items[pos]
+        k = keyword(c)
+        if k == 'normal':
+            normals += 1
+        elif k == 'oblique' and 'font-style' not in found:
+            if pos + 1 < len(items) and is_angle(items[pos + 1], 90):
+                pos += 1
+                found['font-style'] = f'oblique {items[pos].css_text}'
+            else:
+                found['font-style'] = k
+        elif (name := before_size_property(c, k)) is not None and name not in found:
+            found[name] = c.css_text if k is None else k
+        else:
+            break
         pos += 1
-        if not isinstance(tok, Token):
-            continue  # functions and blocks are skipped
-        t = tok.type
-        if size is not None and not slash:
-            # Unlike tinycss: by the grammar, only / line-height or the family can follow the size
-            if t is TokenType.DELIM and tok.source_text == '/':
-                slash = True
-                continue
-            if t in AFTER_SIZE_INVALID or (t is TokenType.IDENT and keyword(tok) in CSS_WIDE_KEYWORDS):
-                pos = len(items)
-            else:
-                pos -= 1
-            break
-        if t is TokenType.STRING:
-            pos -= 1
-            break
-        if t is TokenType.NUMBER and tok.is_integer:
-            if size is None:
-                if weight is None and tok.value in WEIGHT_SIZES:
-                    weight = tok.source_text
-                    continue
-                break
-            if height is None:
-                height = tok.source_text
-            break
-        if t is TokenType.NUMBER:
-            if size is not None and height is None:
-                height = tok.source_text
-            break
-        if t is TokenType.DELIM or t is TokenType.COMMA:
-            if tok.source_text == '/' and size is not None and height is None:
-                continue
-            break
-        if t is TokenType.DIMENSION or t is TokenType.PERCENTAGE:
-            if size is None:
-                size = tok.source_text
-                continue
-            if height is None:
-                height = tok.source_text
-            break
-        if (word := keyword(tok)) is not None:
-            if word in GLOBAL_IDENTS:
-                if size is not None:
-                    if height is None:
-                        height = word
-                    else:
-                        pos -= 1
-                    break
-                if style is None:
-                    style = word
-                elif variant is None:
-                    variant = word
-                elif weight is None:
-                    weight = word
-                elif stretch is None:
-                    stretch = word
-                else:
-                    # size is None here: tinycss's branches for line-height after this could not be reached
-                    size = word
-                continue
-            if word in BEFORE_SIZE_IDENTS:
-                if size is not None:
-                    break
-                if word in STYLE_IDENTS:
-                    style = word
-                elif word in VARIANT_IDENTS:
-                    variant = word
-                elif word in WEIGHT_IDENTS:
-                    weight = word
-                else:
-                    stretch = word
-            elif word in SIZE_IDENTS:
-                size = word
-            else:
-                pos -= 1
-                break
-    ans: FontDict = {}
-    if style is not None:
-        ans['font-style'] = style
-    if variant is not None:
-        ans['font-variant'] = variant
-    if weight is not None:
-        ans['font-weight'] = weight
-    if stretch is not None:
-        ans['font-stretch'] = stretch
-    if size is not None:
-        ans['font-size'] = size
-    if height is not None:
-        ans['line-height'] = height
-    if families := family_names(items[pos:]):
-        ans['font-family'] = families
+    if len(found) + normals > 4:
+        return {}
+    ans: dict[str, str | list[str]] = {}
+    for name in BEFORE_SIZE:
+        if name in found:
+            ans[name] = found[name]
+        elif normals:
+            normals -= 1
+            ans[name] = 'normal'
+    if pos >= len(items) or not font_size(size := items[pos]):
+        return {}
+    ans['font-size'] = size.css_text if (k := keyword(size)) is None else k
+    pos += 1
+    if pos < len(items) and isinstance(items[pos], Separator) and items[pos].css_text == '/':
+        if pos + 1 >= len(items) or not line_height(height := items[pos + 1]):
+            return {}
+        ans['line-height'] = height.css_text if (k := keyword(height)) is None else k
+        pos += 2
+    family = items[pos:]
+    if not family or not font_family(family):
+        return {}
+    ans['font-family'] = [
+        name.value if isinstance(name, String) else ' '.join(cast('Ident', c).value for c in name)
+        for name in split_families(family)
+    ]
+    return cast('FontDict', ans)
+
+
+BEFORE_SIZE: Final = ('font-style', 'font-variant', 'font-weight', 'font-stretch')
+
+
+def before_size_property(c: Component, k: str | None) -> str | None:
+    """The longhand that c can set before the size, other than with normal"""
+    if k is not None:
+        return BEFORE_SIZE_KEYWORDS.get(k)
+    return 'font-weight' if font_weight(c) else None
+
+
+def split_families(items: Sequence[Component]) -> list[String | list[Component]]:
+    """The names of a font-family list that matches the grammar: a string or a list of idents each"""
+    ans: list[String | list[Component]] = [[]]
+    for c in items:
+        if isinstance(c, Separator):
+            ans.append([])
+        elif isinstance(c, String):
+            ans[-1] = c
+        else:
+            cast('list[Component]', ans[-1]).append(c)
     return ans
 
 
 def serialize_font_family_in_font(names: Sequence[str]) -> str:
-    # In the shorthand, a name that is a font keyword would be read as the keyword: quote it
+    # A name that is a keyword elsewhere in the shorthand is quoted, see FONT_KEYWORDS
     return ', '.join(
         serialize_string(n) if n.lower() in FONT_KEYWORDS else serialize_single_font_family(n) for n in names
     )

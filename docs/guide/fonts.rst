@@ -31,22 +31,35 @@ value sets. :func:`kgcss.serialize_font` writes one back.
    >>> kgcss.parse_font('caption')
    {'font-family': ['sans-serif']}
 
-``parse_font(serialize_font(font)) == font`` for what ``parse_font`` returns.
+``parse_font(serialize_font(font)) == font`` for what ``parse_font`` returns,
+apart from the result for a system font, and with generic family names
+lowercased.
 
-A line height is only read after a ``/``. Other words after the size begin
-the family list, and a CSS-wide keyword or a number there makes the value
-invalid, so ``parse_font`` gives what it read before that point.
+``parse_font`` follows the grammar of the shorthand in CSS Fonts 4::
+
+   [ [ <'font-style'> || <font-variant-css2> || <'font-weight'> || <font-width-css3> ]?
+     <'font-size'> [ / <'line-height'> ]? <'font-family'># ] | <system-font-family-name>
+
+So the size and the family are required, a line height is only read after a
+``/``, and everything after the size and line height is the family list. A
+``normal`` before the size sets the first of style, variant, weight and
+stretch that nothing else sets. A value that does not match gives ``{}``, as
+CSS ignores the whole declaration. So does a value with ``var()``, which is
+not known before it is computed.
 
 .. doctest::
 
+   >>> kgcss.parse_font('oblique 10deg normal 450 12px bold serif')
+   {'font-style': 'oblique 10deg', 'font-variant': 'normal', 'font-weight': '450', 'font-size': '12px', 'font-family': ['bold serif']}
    >>> kgcss.parse_font('12px normal')
    {'font-size': '12px', 'font-family': ['normal']}
-   >>> kgcss.parse_font('12px inherit')
-   {'font-size': '12px'}
+   >>> kgcss.parse_font('12px inherit'), kgcss.parse_font('serif'), kgcss.parse_font('12px 1.4 serif')
+   ({}, {}, {})
 
 A value that is just a CSS-wide keyword is not a list of family names and not
-a font, but neither function can tell ``inherit`` from ``"inherit"`` once it
-is parsed. Check the text against :data:`kgcss.CSS_WIDE_KEYWORDS` first:
+a font. ``parse_font`` gives ``{}`` for it, and ``parse_font_family``, which
+does not check the grammar, cannot tell ``inherit`` from ``"inherit"``. Check
+the text against :data:`kgcss.CSS_WIDE_KEYWORDS` first:
 
 .. doctest::
 

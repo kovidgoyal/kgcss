@@ -19,6 +19,7 @@ True
 (True, False)
 """
 
+import math
 from collections.abc import Callable, Sequence
 from functools import lru_cache
 from typing import Final
@@ -31,9 +32,11 @@ from kgcss.cssom.values import (
     Hash,
     Ident,
     Number,
+    Operator,
     Percentage,
     PropertyValue,
     Separator,
+    SimpleBlock,
     String,
     Url,
     parse_value,
@@ -54,8 +57,7 @@ LENGTH_UNITS: Final = frozenset(
     )
 )  # fmt: skip
 ANGLE_UNITS: Final = frozenset(('deg', 'grad', 'rad', 'turn'))
-# Math functions give a number, length or percentage, depending on what is inside: they are taken
-# to match any numeric type, as checking their insides is not worth it here.
+# Math functions give a number, length, percentage or angle, depending on what is inside: see math_type()
 MATH_FUNCTIONS: Final = frozenset(
     (
         'calc', '-webkit-calc', '-moz-calc', 'min', 'max', 'clamp', 'round', 'mod', 'rem', 'abs', 'sign',
@@ -90,7 +92,7 @@ LINE_STYLES: Final = frozenset(
 LINE_WIDTHS: Final = frozenset(('thin', 'medium', 'thick'))
 # Words that cannot be a counter style name in list-style-type: they would make list-style ambiguous
 NOT_COUNTER_STYLES: Final = CSS_WIDE_KEYWORDS | {'none', 'inside', 'outside', 'default'}
-FONT_STYLES: Final = frozenset(('normal', 'italic', 'oblique'))
+FONT_STYLES: Final = frozenset(('normal', 'italic', 'left', 'right', 'oblique'))
 FONT_VARIANTS: Final = frozenset(('normal', 'none', 'small-caps', 'all-small-caps', 'petite-caps',
                                   'all-petite-caps', 'unicase', 'titling-caps'))  # fmt: skip
 FONT_WEIGHTS: Final = frozenset(('normal', 'bold', 'bolder', 'lighter'))
@@ -113,24 +115,101 @@ def is_math(c: Component) -> bool:
     return isinstance(c, Function) and c.name.lower() in MATH_FUNCTIONS
 
 
+# Math functions whose result is a number or an angle whatever their arguments are
+NUMBER_RESULT_FUNCTIONS: Final = frozenset(('sign', 'sin', 'cos', 'tan', 'pow', 'sqrt', 'log', 'exp'))
+ANGLE_RESULT_FUNCTIONS: Final = frozenset(('asin', 'acos', 'atan', 'atan2'))
+# The constants that a math function can use, which are numbers, and the rounding strategies of round()
+MATH_IDENTS: Final = frozenset(('e', 'pi', 'infinity', '-infinity', 'nan', 'nearest', 'up', 'down', 'to-zero'))
+
+
+def math_type(c: Component) -> str | None:
+    """The type of the result of a math function: 'number', 'length', 'percentage', 'length-percentage'
+    or 'angle'. None if c is not a math function, or its arguments mix types that cannot be combined or
+    use something else, such as var(), whose type is not known before computing. Products and quotients
+    are taken to have the type of their dimensioned operand: calc(2px / 1px) gives 'length', not 'number'."""
+    if not isinstance(c, Function):
+        return None
+    name = c.name.lower()
+    if name not in MATH_FUNCTIONS:
+        return None
+    kinds: set[str] = set()
+    if not collect_math_kinds(c.arguments, kinds):
+        return None
+    if name in NUMBER_RESULT_FUNCTIONS:
+        return 'number'
+    if name in ANGLE_RESULT_FUNCTIONS:
+        return 'angle'
+    if not kinds:
+        return 'number'
+    if kinds == {'length', 'percentage'}:
+        return 'length-percentage'
+    return next(iter(kinds)) if len(kinds) == 1 else None
+
+
+def collect_math_kinds(items: Sequence[Component], kinds: set[str]) -> bool:
+    for c in items:
+        match c:
+            case Number() | Operator() | Separator():
+                pass
+            case Percentage():
+                kinds.add('percentage')
+            case Dimension():
+                unit = c.unit.lower()
+                if unit in LENGTH_UNITS:
+                    kinds.add('length')
+                elif unit in ANGLE_UNITS:
+                    kinds.add('angle')
+                else:
+                    return False
+            case Ident() if keyword(c) in MATH_IDENTS:
+                pass
+            case Function():
+                if (t := math_type(c)) is None:
+                    return False
+                if t == 'length-percentage':
+                    kinds.update(('length', 'percentage'))
+                elif t != 'number':
+                    kinds.add(t)
+            case SimpleBlock() if c.opener == '(':
+                if not collect_math_kinds(c.content, kinds):
+                    return False
+            case _:
+                return False
+    return True
+
+
 def is_length(c: Component, non_negative: bool = False) -> bool:
     if isinstance(c, Dimension):
         return c.unit.lower() in LENGTH_UNITS and not (non_negative and c.value < 0)
     if isinstance(c, Number):
         return c.value == 0  # a unitless zero is a length
-    return is_math(c)
+    return math_type(c) == 'length'
 
 
 def is_length_percentage(c: Component, non_negative: bool = False) -> bool:
     if isinstance(c, Percentage):
         return not (non_negative and c.value < 0)
+    if isinstance(c, Function):
+        return math_type(c) in ('length', 'percentage', 'length-percentage')
     return is_length(c, non_negative)
 
 
 def is_number(c: Component, non_negative: bool = False) -> bool:
     if isinstance(c, Number):
         return not (non_negative and c.value < 0)
-    return is_math(c)
+    return math_type(c) == 'number'
+
+
+ANGLE_DEGREES: Final = {'deg': 1.0, 'grad': 0.9, 'rad': 180 / math.pi, 'turn': 360.0}
+
+
+def is_angle(c: Component, max_degrees: float = math.inf) -> bool:
+    """An <angle>, or with max_degrees, an <angle [-max_degrees deg, max_degrees deg]>. A math function is
+    not checked against the range: out of range values are clamped when computed."""
+    if isinstance(c, Dimension):
+        factor = ANGLE_DEGREES.get(c.unit.lower())
+        return factor is not None and abs(c.value * factor) <= max_degrees
+    return math_type(c) == 'angle'
 
 
 def is_color_component(c: Component) -> bool:
@@ -174,7 +253,7 @@ def counter_style(c: Component) -> bool:
 def font_weight(c: Component) -> bool:
     if keyword(c) in FONT_WEIGHTS:
         return True
-    return is_math(c) or (isinstance(c, Number) and 1 <= c.value <= 1000)
+    return math_type(c) == 'number' or (isinstance(c, Number) and 1 <= c.value <= 1000)
 
 
 def font_size(c: Component) -> bool:
@@ -186,7 +265,7 @@ def line_height(c: Component) -> bool:
 
 
 def font_stretch(c: Component) -> bool:
-    return keyword(c) in FONT_STRETCHES or (isinstance(c, Percentage) and c.value >= 0) or is_math(c)
+    return keyword(c) in FONT_STRETCHES or (isinstance(c, Percentage) and c.value >= 0) or math_type(c) == 'percentage'
 
 
 def single(check: Check) -> Callable[[Sequence[Component]], bool]:
@@ -197,14 +276,10 @@ def single(check: Check) -> Callable[[Sequence[Component]], bool]:
 
 
 def font_style(items: Sequence[Component]) -> bool:
+    """normal | italic | left | right | oblique <angle [-90deg,90deg]>? (CSS Fonts 4)"""
     if len(items) == 1:
         return keyword(items[0]) in FONT_STYLES
-    # oblique <angle>
-    return (
-        len(items) == 2
-        and keyword(items[0]) == 'oblique'
-        and ((isinstance(items[1], Dimension) and items[1].unit.lower() in ANGLE_UNITS) or is_math(items[1]))
-    )
+    return len(items) == 2 and keyword(items[0]) == 'oblique' and is_angle(items[1], 90)
 
 
 def font_family(items: Sequence[Component]) -> bool:
@@ -213,6 +288,8 @@ def font_family(items: Sequence[Component]) -> bool:
     names: list[list[Component]] = [[]]
     for c in items:
         if isinstance(c, Separator):
+            if c.value != ',':
+                return False
             names.append([])
         else:
             names[-1].append(c)
@@ -249,8 +326,8 @@ PROPERTIES: Final = frozenset(LONGHANDS)
 
 
 def components(value: PropertyValue) -> list[Component]:
-    # The commas of font-family matter; the slashes of other values are not in any of these grammars
-    return [c for c in value.items if not isinstance(c, Separator) or c.value == ',']
+    # The separators are kept: the commas of font-family matter, and a slash is in none of these grammars
+    return list(value.items)
 
 
 @lru_cache(maxsize=4096)
