@@ -399,15 +399,21 @@ def _copy_source(s: Source | None) -> Source | None:
 
 def _copy_spaces(s: Spaces) -> Spaces:
     ans = Spaces(s.before, s.after)
-    for k in ('attribute', 'operator', 'value', 'insensitive'):
-        setattr(ans, k, _copy_part(getattr(s, k)))
+    if s.attribute is not None or s.operator is not None or s.value is not None or s.insensitive is not None:
+        ans.attribute = _copy_part(s.attribute)
+        ans.operator = _copy_part(s.operator)
+        ans.value = _copy_part(s.value)
+        ans.insensitive = _copy_part(s.insensitive)
     return ans
 
 
 def _copy_raws(r: Raws) -> Raws:
     ans = Raws(r.value)
-    for k in ('namespace', 'attribute', 'operator', 'insensitive_flag', 'sensitive_flag'):
-        setattr(ans, k, getattr(r, k))
+    ans.namespace = r.namespace
+    ans.attribute = r.attribute
+    ans.operator = r.operator
+    ans.insensitive_flag = r.insensitive_flag
+    ans.sensitive_flag = r.sensitive_flag
     if r.spaces is not None:
         s = ans.spaces = RawSpaces(r.spaces.before, r.spaces.after)
         for k in ('attribute', 'operator', 'value', 'insensitive', 'namespace'):
@@ -508,7 +514,8 @@ class Node:
         return cloned
 
     def _check_clone_depth(self, depth: int) -> None:
-        if depth + _clone_depth(self) > MAX_NESTING_DEPTH:
+        # _clone_depth() is at most 4: it only needs computing near the limit
+        if depth + 4 > MAX_NESTING_DEPTH and depth + _clone_depth(self) > MAX_NESTING_DEPTH:
             raise SelectorError(f'Cannot clone selector: nesting depth exceeds the maximum of {MAX_NESTING_DEPTH}.')
 
     def _clone(self, parent: Container | None, depth: int) -> Node:
@@ -583,7 +590,12 @@ class Node:
         self.raws.spaces.after = raw
 
     def value_to_string(self) -> str:
-        return _js(self.stringify_property('value'))
+        # stringify_property('value'), without looking the names up
+        raw = self.raws.value
+        if raw:
+            return raw
+        value = self.value
+        return value if type(value) is str else _js(value)
 
     def to_string(self) -> str:
         """What the node prints as, as toString() in the JavaScript."""

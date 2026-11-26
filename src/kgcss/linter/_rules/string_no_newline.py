@@ -20,7 +20,7 @@ RE_NEWLINE: Final = re.compile(r'\r?\n')
 
 
 def check_text(ctx: Context, node: Node, text: str, start: int) -> None:
-    if not RE_NEWLINE.search(text):
+    if not RE_NEWLINE.search(text) or ('"' not in text and "'" not in text):  # a newline in a string
         return
 
     def on_error(err: ParseError) -> None:

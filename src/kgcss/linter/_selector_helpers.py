@@ -9,7 +9,7 @@ same results, and code point order is used.
 """
 
 import re
-from typing import Final, NamedTuple
+from typing import Final, NamedTuple, cast
 
 from kgcss.linter._postcss import JS_WHITESPACE, AtRule, Container, Rule
 from kgcss.linter._selector_parser import (
@@ -152,12 +152,23 @@ class Resolved(NamedTuple):
     nested: bool
 
 
-def resolve_nested_selectors_for_rule(rule: Rule) -> list[Resolved]:
+def resolve_nested_selectors_for_rule(rule: Rule, cache: dict[object, object] | None = None) -> list[Resolved]:
     """resolveNestedSelectorsForRule(): each selector of the rule, with what it resolves to when nested.
 
-    Where resolving raises (too many combinations), where stylelint throws, the rule is skipped.
+    Where resolving raises (too many combinations), where stylelint throws, the rule is skipped. As
+    stylelint does, the result is cached for the rule, in cache (which lives for one run of lint()).
     """
-    own = parse_selector_or_none(rule_selector(rule))
+    key = ('resolve_nested_selectors_for_rule', id(rule))
+    if cache is not None and key in cache:
+        return cast('list[Resolved]', cache[key])
+    ans = _resolve_nested_selectors_for_rule(rule, cache)
+    if cache is not None:
+        cache[key] = ans
+    return ans
+
+
+def _resolve_nested_selectors_for_rule(rule: Rule, cache: dict[object, object] | None) -> list[Resolved]:
+    own = parse_selector_or_none(rule_selector(rule), cache)
     if own is None:
         return []
     ancestors: list[Container] = []
@@ -175,7 +186,7 @@ def resolve_nested_selectors_for_rule(rule: Rule) -> list[Resolved]:
                 continue
             if not is_standard_syntax_rule(child):
                 return []
-            child_ast = parse_selector_or_none(rule_selector(child))
+            child_ast = parse_selector_or_none(rule_selector(child), cache)
             if child_ast is None:
                 return []
             ast = child_ast if ast is None else resolve_nested_selector(child_ast, ast)

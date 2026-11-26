@@ -10,8 +10,9 @@ parses CSS as browsers do, gives a mutable object model of sheets, rules,
 selectors, declarations and values, and writes it back, reformatted or
 byte for byte. It also rewrites URLs and handles `@import`, matches
 Selectors Level 4 against lxml and ElementTree trees, and covers media
-queries, colors, fonts and shorthand properties. It runs on regular and
-free-threaded Python 3.14 and later.
+queries, colors, fonts and shorthand properties, and lints stylesheets
+with the rules of stylelint. It runs on regular and free-threaded Python
+3.14 and later.
 
 ```python
 >>> import kgcss

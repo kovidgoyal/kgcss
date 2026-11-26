@@ -8,7 +8,7 @@ expressions are translated with their ASCII-only \\w and \\d.
 
 import re
 from collections.abc import Callable, Iterator
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, cast
 
 from kgcss.linter._postcss import JS_WHITESPACE, AtRule, Comment, Container, Declaration, Node, Root, Rule
 
@@ -423,20 +423,27 @@ def at_rule_param_index(at_rule: AtRule) -> int:
     return 1 + len(at_rule.name) + len(at_rule.raws.after_name or '')
 
 
-def parse_selector_or_none(selector: str) -> SelectorRoot | None:
+def parse_selector_or_none(selector: str, cache: dict[object, object] | None = None) -> SelectorRoot | None:
     """parseSelector(): the parsed selector, or None if it is empty or does not parse.
 
     stylelint reports a selector that does not parse as a parse error, not as a
-    problem: such selectors are skipped here.
+    problem: such selectors are skipped here. With cache (which lives for one
+    run of lint()), the tree is shared: the caller must not change it.
     """
     from kgcss.linter._selector_parser import SelectorError, parse_selector
 
     if not selector:
         return None
+    key = ('parse_selector', selector)
+    if cache is not None and key in cache:
+        return cast('SelectorRoot | None', cache[key])
     try:
-        return parse_selector(selector)
+        ans: SelectorRoot | None = parse_selector(selector)
     except SelectorError:
-        return None
+        ans = None
+    if cache is not None:
+        cache[key] = ans
+    return ans
 
 
 RE_KEYFRAMES_NAME: Final = re.compile(r'^(-(o|moz|ms|webkit)-)?keyframes$', re.IGNORECASE)

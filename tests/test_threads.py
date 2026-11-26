@@ -547,3 +547,26 @@ def test_log_handler_runs_outside_the_sheet_lock() -> None:
     assert sheet.rules[0].style['color'] == 'red'  # ty: ignore[missing-attribute]
     assert finished == [True]
     assert [e.message for e in sheet.errors] == ['Invalid rule ignored']
+
+
+def test_concurrent_lint() -> None:
+    # Each thread lints its own sheet and a shared one, with fixes, while the rule modules load lazily
+    sheets = [
+        f'@foo{{}} a{{colr:#ff;;}} .c{i}{{color:red;color:blue}} .c{i}{{}} b{{width:calc(1px+2px)}} '
+        f'@media (widht:1px){{x:hovr{{margin:1pix}}}} p{{font-family:Arial}}'
+        for i in range(THREADS)
+    ]
+    expected = [(kgcss.lint(css), kgcss.lint(css, fix=True)) for css in sheets]
+    barrier = threading.Barrier(THREADS)
+
+    def work(idx: int) -> bool:
+        barrier.wait()
+        ok = True
+        for _ in range(3 * STRESS):
+            css = sheets[idx]
+            ok = ok and kgcss.lint(css) == expected[idx][0] and kgcss.lint(css, fix=True) == expected[idx][1]
+            ok = ok and kgcss.lint(sheets[0]) == expected[0][0]
+        return ok
+
+    assert all(run_concurrently(work))
+    check_gil()

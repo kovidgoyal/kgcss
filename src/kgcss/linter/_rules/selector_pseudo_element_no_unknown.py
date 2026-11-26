@@ -24,7 +24,7 @@ def check(root: Root, ctx: Context) -> None:
     for rule in root.walk_rules():
         if ':' not in rule.selector or not is_standard_syntax_rule(rule):
             continue
-        parsed = parse_selector_or_none(rule_selector(rule))
+        parsed = parse_selector_or_none(rule_selector(rule), ctx.cache)
         if parsed is None:
             continue
         pseudos: list[Pseudo] = []

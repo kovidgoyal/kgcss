@@ -39,6 +39,8 @@ from kgcss.linter._utils import (
 OPTIONS: Final = frozenset({'ignoreFunctions', 'ignoreUnits'})
 KNOWN_UNITS: Final = UNITS - {'x'}  # x is often a typo for px: it is known only where a resolution is
 RE_DIMENSION: Final = re.compile(r'\d[%\w-]', re.ASCII)
+RE_UNIT: Final = re.compile(r'(?<=[0-9])[-A-Za-z_][-A-Za-z0-9_]*')
+RE_NO_DIMENSIONS: Final = re.compile(r'#[-A-Za-z0-9_]+|"[^"\n\r\f]*"|\'[^\'\n\r\f]*\'|url\([^"\'()]*\)', re.IGNORECASE)
 RE_RESOLUTION_FEATURE: Final = re.compile(r'^(?:min-|max-)?resolution$', re.IGNORECASE)
 RE_MEDIA: Final = re.compile(r'^media$', re.IGNORECASE)
 RE_UNICODE_RANGE: Final = re.compile(r'^unicode-range$', re.IGNORECASE)
@@ -47,9 +49,16 @@ RE_FONT_FACE: Final = re.compile(r'^font-face$', re.IGNORECASE)
 type State = dict[str, bool]
 
 
-def tokens_with_unknown_units(value: str) -> list[CSSToken] | None:
+def tokens_with_unknown_units(value: str, quick: bool = True) -> list[CSSToken] | None:
     if not RE_DIMENSION.search(value):
         return None
+    # A quick check: in ASCII text without escapes, the unit of a dimension token is a run of ident
+    # characters after a digit. When all such runs are known units, no unit can be unknown.
+    # Hashes, strings and unquoted urls, which hold no dimension, are left out of the check.
+    if quick and value.isascii() and '\\' not in value:
+        text = RE_NO_DIMENSIONS.sub(' ', value)
+        if all(unit.lower() in KNOWN_UNITS for unit in RE_UNIT.findall(text)):
+            return None
     tokens = tokenize(value)
     if any(t.type is TokenType.DIMENSION and (t.numeric_data.unit or '').lower() not in KNOWN_UNITS for t in tokens):
         return tokens
@@ -82,7 +91,7 @@ def check(root: Root, ctx: Context) -> None:
     for at_rule in root.walk_at_rules():
         if not RE_MEDIA.match(at_rule.name) or not is_standard_syntax_at_rule(at_rule):
             continue
-        if (tokens := tokens_with_unknown_units(at_rule_params(at_rule))) is None:
+        if (tokens := tokens_with_unknown_units(at_rule_params(at_rule), not ctx.options)) is None:
             continue
         start = at_rule_param_index(at_rule)
 
@@ -108,7 +117,7 @@ def check(root: Root, ctx: Context) -> None:
         if RE_UNICODE_RANGE.match(decl.prop) and isinstance(parent, AtRule) and RE_FONT_FACE.match(parent.name):
             continue
         value = declaration_value(decl)
-        if not is_standard_syntax_value(value) or (tokens := tokens_with_unknown_units(value)) is None:
+        if not is_standard_syntax_value(value) or (tokens := tokens_with_unknown_units(value, not ctx.options)) is None:
             continue
         start = declaration_value_index(decl)
 

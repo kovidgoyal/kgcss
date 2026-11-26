@@ -241,7 +241,10 @@ def kgcss_workloads() -> dict[str, Workload]:
                     stack.append(kgcss.syntax.parse_block_contents(node.block))
         return count
 
-    return {'tokenize': tokenize, 'parse': parse, 'full': full, **kgcss_cssom_workloads()}
+    def lint(css: str) -> int:
+        return len(kgcss.lint(css).problems)
+
+    return {'tokenize': tokenize, 'parse': parse, 'full': full, 'lint': lint, **kgcss_cssom_workloads()}
 
 
 def rewrite_url(url: str) -> str:

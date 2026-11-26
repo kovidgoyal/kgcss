@@ -88,7 +88,7 @@ def check(root: Root, ctx: Context) -> None:
             or is_keyframe_rule(rule)
         ):
             continue
-        parsed = parse_selector_or_none(rule_selector(rule))
+        parsed = parse_selector_or_none(rule_selector(rule), ctx.cache)
         if parsed is None:
             continue
         tags: list[Tag] = []

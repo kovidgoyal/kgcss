@@ -15,7 +15,10 @@ def check(root: Root, ctx: Context) -> None:
             continue
         seen: set[str] = set()
         for rule in keyframes.walk_rules():
-            if not is_standard_syntax_rule(rule) or (parsed := parse_selector_or_none(rule_selector(rule))) is None:
+            if (
+                not is_standard_syntax_rule(rule)
+                or (parsed := parse_selector_or_none(rule_selector(rule), ctx.cache)) is None
+            ):
                 continue
             for selector in parsed.nodes:
                 assert isinstance(selector, Selector)

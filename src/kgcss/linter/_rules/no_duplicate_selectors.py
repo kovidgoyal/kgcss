@@ -49,7 +49,7 @@ def check(root: Root, ctx: Context) -> None:
         seen = contexts.setdefault(at_rule_context(rule), {})
         rule_line = ctx.source.position(rule.start or 0).line
         if disallow_in_list:
-            for entry in resolve_nested_selectors_for_rule(rule):
+            for entry in resolve_nested_selectors_for_rule(rule, ctx.cache):
                 for resolved in list(entry.resolved.nodes):
                     normalized = normalize_selector(resolved, ctx.cache).string
                     if ctx.matches('ignoreSelectors', normalized):
@@ -63,7 +63,7 @@ def check(root: Root, ctx: Context) -> None:
             continue
         # The selectors of the rule itself
         in_list: dict[str, int] = {}
-        if (parsed := parse_selector_or_none(rule_selector(rule))) is not None:
+        if (parsed := parse_selector_or_none(rule_selector(rule), ctx.cache)) is not None:
             for selector in list(parsed.nodes):
                 normalized = normalize_selector(selector, ctx.cache).string
                 if ctx.matches('ignoreSelectors', normalized):
@@ -75,7 +75,7 @@ def check(root: Root, ctx: Context) -> None:
                 text, index, end_index = stripped_selector_source(selector)
                 complain(rule, text, index, end_index, line)
         # The selector list as a whole, against those of other rules
-        nodes = [n for entry in resolve_nested_selectors_for_rule(rule) for n in entry.resolved.nodes]
+        nodes = [n for entry in resolve_nested_selectors_for_rule(rule, ctx.cache) for n in entry.resolved.nodes]
         if not nodes or any(ctx.matches('ignoreSelectors', normalize_selector(n, ctx.cache).string) for n in nodes):
             continue
         normalized = normalize_selector(SelectorRoot(value='', nodes=nodes), ctx.cache).string

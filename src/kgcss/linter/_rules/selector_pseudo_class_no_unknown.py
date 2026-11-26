@@ -33,22 +33,22 @@ OPTIONS: Final = frozenset({'ignorePseudoClasses'})
 RE_LEADING_COLONS: Final = re.compile(r'^:*')
 
 
-def pseudos_of(selector: str) -> list[Pseudo]:
-    parsed = parse_selector_or_none(selector)
+def pseudos_of(selector: str, cache: dict[object, object]) -> list[Pseudo]:
+    parsed = parse_selector_or_none(selector, cache)
     found: list[Pseudo] = []
     if parsed is not None:
         parsed.walk_pseudos(found.append)
     return found
 
 
-def has_nested_webkit_scrollbar_ancestor(node: Node) -> bool:
+def has_nested_webkit_scrollbar_ancestor(node: Node, cache: dict[object, object]) -> bool:
     current = node.parent
     while current is not None:
         if isinstance(current, Rule):
             selector = rule_selector(current)
             if '::' in selector and any(
                 p.value.startswith('::') and p.value.lower()[2:] in WEBKIT_SCROLLBAR_PSEUDO_ELEMENTS
-                for p in pseudos_of(selector)
+                for p in pseudos_of(selector, cache)
             ):
                 return True
         current = current.parent
@@ -56,7 +56,7 @@ def has_nested_webkit_scrollbar_ancestor(node: Node) -> bool:
 
 
 def check_selector(selector: str, node: Rule | AtRule, ctx: Context) -> None:
-    for pseudo in pseudos_of(selector):
+    for pseudo in pseudos_of(selector, ctx.cache):
         value = pseudo.value
         if not is_standard_syntax_selector(value) or value.startswith((':--', '::')):
             continue
@@ -93,7 +93,7 @@ def check_selector(selector: str, node: Rule | AtRule, ctx: Context) -> None:
             elif (
                 name in WEBKIT_SCROLLBAR_PSEUDO_CLASSES
                 and nesting_in_compound
-                and has_nested_webkit_scrollbar_ancestor(node)
+                and has_nested_webkit_scrollbar_ancestor(node, ctx.cache)
             ):
                 continue
             index = selector_index(pseudo)

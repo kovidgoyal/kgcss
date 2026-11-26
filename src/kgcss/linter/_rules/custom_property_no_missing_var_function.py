@@ -18,6 +18,7 @@ from kgcss.linter._value_parser import ValueNode, parse
 
 RE_PROPERTY: Final = re.compile(r'^property$', re.IGNORECASE)
 RE_TRAILING_SEMICOLONS: Final = re.compile(r';+$')
+RE_DASHED_WORD: Final = re.compile(r'--[^\x00-\x20"\',:/()]*')
 
 
 def declared_names(root: Root) -> set[str]:
@@ -82,7 +83,21 @@ def check(root: Root, ctx: Context) -> None:
             index = declaration_value_index(decl) + node.source_index
             ctx.report(decl, f'Missing var function for "{value}"', (value,), index=index, end_index=index + len(value))
 
+    if not known:
+        return
+
+    def may_have_problem(value: str) -> bool:
+        """A quick check: a problem needs a word of the value that is a known name.
+
+        postcss-value-parser ends words at whitespace, quotes, commas, colons,
+        slashes and parentheses; escapes, * (in calc()) and unbalanced
+        parentheses make the words differ, and such values are checked in full.
+        """
+        if '\\' in value or '*' in value or value.count('(') != value.count(')'):
+            return True
+        return any(word.rstrip(';') in known for word in RE_DASHED_WORD.findall(value))
+
     for decl in root.walk_decls():
-        if '--' in decl.value and not accepts_dashed_ident(decl.prop):
+        if '--' in decl.value and may_have_problem(decl.value) and not accepts_dashed_ident(decl.prop):
             for node in parse(decl.value):
                 visit(node, decl)

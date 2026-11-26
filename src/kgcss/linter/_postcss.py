@@ -15,10 +15,11 @@ string semantics that matter are spelt out: its whitespace (\\s, trim()) and
 its ASCII-only \\w and \\d.
 """
 
+import builtins
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import ClassVar, Final, NamedTuple
+from typing import ClassVar, Final, NamedTuple, cast
 
 # JavaScript's \s, which trim() also strips
 JS_WHITESPACE: Final = (
@@ -299,13 +300,41 @@ class Container(Node):
 
 
 class Root(Container):
-    __slots__ = ('css',)
+    __slots__ = ('by_type', 'css', 'descendants')
     type: ClassVar[str] = 'root'
 
     def __init__(self, css: str) -> None:
         super().__init__()
         self.nodes = []
         self.css = css  # the text that was parsed: source.input.css
+        self.descendants: list[Node] | None = None
+        self.by_type: dict[builtins.type[Node], list[Node]] = {}
+
+    # The lists of nodes are made once: the rules do not change the tree
+
+    def walk(self) -> Iterator[Node]:
+        """Every node, as Container.walk()."""
+        if self.descendants is None:
+            self.descendants = list(super().walk())
+        return iter(self.descendants)
+
+    def _of_type[T: Node](self, cls: builtins.type[T]) -> Iterator[T]:  # type is a class attribute here
+        nodes = self.by_type.get(cls)
+        if nodes is None:
+            nodes = self.by_type[cls] = [n for n in self.walk() if isinstance(n, cls)]
+        return cast('Iterator[T]', iter(nodes))
+
+    def walk_decls(self) -> Iterator[Declaration]:
+        return self._of_type(Declaration)
+
+    def walk_rules(self) -> Iterator[Rule]:
+        return self._of_type(Rule)
+
+    def walk_at_rules(self) -> Iterator[AtRule]:
+        return self._of_type(AtRule)
+
+    def walk_comments(self) -> Iterator[Comment]:
+        return self._of_type(Comment)
 
 
 class AtRule(Container):

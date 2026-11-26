@@ -7,6 +7,7 @@ with @csstools' tokenizer and parser, as stylelint reads them; function
 names are unescaped.
 """
 
+import re
 from typing import Final
 
 from kgcss._css_data import CSS_TREE_FUNCTIONS
@@ -23,6 +24,7 @@ from kgcss.linter._postcss import Root
 from kgcss.linter._utils import declaration_value_index, is_standard_syntax_value, vendor_prefix
 
 OPTIONS: Final = frozenset({'ignoreFunctions'})
+RE_CALL: Final = re.compile(r'[-A-Za-z0-9_]+(?=\()')
 
 
 def functions(value: str) -> list[FunctionNode]:
@@ -36,10 +38,28 @@ def functions(value: str) -> list[FunctionNode]:
     return found
 
 
+def is_known(name: str) -> bool:
+    return name.startswith('--') or bool(vendor_prefix(name)) or name.lower() in CSS_TREE_FUNCTIONS
+
+
+def all_known(value: str) -> bool:
+    """A quick check that a value can have no unknown function.
+
+    In ASCII text without escapes, the name of a function token is a run of
+    ident characters just before a (. When all such runs are known names (or
+    custom or prefixed ones), no function can be unknown. Otherwise the value
+    is checked in full.
+    """
+    return value.isascii() and '\\' not in value and all(is_known(name) for name in RE_CALL.findall(value))
+
+
 def check(root: Root, ctx: Context) -> None:
+    quick = not ctx.options
     for decl in root.walk_decls():
         value = decl.value
         if '(' not in value or not is_standard_syntax_value(value):
+            continue
+        if quick and all_known(value):
             continue
         for func in functions(value):
             name = func.get_name()
