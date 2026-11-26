@@ -610,7 +610,10 @@ def test_to_css_round_trip(color: Color) -> None:
     assert again.to_css() == css
     assert again.space == color.space
     assert all(close(a, b) for a, b in zip((*again.channels, again.alpha), (*color.channels, color.alpha), strict=True))
-    assert again.to_rgba() == pytest.approx(color.to_rgba(), abs=1e-5), css
+    # to_css() rounds channels to 6 decimal places, an error of up to 5e-7, which the conversion to
+    # sRGB multiplies: by up to about 5 in the matrices from XYZ, and by 12.92 in the linear part of
+    # the transfer function, near 0. color(xyz-d50 none 0.027021 -1.5) is off by 1.2e-5.
+    assert again.to_rgba() == pytest.approx(color.to_rgba(), abs=1e-4), css
 
 
 @given(color_pieces())

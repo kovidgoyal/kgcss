@@ -16,7 +16,7 @@ calibre normalizations (S3). Escapes are always kept as written.
 import codecs
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Final, Literal
 
 from kgcss._kgcss import write_declarations as c_write_declarations
 from kgcss._kgcss import write_values as c_write_values
@@ -784,18 +784,27 @@ def gap_between(previous: Rule | None, rule: Rule) -> str | None:
     return gap if gap and not gap.strip(CSS_WHITESPACE) else None
 
 
+VERBATIM: Final = SerializeOptions(normalize=False, keep_comments=True)
+
+
 def import_text(rule: Rule, options: SerializeOptions) -> str:
     from kgcss.cssom.rules import ImportRule
 
     assert isinstance(rule, ImportRule)
     href = serialize_string(rule.href) if rule._href_is_string else format_url(rule.href, False)
     parts = ['@import', href]
+
+    def verbatim(text: str) -> str:
+        # The text comes from the source or the user: rewriting its tokens closes what is left
+        # open and keeps a final backslash from escaping the ')' or ';' written after it
+        return write_values(parse_component_value_list(text), VERBATIM, mode='verbatim')
+
     if rule.layer is not None:
-        parts.append(f'layer({rule.layer})' if rule.layer else 'layer')
+        parts.append(f'layer({verbatim(rule.layer)})' if rule.layer else 'layer')
     if rule.supports is not None:
-        parts.append(f'supports({rule.supports})')
-    if rule.media.media_text:
-        parts.append(rule.media.media_text)
+        parts.append(f'supports({verbatim(rule.supports)})')
+    if media := verbatim(rule.media.media_text):
+        parts.append(media)
     return ' '.join(parts) + ';'
 
 
@@ -804,7 +813,7 @@ def unknown_at_rule_text(rule: Rule, options: SerializeOptions) -> str:
     from kgcss.cssom.rules import UnknownAtRule
 
     assert isinstance(rule, UnknownAtRule)
-    verbatim = SerializeOptions(normalize=False, keep_comments=True)
+    verbatim = VERBATIM
     if rule._source is not None and not rule._dirty:
         text = write_values(parse_component_value_list(rule._source.source_text), verbatim, mode='verbatim')
         if not text.endswith((';', '}')):

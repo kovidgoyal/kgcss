@@ -83,6 +83,18 @@ def significant(values: ComponentValueList) -> list[Token | Block | Function]:
     return [v for v in values if not (isinstance(v, Token) and v.type in (TokenType.WHITESPACE, TokenType.COMMENT))]
 
 
+def strip_whitespace(text: str) -> str:
+    """Strip CSS whitespace from both ends of text, except the whitespace character that follows a
+    final backslash: dropping it would turn a backslash ended by a newline, or an escaped space, into
+    an escape of whatever is written after the text."""
+    text = text.lstrip(CSS_WHITESPACE)
+    end = len(text.rstrip(CSS_WHITESPACE))
+    backslashes = end - len(text.rstrip(CSS_WHITESPACE).rstrip('\\'))
+    if backslashes % 2:
+        end += 2 if text.startswith('\r\n', end) else 1
+    return text[:end]
+
+
 def ascii_lower(name: str) -> str:
     return name.lower() if name.isascii() else name
 
@@ -184,7 +196,7 @@ class Builder:
             if block is None:
                 self.invalid(node, f'@{name} must have a block')
                 return None
-            grouping = cls(node.prelude.text.strip(CSS_WHITESPACE))
+            grouping = cls(strip_whitespace(node.prelude.text))
             grouping._keyword = name
             self.init(grouping, node, parent)
             nodes = parse_block_contents(block)
@@ -197,14 +209,12 @@ class Builder:
                 self.invalid(node, f'@{name} must have a block')
                 return None
             lazy: LazyBlockRule
-            lazy = FontFaceRule() if name == 'font-face' else PageRule(node.prelude.text.strip(CSS_WHITESPACE))
+            lazy = FontFaceRule() if name == 'font-face' else PageRule(strip_whitespace(node.prelude.text))
             lazy._block_owner = node
             rule = lazy
         else:
             prelude = node.prelude.text
-            rule = UnknownAtRule(
-                node.name, prelude.strip(CSS_WHITESPACE), None if block is None else block.content.text
-            )
+            rule = UnknownAtRule(node.name, strip_whitespace(prelude), None if block is None else block.content.text)
         self.init(rule, node, parent)
         return rule
 
@@ -238,10 +248,10 @@ class Builder:
         ):
             layer, rest = '', rest[1:]
         elif rest and isinstance(rest[0], Function) and ascii_lower(rest[0].name) == 'layer':
-            layer, rest = rest[0].arguments.text.strip(CSS_WHITESPACE), rest[1:]
+            layer, rest = strip_whitespace(rest[0].arguments.text), rest[1:]
         if rest and isinstance(rest[0], Function) and ascii_lower(rest[0].name) == 'supports':
-            supports, rest = rest[0].arguments.text.strip(CSS_WHITESPACE), rest[1:]
-        media_text = self.stream.source[rest[0].pos : node.prelude.end].strip(CSS_WHITESPACE) if rest else ''
+            supports, rest = strip_whitespace(rest[0].arguments.text), rest[1:]
+        media_text = strip_whitespace(self.stream.source[rest[0].pos : node.prelude.end]) if rest else ''
         rule = ImportRule(href, media_text, layer, supports)
         rule._href_is_string = isinstance(values[0], Token) and values[0].type is TokenType.STRING
         self.init(rule, node, None)

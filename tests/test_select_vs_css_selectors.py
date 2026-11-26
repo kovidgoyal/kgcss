@@ -26,6 +26,9 @@ in the comparison:
   div div. Select always raises, so those cases are not compared.
 - css_selectors does not always return elements in document order, so its
   results are sorted.
+- css_selectors matches attribute names case-insensitively, except for
+  :any-link, which looks only for href in lower case. Trees with an HREF
+  attribute are not compared on :any-link.
 - css_selectors strips namespaces from tags and attribute names only when
   the root element has one, so the wrapper is in the namespace of the tree,
   and trees without a namespace have no namespaced attributes.
@@ -148,6 +151,8 @@ def test_same_as_css_selectors(tree: etree._Element, css: str, ignore: bool) -> 
         return
     if ans is None:
         # Not comparable: css_selectors only raises when it gets to the part it cannot match
+        return
+    if ':any-link' in css and any('HREF' in e.attrib for e in document.iter()):
         return
     assert ans == theirs(document, css, ignore), css
 

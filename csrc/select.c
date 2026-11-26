@@ -601,7 +601,7 @@ ensure_lang(kg_Snapshot *s) {
 typedef enum {
     P_NONE = 0, P_ROOT, P_SCOPE, P_ANY_LINK, P_EMPTY, P_FIRST_CHILD, P_LAST_CHILD, P_ONLY_CHILD,
     P_FIRST_OF_TYPE, P_LAST_OF_TYPE, P_ONLY_OF_TYPE,
-    P_ALL,  /* an inappropriate pseudo-class or pseudo-element, ignored: matches everything */
+    P_IGNORED,  /* an inappropriate pseudo-class or pseudo-element, ignored: matches everything */
     P_IS, P_NOT, P_HAS,
     P_NTH_CHILD, P_NTH_LAST_CHILD, P_NTH_OF_TYPE, P_NTH_LAST_OF_TYPE,
 } pseudo_code;
@@ -694,7 +694,7 @@ prepare_node(prepared *p, kg_Snapshot *s, uint32_t i, bool ignore) {
                     Py_RETURN_NONE;
                 }
             }
-            if (ignore && in_list(node->name, inappropriate)) { p->code[i] = P_ALL; Py_RETURN_NONE; }
+            if (ignore && in_list(node->name, inappropriate)) { p->code[i] = P_IGNORED; Py_RETURN_NONE; }
             return PyUnicode_FromFormat("The pseudo-class :%U is not supported", node->name);
         }
         case SN_SELECTOR_PSEUDO: {
@@ -740,7 +740,7 @@ prepare_node(prepared *p, kg_Snapshot *s, uint32_t i, bool ignore) {
             if (!ignore || (node->flags & F_FUNCTIONAL) || !in_list(node->name, inappropriate)) {
                 return PyUnicode_FromFormat("The pseudo-element ::%U is not supported", node->name);
             }
-            p->code[i] = P_ALL;
+            p->code[i] = P_IGNORED;
             /* The pseudo-classes after it */
             for (uint32_t k = i + 1; k < node->subtree_end; k = nodes[k].subtree_end) {
                 PyObject *r = prepare_node(p, s, k, ignore);
@@ -1049,7 +1049,7 @@ match_simple(mctx *m, uint32_t i, uint32_t e) {
                 case P_FIRST_OF_TYPE: return s->type_index[e] == 0;
                 case P_LAST_OF_TYPE: return s->type_index[e] + 1 == s->type_count[e];
                 case P_ONLY_OF_TYPE: return s->type_count[e] == 1;
-                case P_ALL: return true;
+                case P_IGNORED: return true;
                 default: return false;
             }
         case SN_SELECTOR_PSEUDO: {

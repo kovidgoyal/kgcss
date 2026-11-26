@@ -171,15 +171,20 @@ def prepare() -> None:
     ext_dir.mkdir(parents=True, exist_ok=True)
     (ext_dir / '__init__.py').touch()
     target = ext_dir / f'tokenizer{sysconfig.get_config_var("EXT_SUFFIX")}'
-    if not target.exists():
+    # No contraction of a * b + c into fused multiply-adds, as kgcss is built (-std=c99 implies it
+    # for GCC): where the compiler targets CPUs with FMA, the color conversions would round
+    # differently from kgcss's, and tests/test_colors.py compares the results to 1e-12
+    flags = ['-shared', '-fPIC', '-O3', '-ffp-contract=off', '-DCALIBRE_MODINIT_FUNC=PyMODINIT_FUNC']
+    stamp = ext_dir / 'build-flags'
+    if not target.exists() or not stamp.exists() or stamp.read_text() != ' '.join(flags):
         print('Building calibre tinycss C tokenizer')
         cc = (sysconfig.get_config_var('CC') or 'cc').split()
         subprocess.run(
-            [*cc, '-shared', '-fPIC', '-O3', '-DCALIBRE_MODINIT_FUNC=PyMODINIT_FUNC',
-             f'-I{sysconfig.get_path("include")}',
+            [*cc, *flags, f'-I{sysconfig.get_path("include")}',
              str(CALIBRE / 'tinycss' / 'tokenizer.c'), str(CALIBRE / 'tinycss' / 'color.c'), '-o', str(target)],
             check=True,
         )  # fmt: skip
+        stamp.write_text(' '.join(flags))
     print('Corpus:', ', '.join(sorted(p.name for p in CORPUS.glob('*.css'))))
 
 

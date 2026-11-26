@@ -8,6 +8,7 @@ plugin of calibre's manual runs on the facade unchanged.
 """
 
 import doctest
+import importlib
 import re
 from collections.abc import Callable
 from types import ModuleType
@@ -118,10 +119,11 @@ def test_same_as_css_parser() -> None:
     import logging
 
     css_parser: ModuleType = pytest.importorskip('css_parser')
-    from css_parser.css import CSSRule as RealCSSRule  # type: ignore[import-untyped]
+    # Imported dynamically: whether css_parser is installed (it has no type hints) differs between environments
+    real_css_rule: type = importlib.import_module('css_parser.css').CSSRule
 
     css_parser.log.setLevel(logging.CRITICAL)
-    real = observe(css_parser, RealCSSRule)
+    real = observe(css_parser, real_css_rule)
     ours = observe(kgcss.compat, CSSRule)
     mismatches = [(i, a, b) for i, (a, b) in enumerate(zip(real, ours, strict=True)) if a != b]
     assert [i for i, _, _ in mismatches] == list(DIFFERENCES), mismatches

@@ -690,11 +690,14 @@ put_decoded(abuf *b, int kind, const void *data, const kg_token *t, uint32_t sta
         Py_DECREF(s);
         if (!ok) return false;
     } else {
-        if (end - start >= sizeof(tmp)) return false;
-        for (uint32_t i = start; i < end; i++) {
-            const Py_UCS4 c = PyUnicode_READ(kind, data, i);
+        if (end < start || end - start >= sizeof(tmp)) return false;
+        n = end - start;
+        /* Index tmp by an offset below n < sizeof(tmp): with a separate counter some GCC versions
+         * lose the bound when vectorizing and warn about a write past the end */
+        for (size_t i = 0; i < n; i++) {
+            const Py_UCS4 c = PyUnicode_READ(kind, data, start + i);
             if (c > 127) return false;
-            tmp[n++] = (char)c;
+            tmp[i] = (char)c;
         }
     }
     if (n == 0) return false;

@@ -254,6 +254,28 @@ def test_unknown_at_rules_are_closed() -> None:
     assert serialize(UnknownAtRule('x')) == '@x;'
 
 
+@pytest.mark.parametrize(
+    ('css', 'expected'),
+    [
+        # A final backslash must not escape the ) or ; written after it
+        ('@import "a" \\', '@import "a" \\fffd ;'),
+        ('@import "a" supports(a\\', '@import "a" supports(a\\fffd );'),
+        ('@import "a" layer(a\\', '@import "a" layer(a\\fffd );'),
+        ('@import "a" screen and (\\', '@import "a" screen and (\\fffd );'),
+        # A backslash followed by a newline is a delimiter, and keeps its newline
+        ('@import "a" a\\\n', '@import "a" a\\\n;'),
+        ('@import "a" layer(a\\\n) x', '@import "a" layer(a\\\n) x;'),
+        ('@media a\\\n{x{y:z}}', '@media a\\\n {\n  x {\n    y: z;\n  }\n}'),
+        # An escaped space is part of the name
+        ('@media a\\  {x{y:z}}', '@media a\\  {\n  x {\n    y: z;\n  }\n}'),
+        ('@media a\\\\ {x{y:z}}', '@media a\\\\ {\n  x {\n    y: z;\n  }\n}'),
+    ],
+)
+def test_final_backslash_in_prelude(css: str, expected: str) -> None:
+    assert pretty(css) == expected
+    assert pretty(expected) == expected
+
+
 def test_unclosed_values_are_closed() -> None:
     # What EOF left open is closed, so the text that follows cannot be swallowed
     assert pretty('a { b: f(x') == 'a {\n  b: f(x);\n}'
@@ -348,6 +370,7 @@ def test_css_syntax_error_is_exported() -> None:
         'a:a/* x */1e3',  # a dropped comment in a value acts as whitespace
         'k { &:hover { l: m } /* c */ }',
         'a:b\\0\n(',  # a newline ending a hex escape becomes a space on a single line
+        '@import""\\',  # a backslash at EOF ending @import must not escape its ;
     ],
 )
 def test_found_by_property_tests(css: str) -> None:
