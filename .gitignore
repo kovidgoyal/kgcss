@@ -14,3 +14,4 @@ uv.lock
 compile_flags.txt
 .hypothesis/
 bench/.cache/
+CLAUDE.*
