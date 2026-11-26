@@ -351,7 +351,7 @@ def test_select_shared() -> None:
         select = kgcss.Select(document)
         roots = [div for div in document if div.get('class') == 'd3']
 
-        def work(idx: int, select: kgcss.Select = select, roots: list[ET.Element] = roots) -> list[object]:
+        def work(idx: int, select: kgcss.Select[ET.Element] = select, roots: list[ET.Element] = roots) -> list[object]:
             barrier.wait()
             out: list[object] = []
             out.append([e.get('id') for e in select('div.d1 > p.x2, p:empty + span, :not(div, p, span)')])
@@ -484,7 +484,7 @@ def test_empty_while_content_is_read_concurrently() -> None:
         select = kgcss.Select(root)
         barrier = threading.Barrier(THREADS)
 
-        def work(idx: int, select: kgcss.Select = select, barrier: threading.Barrier = barrier) -> int:
+        def work(idx: int, select: kgcss.Select[SlowElement] = select, barrier: threading.Barrier = barrier) -> int:
             barrier.wait()
             return len(list(select('p:empty')))
 

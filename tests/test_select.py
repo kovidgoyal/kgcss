@@ -10,6 +10,7 @@ matcher in selector_oracle.py, and with css_selectors itself.
 
 from collections.abc import Iterator
 from pathlib import Path
+from typing import assert_type
 
 import pytest
 from hypothesis import given
@@ -90,7 +91,7 @@ def ids_document() -> etree._Element:
 
 
 class Checker:
-    def __init__(self, select: Select) -> None:
+    def __init__(self, select: Select[etree._Element]) -> None:
         self.select = select
 
     def ids(self, selector: str) -> list[str | None]:
@@ -790,3 +791,22 @@ def test_matching_from_the_left(css: str) -> None:
     section = document[0]
     in_section = [e for e in expected if e is section or section in e.iterancestors()]
     assert list(select(css, root=section)) == in_section
+
+
+def test_select_is_generic_over_the_element_type() -> None:
+    # assert_type is checked by mypy: Select keeps the type of the elements of the tree it was made from
+    import xml.etree.ElementTree as ET
+
+    lxml_root = etree.fromstring('<a><b/></a>')
+    for select in (Select(lxml_root), Select(lxml_root.getroottree())):
+        assert_type(select, Select[etree._Element])
+        assert_type(select.root, etree._Element)
+        found = list(select('b'))
+        assert_type(found, list[etree._Element])
+        assert [e.tag for e in found] == ['b']
+    et_root = ET.fromstring('<a><b/></a>')
+    for et_select in (Select(et_root), Select(ET.ElementTree(et_root))):
+        assert_type(et_select, Select[ET.Element])
+        assert_type(list(et_select('b', root=et_root)), list[ET.Element])
+        assert et_select.root is et_root
+        assert et_select.matches(et_root[0], 'a > b')

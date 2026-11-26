@@ -3,7 +3,7 @@
 """Matching selectors against element trees: Select."""
 
 from collections.abc import Iterable, Iterator, Sequence
-from typing import Any
+from typing import Any, Protocol, overload
 
 from kgcss._kgcss import CompiledSelector, MatchError, Snapshot
 from kgcss.cssom.exceptions import ExpressionError
@@ -12,12 +12,16 @@ from kgcss.selectors import compile_selectors
 
 __all__ = ['Select']
 
-# An element of an ElementTree-style tree: lxml, html5-parser or xml.etree
-type Element = Any
 type SelectorArg = str | Selector | SelectorList | Iterable[Selector]
 
 
-class Select:
+class _Tree[E](Protocol):
+    """An ElementTree: lxml's _ElementTree or xml.etree's ElementTree, whose root is an E."""
+
+    def getroot(self) -> E | None: ...
+
+
+class Select[E]:
     """Select elements of a tree with CSS selectors::
 
         select = Select(root)
@@ -36,6 +40,10 @@ class Select:
     case-sensitive, as in standards mode HTML, or ASCII case-insensitive with
     quirks_mode=True, which is what css_selectors always did.
 
+    Select is generic over the type of the elements: a Select made from an
+    lxml tree is a Select[lxml.etree._Element], and returns those, from
+    xml.etree a Select[xml.etree.ElementTree.Element].
+
     Pseudo-classes and pseudo-elements that need a browser, such as :hover
     and ::before, raise ExpressionError when matched. With
     ignore_inappropriate_pseudo_classes=True, those in
@@ -43,22 +51,30 @@ class Select:
     selects every p.
     """
 
+    @overload
     def __init__(
-        self, root: Element, ignore_inappropriate_pseudo_classes: bool = False, *, quirks_mode: bool = False
+        self, root: _Tree[E], ignore_inappropriate_pseudo_classes: bool = False, *, quirks_mode: bool = False
+    ) -> None: ...
+    @overload
+    def __init__(
+        self, root: E, ignore_inappropriate_pseudo_classes: bool = False, *, quirks_mode: bool = False
+    ) -> None: ...
+    def __init__(
+        self, root: E | _Tree[E], ignore_inappropriate_pseudo_classes: bool = False, *, quirks_mode: bool = False
     ) -> None:
-        if hasattr(root, 'getroot'):  # an ElementTree
-            root = root.getroot()
-        self.root = root
-        document = root.getroottree().getroot() if hasattr(root, 'getroottree') else root
+        # Elements are duck typed: the C Snapshot only needs the ElementTree API
+        elem: Any = root.getroot() if hasattr(root, 'getroot') else root  # an ElementTree
+        self.root: E = elem
+        document = elem.getroottree().getroot() if hasattr(elem, 'getroottree') else elem
         self.ignore_inappropriate_pseudo_classes = ignore_inappropriate_pseudo_classes
         self._snapshot = Snapshot(document, quirks_mode)
-        self._scope = 0 if document is root else self._snapshot.index_of(root)
+        self._scope = 0 if document is elem else self._snapshot.index_of(elem)
 
     @property
     def quirks_mode(self) -> bool:
         return self._snapshot.quirks_mode
 
-    def select(self, selector: SelectorArg, root: Element | None = None) -> Iterator[Element]:
+    def select(self, selector: SelectorArg, root: E | None = None) -> Iterator[E]:
         """The elements matching the selector, in document order, each once. selector is text (a selector
         list), a Selector, a SelectorList or an iterable of Selectors. With root, only root and its
         descendants are returned, but matching still uses the whole document.
@@ -85,16 +101,16 @@ class Select:
 
     __call__ = select
 
-    def has_matches(self, selector: SelectorArg, root: Element | None = None) -> bool:
+    def has_matches(self, selector: SelectorArg, root: E | None = None) -> bool:
         """Whether the selector matches at least one element (of the subtree of root, if given)."""
         return bool(self._match(self._compile(selector), self._index(root), -1, True))
 
-    def matches(self, element: Element, selector: SelectorArg) -> bool:
+    def matches(self, element: E, selector: SelectorArg) -> bool:
         """Whether element matches the selector."""
         target = self._snapshot.index_of(element) if element is not None else -1
         return bool(self._match(self._compile(selector), 0, target, False))
 
-    def _index(self, element: Element | None) -> int:
+    def _index(self, element: E | None) -> int:
         if element is None:
             return 0
         try:
@@ -102,9 +118,7 @@ class Select:
         except KeyError:
             raise ValueError(f'{element!r} is not an element of the tree of this Select') from None
 
-    def _match(
-        self, compiled: Sequence[CompiledSelector], root: int, target: int, first_only: bool
-    ) -> list[Element] | bool:
+    def _match(self, compiled: Sequence[CompiledSelector], root: int, target: int, first_only: bool) -> list[E] | bool:
         try:
             return self._snapshot.match(
                 compiled, self.ignore_inappropriate_pseudo_classes, self._scope, root, target, first_only
