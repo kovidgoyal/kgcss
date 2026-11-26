@@ -897,3 +897,137 @@ def parse(css: str) -> tuple[Root, CssSyntaxError | None]:
         return Parser(css).parse(), None
     except CssSyntaxError as err:
         return SafeParser(css).parse(), err
+
+
+# Printing: node.toString(), PostCSS's lib/stringify.js and lib/stringifier.js
+
+RE_AT_NAME_END: Final = re.compile(r'[\t\n\f\r "#\'()/;\[\\\]{}]')
+RE_STYLE_TAG: Final = re.compile(r'(<)(/?style\b)', re.IGNORECASE)
+RE_COMMENT_OPEN: Final = re.compile(r'(<)(!--)')
+RE_NOT_SPACE_OR_SEMICOLON_AT_END: Final = re.compile(f'[^{re.escape(JS_WHITESPACE)};]$')
+DEFAULT_RAW: Final[dict[str, str | bool]] = {
+    'after': '\n',
+    'beforeClose': '\n',
+    'beforeComment': '\n',
+    'beforeDecl': '\n',
+    'beforeOpen': ' ',
+    'beforeRule': '\n',
+    'colon': ': ',
+    'commentLeft': ' ',
+    'commentRight': ' ',
+    'emptyBody': '',
+    'indent': '    ',
+    'semicolon': False,
+}
+
+
+def escape_html(text: str) -> str:
+    """escapeHTMLInCSS(): what PostCSS prints for <style, </style and <!--."""
+    if '<' not in text:
+        return text
+    return RE_COMMENT_OPEN.sub(r'\\3c \2', RE_STYLE_TAG.sub(r'\\3c \2', text))
+
+
+def _raw_semicolon(root: Root) -> bool | None:
+    for node in root.walk():
+        last = node.nodes[-1] if isinstance(node, Container) and node.nodes else None
+        if isinstance(last, Declaration) and node.raws.semicolon is not None:
+            return node.raws.semicolon
+    return None
+
+
+def _semicolon(node: Container) -> bool:
+    """raw(node, 'semicolon'), detected from the other blocks if the node has none."""
+    if node.raws.semicolon is not None:
+        return node.raws.semicolon
+    value = _raw_semicolon(node.root())
+    return False if value is None else value
+
+
+def _raw_value(node: Node, value: str, raw: RawValue | None) -> str:
+    return raw.raw if raw is not None and raw.value == value else value
+
+
+def _at_rule_start(node: AtRule) -> str:
+    params = _raw_value(node, node.params, node.raws.params) if node.params else ''
+    after_name = node.raws.after_name
+    if after_name is None:
+        after_name = ' ' if params else ''
+    elif after_name == '' and params and not RE_AT_NAME_END.match(params[0]):
+        after_name = ' '
+    return '@' + node.name + after_name + params
+
+
+def _is_custom_property(node: Declaration) -> bool:
+    if not node.prop.startswith('--'):
+        return False
+    before = node.raws.before
+    return before is None or not RE_NOT_SPACE_OR_SEMICOLON_AT_END.search(before)
+
+
+def _print(node: Node, semicolon: bool, out: list[str]) -> None:
+    if isinstance(node, Declaration):
+        text = node.prop + (node.raws.between if node.raws.between is not None else ': ')
+        text += _raw_value(node, node.value, node.raws.value)
+        if node.important:
+            text += node.raws.important or ' !important'
+        out.append(text + (';' if semicolon else ''))
+    elif isinstance(node, Comment):
+        left = node.raws.left if node.raws.left is not None else ' '
+        right = node.raws.right if node.raws.right is not None else ' '
+        out.append('/*' + left + node.text + right + '*/')
+    elif isinstance(node, Rule):
+        _block(node, _raw_value(node, node.selector, node.raws.selector), out)
+        if node.raws.own_semicolon:
+            out.append(node.raws.own_semicolon)
+    elif isinstance(node, AtRule):
+        start = _at_rule_start(node)
+        if node.nodes is not None:
+            _block(node, start, out)
+        else:
+            out.append(start + (node.raws.between or '') + (';' if semicolon else ''))
+    elif isinstance(node, Root):
+        _body(node, out)
+        if node.raws.after:
+            out.append(node.raws.after)
+
+
+def _block(node: Container, start: str, out: list[str]) -> None:
+    out.append(start + (node.raws.between if node.raws.between is not None else ' ') + '{')
+    if node.nodes:
+        _body(node, out)
+    if node.raws.after:  # a parsed container always has raws.after
+        out.append(node.raws.after)
+    out.append('}')
+
+
+def _body(node: Container, out: list[str]) -> None:
+    nodes = node.nodes or []
+    last = len(nodes) - 1
+    while last > 0 and isinstance(nodes[last], Comment):
+        last -= 1
+    semicolon = _semicolon(node)
+    for i, child in enumerate(nodes):
+        child_semicolon = last != i or semicolon
+        # A childless at-rule or a custom property followed by siblings must be terminated
+        if (
+            not child_semicolon
+            and i < len(nodes) - 1
+            and (
+                (isinstance(child, AtRule) and child.nodes is None)
+                or (isinstance(child, Declaration) and _is_custom_property(child))
+            )
+        ):
+            child_semicolon = True
+        before = child.raws.before
+        if before is None:
+            before = '' if isinstance(node, Root) and i == 0 else '\n'
+        out.append(before)
+        _print(child, child_semicolon, out)
+
+
+def to_string(node: Node) -> str:
+    """node.toString(): the node as PostCSS prints it, without its raws.before."""
+    out: list[str] = []
+    _print(node, False, out)
+    return escape_html(''.join(out))

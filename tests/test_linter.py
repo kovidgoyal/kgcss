@@ -13,17 +13,27 @@ from collections.abc import Collection
 
 import pytest
 
-from kgcss import LINT_RULES, LintProblem, LintRule, SyntaxProblem, SyntaxProblemKind, TextEdit, lint
+from kgcss import LINT_RULES, LintProblem, LintResult, LintRule, SyntaxProblem, SyntaxProblemKind, TextEdit, lint
+
+# The tests of the engine use these rules only
+ENGINE_RULES = frozenset(
+    {LintRule.AT_RULE_NO_UNKNOWN, LintRule.BLOCK_NO_EMPTY, LintRule.NO_EMPTY_SOURCE, LintRule.NO_EXTRA_SEMICOLONS}
+)
+OTHERS = frozenset(LintRule) - ENGINE_RULES
+
+
+def lint_some(css: str, disabled: Collection[LintRule] = (), fix: bool = False) -> LintResult:
+    return lint(css, disabled=OTHERS | frozenset(disabled), fix=fix)
 
 
 def rules_of(css: str, disabled: Collection[LintRule] = ()) -> list[str]:
-    return [p.rule.value for p in lint(css, disabled=disabled).problems]
+    return [p.rule.value for p in lint_some(css, disabled=disabled).problems]
 
 
 def test_problem() -> None:
-    (p,) = lint('a{}\n@foo  bar{b:c}').problems[:1]
+    (p,) = lint_some('a{}\n@foo  bar{b:c}').problems[:1]
     assert p == LintProblem(LintRule.BLOCK_NO_EMPTY, 'Empty block', (), 1, 3, 1, 2, 1, 4)
-    (p,) = [p for p in lint('a{}\n@foo  bar{b:c}').problems if p.rule is LintRule.AT_RULE_NO_UNKNOWN]
+    (p,) = [p for p in lint_some('a{}\n@foo  bar{b:c}').problems if p.rule is LintRule.AT_RULE_NO_UNKNOWN]
     assert (p.message, p.args, p.pos, p.end, p.line, p.column, p.end_line, p.end_column) == (
         'Unknown at-rule "@foo"',
         ('@foo',),
@@ -46,30 +56,30 @@ def test_order_and_disabled() -> None:
 
 def test_fix() -> None:
     css = 'a{b:c;;};\n;b{}'
-    result = lint(css)
+    result = lint_some(css)
     assert [p.fix for p in result.problems if p.fix] == [TextEdit(6, 7, ''), TextEdit(8, 9, ''), TextEdit(10, 11, '')]
-    fixed = lint(css, fix=True)
+    fixed = lint_some(css, fix=True)
     assert fixed.fixed == 'a{b:c;}\nb{}'
     assert [p.rule for p in fixed.problems] == [LintRule.BLOCK_NO_EMPTY]  # what is left, in the fixed text
     assert fixed.problems[0].line == 2
-    assert lint('a{b:c}', fix=True).fixed is None
-    assert lint(';', fix=True).fixed == ''
+    assert lint_some('a{b:c}', fix=True).fixed is None
+    assert lint_some(';', fix=True).fixed == ''
 
 
 def test_byte_order_mark() -> None:
-    (p,) = lint('﻿;a{b:c}').problems
+    (p,) = lint_some('\ufeff;a{b:c}').problems
     # Offsets index the text, line and column are stylelint's, which does not count the mark
     assert (p.pos, p.line, p.column, p.fix) == (1, 1, 1, TextEdit(1, 2, ''))
-    assert lint('﻿;a{b:c}', fix=True).fixed == '﻿a{b:c}'
+    assert lint_some('\ufeff;a{b:c}', fix=True).fixed == '\ufeffa{b:c}'
 
 
 def test_columns_are_code_points() -> None:
-    (p,) = lint('a{content:"\U0001f600"}b{}').problems
+    (p,) = lint_some('a{content:"\U0001f600"}b{}').problems
     assert (p.pos, p.column) == (15, 16)  # stylelint counts UTF-16 code units: 17
 
 
 def test_lines() -> None:
-    (p,) = lint('a{b:c}\r\n\n  x{}').problems
+    (p,) = lint_some('a{b:c}\r\n\n  x{}').problems
     assert (p.line, p.column) == (3, 4)  # lines end at line feeds
 
 
@@ -88,16 +98,16 @@ def test_lines() -> None:
     ],
 )
 def test_syntax_problems(css: str, kind: SyntaxProblemKind, message: str, pos: int, end: int | None) -> None:
-    (sp,) = lint(css).syntax_problems
+    (sp,) = lint_some(css).syntax_problems
     assert (sp.kind, sp.message, sp.pos, sp.end) == (kind, message, pos, end)
     assert isinstance(sp, SyntaxProblem)
 
 
 def test_rules_run_despite_syntax_problems() -> None:
-    result = lint('a{} b{c:d;;')
+    result = lint_some('a{} b{c:d;;')
     assert [sp.kind for sp in result.syntax_problems] == [SyntaxProblemKind.UNCLOSED_BLOCK]
     assert [p.rule for p in result.problems] == [LintRule.BLOCK_NO_EMPTY, LintRule.NO_EXTRA_SEMICOLONS]
-    assert lint('a{} b{c:d;;', fix=True).fixed == 'a{} b{c:d;'
+    assert lint_some('a{} b{c:d;;', fix=True).fixed == 'a{} b{c:d;'
 
 
 @pytest.mark.parametrize(
@@ -141,7 +151,7 @@ def loaded(name):
 
 assert not loaded('kgcss.linter._engine') and not loaded('kgcss.linter._postcss')
 assert not loaded('kgcss._css_data')
-lint('a{}', disabled=[LintRule.AT_RULE_NO_UNKNOWN])
+lint('a{}', disabled=[r for r in LintRule if r is not LintRule.BLOCK_NO_EMPTY])
 assert loaded('kgcss.linter._rules.block_no_empty') and not loaded('kgcss.linter._rules.at_rule_no_unknown')
 assert not loaded('kgcss._css_data')
 lint('@foo{}')

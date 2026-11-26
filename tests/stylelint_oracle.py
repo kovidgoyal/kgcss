@@ -102,11 +102,29 @@ class Stylelint:
         """Parse code with PostCSS, or with postcss-safe-parser."""
         return self.request({'parse': code, 'safe': safe})
 
+    def parse_value(self, value: str) -> list[dict[str, object]]:
+        """The nodes postcss-value-parser parses value into (offsets in UTF-16 code units)."""
+        response: dict[str, list[dict[str, object]]] = self.request({'valueParse': value})
+        return response['nodes']
+
+    def parse_selector(self, selector: str) -> dict[str, object]:
+        """{'tree': ...} with the tree of postcss-selector-parser, or {'error': {'name', 'message'}}."""
+        return self.request({'selectorParse': selector})
+
+    def selector_specificity(self, selector: str) -> dict[str, object]:
+        """{'specificities': [...]} for the parsed root then each node it walks, or {'error': ...}."""
+        return self.request({'selectorSpecificity': selector})
+
+    def resolve_nested(self, selector: str, parent: str, *, ignore_implicit_nesting: bool = False) -> dict[str, object]:
+        """{'tree': ...} with the tree resolveNestedSelector() gives for the parsed selectors, or {'error': ...}."""
+        return self.request({'resolveNested': [selector, parent], 'ignoreImplicitNesting': ignore_implicit_nesting})
+
     def request[T](self, request: Mapping[str, object]) -> T:
         stdin, stdout = self.process.stdin, self.process.stdout
         assert stdin is not None
         assert stdout is not None
-        code = request.get('code', request.get('parse'))
+        keys = ('code', 'parse', 'valueParse', 'selectorParse', 'selectorSpecificity', 'resolveNested')
+        code = next((request[k] for k in keys if k in request), None)
         stdin.write(json.dumps(request) + '\n')  # ASCII, so lone surrogates are escaped
         stdin.flush()
         line = stdout.readline()

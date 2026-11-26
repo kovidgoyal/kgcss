@@ -14,7 +14,8 @@ tools/stylelint/dump_data.mjs reads the data: what stylelint's default css-tree
 lexer knows (properties, the properties that take a <dashed-ident>, function
 names), and the tables of stylelint's lib/reference that the rules use,
 listed in REFERENCE below. Sets become frozensets and Maps read-only
-mappings of frozensets, under UPPER_SNAKE_CASE names. --check exits with an
+mappings of tuples, in stylelint's order (which rules report in), under
+UPPER_SNAKE_CASE names. --check exits with an
 error if the file differs from what would be generated.
 """
 
@@ -112,6 +113,14 @@ def string_set(items: list[str], indent: str) -> str:
     return f'frozenset(\n{indent}    {{\n{body}{indent}    }}\n{indent})'
 
 
+def string_tuple(items: list[str], indent: str) -> str:
+    """A tuple literal in the given order, laid out as ruff formats it."""
+    if not items:
+        return '()'
+    body = ''.join(f'{indent}    {item!r},\n' for item in dict.fromkeys(items))
+    return f'(\n{body}{indent})'
+
+
 def assign(name: str, value: Table, comment: str = '') -> str:
     out = ['\n']
     if comment:
@@ -119,8 +128,8 @@ def assign(name: str, value: Table, comment: str = '') -> str:
     if isinstance(value, list):
         out.append(f'{name}: Final[frozenset[str]] = {string_set(value, "")}\n')
         return ''.join(out)
-    out.append(f'{name}: Final[Mapping[str, frozenset[str]]] = MappingProxyType(\n    {{\n')
-    out.extend(f'        {key!r}: {string_set(value[key], "        ")},\n' for key in sorted(value))
+    out.append(f'{name}: Final[Mapping[str, tuple[str, ...]]] = MappingProxyType(\n    {{\n')
+    out.extend(f'        {key!r}: {string_tuple(value[key], "        ")},\n' for key in sorted(value))
     out.append('    }\n)\n')
     return ''.join(out)
 

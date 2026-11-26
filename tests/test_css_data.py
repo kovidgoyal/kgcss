@@ -57,11 +57,11 @@ def test_consistency() -> None:
     assert data.LENGTH_UNITS <= data.UNITS
     assert all(name == name.lower() for name in data.CSS_TREE_PROPERTIES | data.CSS_TREE_FUNCTIONS)
     longhands = data.LONGHAND_SUB_PROPERTIES_OF_SHORTHAND_PROPERTIES
-    assert longhands['margin'] == {'margin-top', 'margin-right', 'margin-bottom', 'margin-left'}
+    assert longhands['margin'] == ('margin-top', 'margin-right', 'margin-bottom', 'margin-left')
     assert 'background-color' in longhands['background']
 
 
 def test_tables_are_read_only() -> None:
     longhands = data.LONGHAND_SUB_PROPERTIES_OF_SHORTHAND_PROPERTIES
     with pytest.raises(TypeError):
-        longhands['x'] = frozenset()  # ty: ignore[invalid-assignment]
+        longhands['x'] = ()  # ty: ignore[invalid-assignment]

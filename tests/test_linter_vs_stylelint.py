@@ -21,7 +21,7 @@ from .linter_compare import as_stylelint, sort_key
 from .strategies import css_text, lint_css
 from .stylelint_fixtures import ExpectedWarning
 from .stylelint_oracle import Stylelint, StylelintWarning, require_oracle
-from .test_linter_postcss import RE_SURROGATE_PAIR
+from .test_linter_postcss import RE_ESCAPED_ASTRAL, RE_SURROGATE_PAIR
 from .test_linter_stylelint_cases import IGNORED_MESSAGES
 
 require_oracle()
@@ -41,16 +41,25 @@ def oracle() -> Iterator[Stylelint]:
 
 
 def expected_warning(w: StylelintWarning) -> ExpectedWarning:
-    ans: ExpectedWarning = {'message': w['text'], 'line': w['line'], 'column': w['column']}
-    if 'endLine' in w:
-        ans['endLine'] = w['endLine']
-    if 'endColumn' in w:
-        ans['endColumn'] = w['endColumn']
+    ans: ExpectedWarning = {'message': w['text']}
+    for key in ('line', 'column', 'endLine', 'endColumn'):
+        if w.get(key) is not None:
+            ans[key] = w[key]
     return ans
 
 
 def check(oracle: Stylelint, css: str) -> None:
-    result = oracle.lint(css, CONFIG)
+    crash = ''
+    try:
+        result = oracle.lint(css, CONFIG)
+    except RuntimeError as err:
+        crash = str(err)
+        result = None
+    if result is None:
+        # stylelint crashes on some input, such as keyframe-declaration-no-important on "! /**/ important"
+        assert 'TypeError' in crash or 'AssertionError' in crash
+        reject()
+        return
     if any(BAD_DISABLE.search(w['text']) for w in result['warnings']):
         reject()
     expected = [expected_warning(w) for w in result['warnings'] if not w['text'].startswith(IGNORED_MESSAGES)]
@@ -58,8 +67,13 @@ def check(oracle: Stylelint, css: str) -> None:
     actual = as_stylelint(css, ours)
     for w in actual:
         w.pop('fix', None)  # stylelint gives no edit info unless asked
+    if len(expected) == 1 and 'line' not in expected[0]:
+        # PostCSS reports "Unknown word" with no position when the word is whitespace; kgcss at offset 0
+        assert [w['message'] for w in actual] == [expected[0]['message']]
+        return
     assert sorted(actual, key=sort_key) == sorted(expected, key=sort_key)
-    if not ours.syntax_problems and '<' not in css:  # stylelint's print escapes <!-- and </style
+    # stylelint prints the fixed tree, which escapes <!-- and </style, and writes a U+FFFE mark as U+FEFF
+    if not ours.syntax_problems and '<' not in css and not css.startswith('\ufffe'):
         fixed = oracle.lint(css, CONFIG, fix=True)['code']
         ours_fixed = lint(css, fix=True).fixed
         assert (css if ours_fixed is None else ours_fixed) == fixed
@@ -85,4 +99,5 @@ def test_examples(oracle: Stylelint, css: str) -> None:
 @given(st.one_of(lint_css, css_text))
 def test_random(oracle: Stylelint, css: str) -> None:
     assume(not RE_SURROGATE_PAIR.search(css))  # a high and a low surrogate are one character in JavaScript
+    assume(not RE_ESCAPED_ASTRAL.search(css))  # see test_linter_postcss: JavaScript splits such a character
     check(oracle, css)

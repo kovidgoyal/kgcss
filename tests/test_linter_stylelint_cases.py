@@ -12,7 +12,9 @@ only that, so only that is compared. Deliberate differences are listed in
 KNOWN_DIFFERENCES and IGNORED_MESSAGES.
 """
 
-from typing import Final
+import importlib
+import re
+from typing import Final, cast
 
 import pytest
 
@@ -20,6 +22,7 @@ from kgcss.linter import LINT_RULES, lint
 
 from .linter_compare import as_stylelint, sort_key
 from .stylelint_fixtures import Case, cases
+from .stylelint_oracle import Config
 
 # Warnings that are not about the stylesheet, which kgcss does not give
 IGNORED_MESSAGES: Final = (
@@ -39,8 +42,33 @@ KNOWN_DIFFERENCES: Final[dict[str, str]] = {
 RULE_BY_NAME: Final = {info.stylelint_name: rule for rule, info in LINT_RULES.items()}
 
 
+def to_python(value: Config) -> object:
+    """A stylelint config value with {"$regexp": [source, flags]} as a compiled pattern."""
+    if isinstance(value, dict):
+        if '$regexp' in value:
+            source, flags = cast('list[str]', value['$regexp'])
+            return re.compile(source, re.IGNORECASE if 'i' in flags else 0)
+        return {k: to_python(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [to_python(v) for v in value]
+    return value
+
+
+def options_of(case: Case) -> dict[str, object] | None:
+    """The secondary options of the case, or None if its config is not [true, {...}] or true."""
+    config = case.config
+    if config is True or config == [True]:
+        return {}
+    if isinstance(config, list) and len(config) == 2 and config[0] is True and isinstance(config[1], dict):
+        return cast('dict[str, object]', to_python(config[1]))
+    return None
+
+
 def supported(case: Case) -> bool:
-    return case.rule in RULE_BY_NAME and case.config in (True, [True])
+    if case.rule not in RULE_BY_NAME or (options := options_of(case)) is None:
+        return False
+    module = importlib.import_module(LINT_RULES[RULE_BY_NAME[case.rule]].module)
+    return set(options) <= getattr(module, 'OPTIONS', frozenset())
 
 
 CASES: Final = tuple(c for c in cases() if supported(c))
@@ -60,7 +88,8 @@ def test_case(case: Case) -> None:
     rule = RULE_BY_NAME[case.rule]
     disabled = frozenset(LINT_RULES) - {rule}
     expected = sorted((w for w in case.warnings if not w.get('message', '').startswith(IGNORED_MESSAGES)), key=sort_key)
-    actual = sorted(as_stylelint(case.code, lint(case.code, disabled=disabled)), key=sort_key)
+    options = {rule: options_of(case) or {}}
+    actual = sorted(as_stylelint(case.code, lint(case.code, disabled=disabled, options=options)), key=sort_key)
     assert len(actual) == len(expected), actual
     for got, want in zip(actual, expected, strict=True):
         for key in ('message', 'line', 'column', 'endLine', 'endColumn'):
@@ -69,7 +98,7 @@ def test_case(case: Case) -> None:
         if 'fix' in want and case.compute_edit_info:
             assert got.get('fix') == want['fix']
     if case.fixed is not None:
-        fixed = lint(case.code, disabled=disabled, fix=True).fixed
+        fixed = lint(case.code, disabled=disabled, options=options, fix=True).fixed
         assert (case.code if fixed is None else fixed) == case.fixed
 
 

@@ -1670,451 +1670,333 @@ LINGUISTIC_PSEUDO_CLASSES: Final[frozenset[str]] = frozenset(
     }
 )
 
-LONGHAND_SUB_PROPERTIES_OF_SHORTHAND_PROPERTIES: Final[Mapping[str, frozenset[str]]] = MappingProxyType(
+LONGHAND_SUB_PROPERTIES_OF_SHORTHAND_PROPERTIES: Final[Mapping[str, tuple[str, ...]]] = MappingProxyType(
     {
-        'animation': frozenset(
-            {
-                'animation-delay',
-                'animation-direction',
-                'animation-duration',
-                'animation-fill-mode',
-                'animation-iteration-count',
-                'animation-name',
-                'animation-play-state',
-                'animation-timing-function',
-            }
+        'animation': (
+            'animation-name',
+            'animation-duration',
+            'animation-timing-function',
+            'animation-delay',
+            'animation-iteration-count',
+            'animation-direction',
+            'animation-fill-mode',
+            'animation-play-state',
         ),
-        'background': frozenset(
-            {
-                'background-attachment',
-                'background-clip',
-                'background-color',
-                'background-image',
-                'background-origin',
-                'background-position',
-                'background-repeat',
-                'background-size',
-            }
+        'background': (
+            'background-image',
+            'background-size',
+            'background-position',
+            'background-repeat',
+            'background-origin',
+            'background-clip',
+            'background-attachment',
+            'background-color',
         ),
-        'border': frozenset(
-            {
-                'border-bottom-color',
-                'border-bottom-style',
-                'border-bottom-width',
-                'border-color',
-                'border-left-color',
-                'border-left-style',
-                'border-left-width',
-                'border-right-color',
-                'border-right-style',
-                'border-right-width',
-                'border-style',
-                'border-top-color',
-                'border-top-style',
-                'border-top-width',
-                'border-width',
-            }
+        'border': (
+            'border-top-width',
+            'border-right-width',
+            'border-bottom-width',
+            'border-left-width',
+            'border-top-style',
+            'border-right-style',
+            'border-bottom-style',
+            'border-left-style',
+            'border-top-color',
+            'border-right-color',
+            'border-bottom-color',
+            'border-left-color',
+            'border-width',
+            'border-style',
+            'border-color',
         ),
-        'border-block': frozenset(
-            {
-                'border-block-color',
-                'border-block-style',
-                'border-block-width',
-            }
+        'border-block': (
+            'border-block-width',
+            'border-block-style',
+            'border-block-color',
         ),
-        'border-block-end': frozenset(
-            {
-                'border-block-end-color',
-                'border-block-end-style',
-                'border-block-end-width',
-            }
+        'border-block-end': (
+            'border-block-end-width',
+            'border-block-end-style',
+            'border-block-end-color',
         ),
-        'border-block-start': frozenset(
-            {
-                'border-block-start-color',
-                'border-block-start-style',
-                'border-block-start-width',
-            }
+        'border-block-start': (
+            'border-block-start-width',
+            'border-block-start-style',
+            'border-block-start-color',
         ),
-        'border-bottom': frozenset(
-            {
-                'border-bottom-color',
-                'border-bottom-style',
-                'border-bottom-width',
-            }
+        'border-bottom': (
+            'border-bottom-width',
+            'border-bottom-style',
+            'border-bottom-color',
         ),
-        'border-color': frozenset(
-            {
-                'border-bottom-color',
-                'border-left-color',
-                'border-right-color',
-                'border-top-color',
-            }
+        'border-color': (
+            'border-top-color',
+            'border-right-color',
+            'border-bottom-color',
+            'border-left-color',
         ),
-        'border-image': frozenset(
-            {
-                'border-image-outset',
-                'border-image-repeat',
-                'border-image-slice',
-                'border-image-source',
-                'border-image-width',
-            }
+        'border-image': (
+            'border-image-source',
+            'border-image-slice',
+            'border-image-width',
+            'border-image-outset',
+            'border-image-repeat',
         ),
-        'border-inline': frozenset(
-            {
-                'border-inline-color',
-                'border-inline-style',
-                'border-inline-width',
-            }
+        'border-inline': (
+            'border-inline-width',
+            'border-inline-style',
+            'border-inline-color',
         ),
-        'border-inline-end': frozenset(
-            {
-                'border-inline-end-color',
-                'border-inline-end-style',
-                'border-inline-end-width',
-            }
+        'border-inline-end': (
+            'border-inline-end-width',
+            'border-inline-end-style',
+            'border-inline-end-color',
         ),
-        'border-inline-start': frozenset(
-            {
-                'border-inline-start-color',
-                'border-inline-start-style',
-                'border-inline-start-width',
-            }
+        'border-inline-start': (
+            'border-inline-start-width',
+            'border-inline-start-style',
+            'border-inline-start-color',
         ),
-        'border-left': frozenset(
-            {
-                'border-left-color',
-                'border-left-style',
-                'border-left-width',
-            }
+        'border-left': (
+            'border-left-width',
+            'border-left-style',
+            'border-left-color',
         ),
-        'border-radius': frozenset(
-            {
-                'border-bottom-left-radius',
-                'border-bottom-right-radius',
-                'border-top-left-radius',
-                'border-top-right-radius',
-            }
+        'border-radius': (
+            'border-top-left-radius',
+            'border-top-right-radius',
+            'border-bottom-right-radius',
+            'border-bottom-left-radius',
         ),
-        'border-right': frozenset(
-            {
-                'border-right-color',
-                'border-right-style',
-                'border-right-width',
-            }
+        'border-right': (
+            'border-right-width',
+            'border-right-style',
+            'border-right-color',
         ),
-        'border-style': frozenset(
-            {
-                'border-bottom-style',
-                'border-left-style',
-                'border-right-style',
-                'border-top-style',
-            }
+        'border-style': (
+            'border-top-style',
+            'border-right-style',
+            'border-bottom-style',
+            'border-left-style',
         ),
-        'border-top': frozenset(
-            {
-                'border-top-color',
-                'border-top-style',
-                'border-top-width',
-            }
+        'border-top': (
+            'border-top-width',
+            'border-top-style',
+            'border-top-color',
         ),
-        'border-width': frozenset(
-            {
-                'border-bottom-width',
-                'border-left-width',
-                'border-right-width',
-                'border-top-width',
-            }
+        'border-width': (
+            'border-top-width',
+            'border-right-width',
+            'border-bottom-width',
+            'border-left-width',
         ),
-        'column-rule': frozenset(
-            {
-                'column-rule-color',
-                'column-rule-style',
-                'column-rule-width',
-            }
+        'column-rule': (
+            'column-rule-width',
+            'column-rule-style',
+            'column-rule-color',
         ),
-        'columns': frozenset(
-            {
-                'column-count',
-                'column-width',
-            }
+        'columns': (
+            'column-width',
+            'column-count',
         ),
-        'contain-intrinsic-size': frozenset(
-            {
-                'contain-intrinsic-height',
-                'contain-intrinsic-width',
-            }
+        'contain-intrinsic-size': (
+            'contain-intrinsic-width',
+            'contain-intrinsic-height',
         ),
-        'flex': frozenset(
-            {
-                'flex-basis',
-                'flex-grow',
-                'flex-shrink',
-            }
+        'flex': (
+            'flex-grow',
+            'flex-shrink',
+            'flex-basis',
         ),
-        'flex-flow': frozenset(
-            {
-                'flex-direction',
-                'flex-wrap',
-            }
+        'flex-flow': (
+            'flex-direction',
+            'flex-wrap',
         ),
-        'font': frozenset(
-            {
-                'font-family',
-                'font-size',
-                'font-stretch',
-                'font-style',
-                'font-variant',
-                'font-weight',
-                'line-height',
-            }
+        'font': (
+            'font-style',
+            'font-variant',
+            'font-weight',
+            'font-stretch',
+            'font-size',
+            'line-height',
+            'font-family',
         ),
-        'font-synthesis': frozenset(
-            {
-                'font-synthesis-small-caps',
-                'font-synthesis-style',
-                'font-synthesis-weight',
-            }
+        'font-synthesis': (
+            'font-synthesis-weight',
+            'font-synthesis-style',
+            'font-synthesis-small-caps',
         ),
-        'font-variant': frozenset(
-            {
-                'font-variant-alternates',
-                'font-variant-caps',
-                'font-variant-east-asian',
-                'font-variant-emoji',
-                'font-variant-ligatures',
-                'font-variant-numeric',
-                'font-variant-position',
-            }
+        'font-variant': (
+            'font-variant-ligatures',
+            'font-variant-position',
+            'font-variant-caps',
+            'font-variant-numeric',
+            'font-variant-alternates',
+            'font-variant-east-asian',
+            'font-variant-emoji',
         ),
-        'gap': frozenset(
-            {
-                'column-gap',
-                'row-gap',
-            }
+        'gap': (
+            'row-gap',
+            'column-gap',
         ),
-        'grid': frozenset(
-            {
-                'grid-auto-columns',
-                'grid-auto-flow',
-                'grid-auto-rows',
-                'grid-column-gap',
-                'grid-row-gap',
-                'grid-template-areas',
-                'grid-template-columns',
-                'grid-template-rows',
-            }
+        'grid': (
+            'grid-template-rows',
+            'grid-template-columns',
+            'grid-template-areas',
+            'grid-auto-rows',
+            'grid-auto-columns',
+            'grid-auto-flow',
+            'grid-column-gap',
+            'grid-row-gap',
         ),
-        'grid-area': frozenset(
-            {
-                'grid-column-end',
-                'grid-column-start',
-                'grid-row-end',
-                'grid-row-start',
-            }
+        'grid-area': (
+            'grid-row-start',
+            'grid-column-start',
+            'grid-row-end',
+            'grid-column-end',
         ),
-        'grid-column': frozenset(
-            {
-                'grid-column-end',
-                'grid-column-start',
-            }
+        'grid-column': (
+            'grid-column-start',
+            'grid-column-end',
         ),
-        'grid-gap': frozenset(
-            {
-                'grid-column-gap',
-                'grid-row-gap',
-            }
+        'grid-gap': (
+            'grid-row-gap',
+            'grid-column-gap',
         ),
-        'grid-row': frozenset(
-            {
-                'grid-row-end',
-                'grid-row-start',
-            }
+        'grid-row': (
+            'grid-row-start',
+            'grid-row-end',
         ),
-        'grid-template': frozenset(
-            {
-                'grid-template-areas',
-                'grid-template-columns',
-                'grid-template-rows',
-            }
+        'grid-template': (
+            'grid-template-columns',
+            'grid-template-rows',
+            'grid-template-areas',
         ),
-        'inset': frozenset(
-            {
-                'bottom',
-                'left',
-                'right',
-                'top',
-            }
+        'inset': (
+            'top',
+            'right',
+            'bottom',
+            'left',
         ),
-        'inset-block': frozenset(
-            {
-                'inset-block-end',
-                'inset-block-start',
-            }
+        'inset-block': (
+            'inset-block-start',
+            'inset-block-end',
         ),
-        'inset-inline': frozenset(
-            {
-                'inset-inline-end',
-                'inset-inline-start',
-            }
+        'inset-inline': (
+            'inset-inline-start',
+            'inset-inline-end',
         ),
-        'list-style': frozenset(
-            {
-                'list-style-image',
-                'list-style-position',
-                'list-style-type',
-            }
+        'list-style': (
+            'list-style-type',
+            'list-style-position',
+            'list-style-image',
         ),
-        'margin': frozenset(
-            {
-                'margin-bottom',
-                'margin-left',
-                'margin-right',
-                'margin-top',
-            }
+        'margin': (
+            'margin-top',
+            'margin-right',
+            'margin-bottom',
+            'margin-left',
         ),
-        'margin-block': frozenset(
-            {
-                'margin-block-end',
-                'margin-block-start',
-            }
+        'margin-block': (
+            'margin-block-start',
+            'margin-block-end',
         ),
-        'margin-inline': frozenset(
-            {
-                'margin-inline-end',
-                'margin-inline-start',
-            }
+        'margin-inline': (
+            'margin-inline-start',
+            'margin-inline-end',
         ),
-        'mask': frozenset(
-            {
-                'mask-clip',
-                'mask-composite',
-                'mask-image',
-                'mask-mode',
-                'mask-origin',
-                'mask-position',
-                'mask-repeat',
-                'mask-size',
-            }
+        'mask': (
+            'mask-image',
+            'mask-mode',
+            'mask-position',
+            'mask-size',
+            'mask-repeat',
+            'mask-origin',
+            'mask-clip',
+            'mask-composite',
         ),
-        'outline': frozenset(
-            {
-                'outline-color',
-                'outline-style',
-                'outline-width',
-            }
+        'outline': (
+            'outline-color',
+            'outline-style',
+            'outline-width',
         ),
-        'overflow': frozenset(
-            {
-                'overflow-x',
-                'overflow-y',
-            }
+        'overflow': (
+            'overflow-x',
+            'overflow-y',
         ),
-        'overscroll-behavior': frozenset(
-            {
-                'overscroll-behavior-x',
-                'overscroll-behavior-y',
-            }
+        'overscroll-behavior': (
+            'overscroll-behavior-x',
+            'overscroll-behavior-y',
         ),
-        'padding': frozenset(
-            {
-                'padding-bottom',
-                'padding-left',
-                'padding-right',
-                'padding-top',
-            }
+        'padding': (
+            'padding-top',
+            'padding-right',
+            'padding-bottom',
+            'padding-left',
         ),
-        'padding-block': frozenset(
-            {
-                'padding-block-end',
-                'padding-block-start',
-            }
+        'padding-block': (
+            'padding-block-start',
+            'padding-block-end',
         ),
-        'padding-inline': frozenset(
-            {
-                'padding-inline-end',
-                'padding-inline-start',
-            }
+        'padding-inline': (
+            'padding-inline-start',
+            'padding-inline-end',
         ),
-        'place-content': frozenset(
-            {
-                'align-content',
-                'justify-content',
-            }
+        'place-content': (
+            'align-content',
+            'justify-content',
         ),
-        'place-items': frozenset(
-            {
-                'align-items',
-                'justify-items',
-            }
+        'place-items': (
+            'align-items',
+            'justify-items',
         ),
-        'place-self': frozenset(
-            {
-                'align-self',
-                'justify-self',
-            }
+        'place-self': (
+            'align-self',
+            'justify-self',
         ),
-        'scroll-margin': frozenset(
-            {
-                'scroll-margin-bottom',
-                'scroll-margin-left',
-                'scroll-margin-right',
-                'scroll-margin-top',
-            }
+        'scroll-margin': (
+            'scroll-margin-top',
+            'scroll-margin-right',
+            'scroll-margin-bottom',
+            'scroll-margin-left',
         ),
-        'scroll-margin-block': frozenset(
-            {
-                'scroll-margin-block-end',
-                'scroll-margin-block-start',
-            }
+        'scroll-margin-block': (
+            'scroll-margin-block-start',
+            'scroll-margin-block-end',
         ),
-        'scroll-margin-inline': frozenset(
-            {
-                'scroll-margin-inline-end',
-                'scroll-margin-inline-start',
-            }
+        'scroll-margin-inline': (
+            'scroll-margin-inline-start',
+            'scroll-margin-inline-end',
         ),
-        'scroll-padding': frozenset(
-            {
-                'scroll-padding-bottom',
-                'scroll-padding-left',
-                'scroll-padding-right',
-                'scroll-padding-top',
-            }
+        'scroll-padding': (
+            'scroll-padding-top',
+            'scroll-padding-right',
+            'scroll-padding-bottom',
+            'scroll-padding-left',
         ),
-        'scroll-padding-block': frozenset(
-            {
-                'scroll-padding-block-end',
-                'scroll-padding-block-start',
-            }
+        'scroll-padding-block': (
+            'scroll-padding-block-start',
+            'scroll-padding-block-end',
         ),
-        'scroll-padding-inline': frozenset(
-            {
-                'scroll-padding-inline-end',
-                'scroll-padding-inline-start',
-            }
+        'scroll-padding-inline': (
+            'scroll-padding-inline-start',
+            'scroll-padding-inline-end',
         ),
-        'text-decoration': frozenset(
-            {
-                'text-decoration-color',
-                'text-decoration-line',
-                'text-decoration-style',
-                'text-decoration-thickness',
-            }
+        'text-decoration': (
+            'text-decoration-line',
+            'text-decoration-style',
+            'text-decoration-color',
+            'text-decoration-thickness',
         ),
-        'text-emphasis': frozenset(
-            {
-                'text-emphasis-color',
-                'text-emphasis-style',
-            }
+        'text-emphasis': (
+            'text-emphasis-style',
+            'text-emphasis-color',
         ),
-        'transition': frozenset(
-            {
-                'transition-delay',
-                'transition-duration',
-                'transition-property',
-                'transition-timing-function',
-            }
+        'transition': (
+            'transition-property',
+            'transition-duration',
+            'transition-timing-function',
+            'transition-delay',
         ),
     }
 )
@@ -2584,141 +2466,115 @@ NESTING_SUPPORTED_AT_KEYWORDS: Final[frozenset[str]] = frozenset(
     }
 )
 
-PHYSICAL_SHORTHAND_TO_FLOW_RELATIVE_PROPERTIES: Final[Mapping[str, frozenset[str]]] = MappingProxyType(
+PHYSICAL_SHORTHAND_TO_FLOW_RELATIVE_PROPERTIES: Final[Mapping[str, tuple[str, ...]]] = MappingProxyType(
     {
-        'border': frozenset(
-            {
-                'border-block',
-                'border-block-color',
-                'border-block-end',
-                'border-block-end-color',
-                'border-block-end-style',
-                'border-block-end-width',
-                'border-block-start',
-                'border-block-start-color',
-                'border-block-start-style',
-                'border-block-start-width',
-                'border-block-style',
-                'border-block-width',
-                'border-inline',
-                'border-inline-color',
-                'border-inline-end',
-                'border-inline-end-color',
-                'border-inline-end-style',
-                'border-inline-end-width',
-                'border-inline-start',
-                'border-inline-start-color',
-                'border-inline-start-style',
-                'border-inline-start-width',
-                'border-inline-style',
-                'border-inline-width',
-            }
+        'border': (
+            'border-block',
+            'border-block-start',
+            'border-block-end',
+            'border-inline',
+            'border-inline-start',
+            'border-inline-end',
+            'border-block-width',
+            'border-block-start-width',
+            'border-block-end-width',
+            'border-inline-width',
+            'border-inline-start-width',
+            'border-inline-end-width',
+            'border-block-style',
+            'border-block-start-style',
+            'border-block-end-style',
+            'border-inline-style',
+            'border-inline-start-style',
+            'border-inline-end-style',
+            'border-block-color',
+            'border-block-start-color',
+            'border-block-end-color',
+            'border-inline-color',
+            'border-inline-start-color',
+            'border-inline-end-color',
         ),
-        'border-color': frozenset(
-            {
-                'border-block-color',
-                'border-block-end-color',
-                'border-block-start-color',
-                'border-inline-color',
-                'border-inline-end-color',
-                'border-inline-start-color',
-            }
+        'border-color': (
+            'border-block-color',
+            'border-block-start-color',
+            'border-block-end-color',
+            'border-inline-color',
+            'border-inline-start-color',
+            'border-inline-end-color',
         ),
-        'border-radius': frozenset(
-            {
-                'border-end-end-radius',
-                'border-end-start-radius',
-                'border-start-end-radius',
-                'border-start-start-radius',
-            }
+        'border-radius': (
+            'border-start-start-radius',
+            'border-start-end-radius',
+            'border-end-start-radius',
+            'border-end-end-radius',
         ),
-        'border-style': frozenset(
-            {
-                'border-block-end-style',
-                'border-block-start-style',
-                'border-block-style',
-                'border-inline-end-style',
-                'border-inline-start-style',
-                'border-inline-style',
-            }
+        'border-style': (
+            'border-block-style',
+            'border-block-start-style',
+            'border-block-end-style',
+            'border-inline-style',
+            'border-inline-start-style',
+            'border-inline-end-style',
         ),
-        'border-width': frozenset(
-            {
-                'border-block-end-width',
-                'border-block-start-width',
-                'border-block-width',
-                'border-inline-end-width',
-                'border-inline-start-width',
-                'border-inline-width',
-            }
+        'border-width': (
+            'border-block-width',
+            'border-block-start-width',
+            'border-block-end-width',
+            'border-inline-width',
+            'border-inline-start-width',
+            'border-inline-end-width',
         ),
-        'contain-intrinsic-size': frozenset(
-            {
-                'contain-intrinsic-block-size',
-                'contain-intrinsic-inline-size',
-            }
+        'contain-intrinsic-size': (
+            'contain-intrinsic-block-size',
+            'contain-intrinsic-inline-size',
         ),
-        'inset': frozenset(
-            {
-                'inset-block',
-                'inset-block-end',
-                'inset-block-start',
-                'inset-inline',
-                'inset-inline-end',
-                'inset-inline-start',
-            }
+        'inset': (
+            'inset-block',
+            'inset-block-start',
+            'inset-block-end',
+            'inset-inline',
+            'inset-inline-start',
+            'inset-inline-end',
         ),
-        'margin': frozenset(
-            {
-                'margin-block',
-                'margin-block-end',
-                'margin-block-start',
-                'margin-inline',
-                'margin-inline-end',
-                'margin-inline-start',
-            }
+        'margin': (
+            'margin-block',
+            'margin-block-start',
+            'margin-block-end',
+            'margin-inline',
+            'margin-inline-start',
+            'margin-inline-end',
         ),
-        'overflow': frozenset(
-            {
-                'overflow-block',
-                'overflow-inline',
-            }
+        'overflow': (
+            'overflow-block',
+            'overflow-inline',
         ),
-        'overscroll-behavior': frozenset(
-            {
-                'overscroll-behavior-block',
-                'overscroll-behavior-inline',
-            }
+        'overscroll-behavior': (
+            'overscroll-behavior-block',
+            'overscroll-behavior-inline',
         ),
-        'padding': frozenset(
-            {
-                'padding-block',
-                'padding-block-end',
-                'padding-block-start',
-                'padding-inline',
-                'padding-inline-end',
-                'padding-inline-start',
-            }
+        'padding': (
+            'padding-block',
+            'padding-block-start',
+            'padding-block-end',
+            'padding-inline',
+            'padding-inline-start',
+            'padding-inline-end',
         ),
-        'scroll-margin': frozenset(
-            {
-                'scroll-margin-block',
-                'scroll-margin-block-end',
-                'scroll-margin-block-start',
-                'scroll-margin-inline',
-                'scroll-margin-inline-end',
-                'scroll-margin-inline-start',
-            }
+        'scroll-margin': (
+            'scroll-margin-block',
+            'scroll-margin-block-start',
+            'scroll-margin-block-end',
+            'scroll-margin-inline',
+            'scroll-margin-inline-start',
+            'scroll-margin-inline-end',
         ),
-        'scroll-padding': frozenset(
-            {
-                'scroll-padding-block',
-                'scroll-padding-block-end',
-                'scroll-padding-block-start',
-                'scroll-padding-inline',
-                'scroll-padding-inline-end',
-                'scroll-padding-inline-start',
-            }
+        'scroll-padding': (
+            'scroll-padding-block',
+            'scroll-padding-block-start',
+            'scroll-padding-block-end',
+            'scroll-padding-inline',
+            'scroll-padding-inline-start',
+            'scroll-padding-inline-end',
         ),
     }
 )
@@ -3291,34 +3147,30 @@ SHADOW_TREE_PSEUDO_ELEMENTS: Final[frozenset[str]] = frozenset(
     }
 )
 
-SHORTHAND_TO_RESET_TO_INITIAL_PROPERTY: Final[Mapping[str, frozenset[str]]] = MappingProxyType(
+SHORTHAND_TO_RESET_TO_INITIAL_PROPERTY: Final[Mapping[str, tuple[str, ...]]] = MappingProxyType(
     {
-        'border': frozenset(
-            {
-                'border-image',
-                'border-image-outset',
-                'border-image-repeat',
-                'border-image-slice',
-                'border-image-source',
-                'border-image-width',
-            }
+        'border': (
+            'border-image',
+            'border-image-outset',
+            'border-image-repeat',
+            'border-image-slice',
+            'border-image-source',
+            'border-image-width',
         ),
-        'font': frozenset(
-            {
-                'font-feature-settings',
-                'font-kerning',
-                'font-language-override',
-                'font-optical-sizing',
-                'font-size-adjust',
-                'font-variant-alternates',
-                'font-variant-caps',
-                'font-variant-east-asian',
-                'font-variant-emoji',
-                'font-variant-ligatures',
-                'font-variant-numeric',
-                'font-variant-position',
-                'font-variation-settings',
-            }
+        'font': (
+            'font-feature-settings',
+            'font-kerning',
+            'font-language-override',
+            'font-optical-sizing',
+            'font-size-adjust',
+            'font-variant-alternates',
+            'font-variant-caps',
+            'font-variant-east-asian',
+            'font-variant-emoji',
+            'font-variant-ligatures',
+            'font-variant-numeric',
+            'font-variant-position',
+            'font-variation-settings',
         ),
     }
 )

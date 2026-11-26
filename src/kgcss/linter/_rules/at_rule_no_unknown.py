@@ -2,10 +2,14 @@
 
 """at-rule-no-unknown: stylelint's lib/rules/at-rule-no-unknown."""
 
+from typing import Final
+
 from kgcss._css_data import AT_KEYWORDS
 from kgcss.linter._engine import Context
 from kgcss.linter._postcss import Root
 from kgcss.linter._utils import is_standard_syntax_at_rule, vendor_prefix
+
+OPTIONS: Final = frozenset({'ignoreAtRules'})
 
 
 def check(root: Root, ctx: Context) -> None:
@@ -13,7 +17,7 @@ def check(root: Root, ctx: Context) -> None:
         if not is_standard_syntax_at_rule(at_rule):
             continue
         name = at_rule.name
-        if vendor_prefix(name) or name.lower() in AT_KEYWORDS:
+        if ctx.matches('ignoreAtRules', name) or vendor_prefix(name) or name.lower() in AT_KEYWORDS:
             continue
         at_name = '@' + name
         ctx.report(at_rule, f'Unknown at-rule "{at_name}"', (at_name,), word=at_name)

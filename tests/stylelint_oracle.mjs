@@ -12,7 +12,14 @@
 // In configs, {"$regexp": [source, flags]} stands for a regular expression.
 // A request {"parse": str, "safe": bool} returns the tree that PostCSS (or
 // postcss-safe-parser) parses, or the error it raises, to compare with
-// kgcss.linter._postcss.
+// kgcss.linter._postcss. {"valueParse": str} returns the nodes of
+// postcss-value-parser, and {"selectorParse": str} the tree of
+// postcss-selector-parser (every own property of every node but its parent,
+// with "toString" added: what the node prints as), or the error it throws.
+// {"selectorSpecificity": str} returns the specificity that
+// @csstools/selector-specificity gives the parsed root and each node it
+// walks, and {"resolveNested": [selector, parent], "ignoreImplicitNesting":
+// bool} the tree @csstools/selector-resolve-nested resolves selector to.
 
 import { createInterface } from 'node:readline';
 import { join, resolve } from 'node:path';
@@ -24,6 +31,10 @@ const { default: stylelint } = await load('stylelint', 'lib/index.mjs');
 const { default: plugins } = await load('@stylistic/stylelint-plugin', 'dist/index.js');
 const { default: postcss } = await load('postcss', 'lib/postcss.js');
 const { default: safeParse } = await load('postcss-safe-parser', 'lib/safe-parse.js');
+const { default: valueParser } = await load('postcss-value-parser', 'lib/index.js');
+const { default: selectorParser } = await load('postcss-selector-parser', 'dist/index.js');
+const { selectorSpecificity } = await load('@csstools/selector-specificity', 'dist/index.mjs');
+const { resolveNestedSelector } = await load('@csstools/selector-resolve-nested', 'dist/index.mjs');
 
 function reviver(key, value) {
 	if (value && typeof value === 'object' && Array.isArray(value.$regexp)) return new RegExp(...value.$regexp);
@@ -55,6 +66,53 @@ function parse(request) {
 	}
 }
 
+function selectorTree(node) {
+	const ans = {};
+	for (const key of Object.keys(node)) {
+		if (key === 'parent') continue;
+		const value = node[key];
+		if (key === 'nodes' && Array.isArray(value)) ans.nodes = value.map(selectorTree);
+		else if (value !== undefined) ans[key] = value;
+	}
+	ans.toString = node.toString();
+	return ans;
+}
+
+function parseSelector(text) {
+	try {
+		return { tree: selectorTree(selectorParser().astSync(text)) };
+	} catch (err) {
+		return { error: { name: err.name, message: String(err.message ?? err) } };
+	}
+}
+
+function errorOf(err) {
+	return { error: { name: err.name, message: String(err.message ?? err) } };
+}
+
+function specificities(text) {
+	try {
+		const root = selectorParser().astSync(text);
+		const ans = [selectorSpecificity(root)];
+		root.walk((node) => {
+			ans.push(selectorSpecificity(node));
+		});
+		return { specificities: ans };
+	} catch (err) {
+		return errorOf(err);
+	}
+}
+
+function resolveNested(request) {
+	try {
+		const [selector, parent] = request.resolveNested.map((text) => selectorParser().astSync(text));
+		const options = { ignoreImplicitNesting: request.ignoreImplicitNesting };
+		return { tree: selectorTree(resolveNestedSelector(selector, parent, options)) };
+	} catch (err) {
+		return errorOf(err);
+	}
+}
+
 async function lint(request) {
 	const { results, code } = await stylelint.lint({
 		code: request.code,
@@ -75,7 +133,12 @@ for await (const line of createInterface({ input: process.stdin, crlfDelay: Infi
 	let response;
 	try {
 		const request = JSON.parse(line, reviver);
-		response = 'parse' in request ? parse(request) : await lint(request);
+		if ('parse' in request) response = parse(request);
+		else if ('valueParse' in request) response = { nodes: valueParser(request.valueParse).nodes };
+		else if ('selectorParse' in request) response = parseSelector(request.selectorParse);
+		else if ('selectorSpecificity' in request) response = specificities(request.selectorSpecificity);
+		else if ('resolveNested' in request) response = resolveNested(request);
+		else response = await lint(request);
 	} catch (err) {
 		response = { failure: String(err && err.stack ? err.stack : err) };
 	}

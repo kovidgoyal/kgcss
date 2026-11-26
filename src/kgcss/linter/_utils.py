@@ -7,10 +7,10 @@ expressions are translated with their ASCII-only \\w and \\d.
 """
 
 import re
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Final
 
-from kgcss.linter._postcss import JS_WHITESPACE, AtRule, Comment, Container, Node, Rule
+from kgcss.linter._postcss import JS_WHITESPACE, AtRule, Comment, Container, Declaration, Node, Root, Rule
 
 RE_VENDOR_PREFIX: Final = re.compile(r'^-[A-Za-z0-9_]+-')
 RE_JS_WHITESPACE: Final = re.compile(f'[{re.escape(JS_WHITESPACE)}]')
@@ -147,3 +147,273 @@ RE_FUNCTION_NAME: Final = re.compile(r'[a-zA-Z]*\(')
 
 def is_function_name_at(source: str, i: int) -> bool:
     return RE_FUNCTION_NAME.match(source, i) is not None
+
+
+def vendor_unprefixed(name: str) -> str:
+    """vendor.unprefixed(): 'foo' for '-webkit-foo'."""
+    return RE_VENDOR_PREFIX.sub('', name, count=1)
+
+
+def is_custom_property(name: str) -> bool:
+    """isCustomProperty()."""
+    return name.startswith('--')
+
+
+def is_scss_variable(name: str) -> bool:
+    """isScssVariable()."""
+    return name.startswith('$') or '.$' in name
+
+
+def is_standard_syntax_property(name: str) -> bool:
+    """isStandardSyntaxProperty(): not a SCSS or Less variable, nor interpolated."""
+    if is_scss_variable(name) or name.startswith('@'):
+        return False
+    if name.endswith(('+', '+_')):  # Less: transform+_: scale(2)
+        return False
+    return not has_interpolation(name)
+
+
+def is_standard_syntax_declaration(decl: Declaration) -> bool:
+    """isStandardSyntaxDeclaration()."""
+    prop, parent = decl.prop, decl.parent
+    if is_scss_variable(prop):
+        return False
+    if prop[:1] == '@' and prop[1:2] != '{':  # a Less variable
+        return False
+    if isinstance(parent, AtRule) and parent.raws.after_name == ':':  # a Less map
+        return False
+    if isinstance(parent, Rule) and parent.selector:
+        selector = parent.selector
+        if selector.startswith('#') and selector.endswith('()'):  # a Less map
+            return False
+        if selector[-1] == ':' and selector[:2] != '--':  # Sass nested properties
+            return False
+    return True
+
+
+def each_declaration_block(root: Root) -> Iterator[list[Declaration]]:
+    """eachDeclarationBlock(): the declarations of each block (inner blocks first), the root's too."""
+
+    def each(node: Node) -> Iterator[list[Declaration]]:
+        if not isinstance(node, (Rule, AtRule, Root)) or not node.nodes:
+            return
+        decls: list[Declaration] = []
+        for child in node.nodes:
+            if isinstance(child, Declaration):
+                decls.append(child)
+            yield from each(child)
+        if decls:
+            yield decls
+
+    return each(root)
+
+
+def ancestors(node: Node) -> Iterator[Container]:
+    """eachNodeUpToRoot(): the parents of node, not including the root."""
+    current = node.parent
+    while current is not None and not isinstance(current, Root):
+        yield current
+        current = current.parent
+
+
+def is_descriptor_declaration(decl: Declaration, nesting_at_keywords: frozenset[str]) -> bool:
+    """isDescriptorDeclaration(): in an at-rule such as @font-face rather than in a rule."""
+    for node in ancestors(decl):
+        if isinstance(node, Rule):
+            return False
+        if isinstance(node, AtRule) and node.name.lower() not in nesting_at_keywords:
+            return True
+    return False
+
+
+def css_tree_vendor_prefix(name: str) -> str:
+    """css-tree's getVendorPrefix(): '-webkit-' for '-webkit-x', '' for '--x' or '-x'."""
+    if len(name) >= 3 and name[0] == '-' and name[1] != '-':
+        second = name.find('-', 2)
+        if second != -1:
+            return name[: second + 1]
+    return ''
+
+
+CSS_TREE_HACKS: Final = frozenset('_*$#+&')
+
+
+def css_tree_property(prop: str, properties: frozenset[str]) -> str | None:
+    """css-tree's lexer.getProperty(): the name it knows prop by, or None.
+
+    Like css-tree's names.property(), this strips a hack prefix (_ * $ # + & /
+    and //), lowercases, and falls back to the name without a vendor prefix.
+    """
+    hack = ''
+    if prop[:1] == '/':
+        hack = '//' if prop[1:2] == '/' else '/'
+    elif prop[:1] in CSS_TREE_HACKS:
+        hack = prop[0]
+    if prop[len(hack) : len(hack) + 2] == '--':
+        return None  # a custom property: not in properties
+    name = prop.lower()[len(hack) :]
+    vendor = css_tree_vendor_prefix(name)
+    if name in properties:
+        return name
+    if vendor and (basename := name[len(vendor) :]) in properties:
+        return basename
+    return None
+
+
+RE_LESS_EXTEND: Final = re.compile(r':extend(?:\(.*?\))?')
+RE_LESS_MIXIN_RESOLVED: Final = re.compile(r'\.[\w-]+\(.*\).+', re.ASCII)
+RE_LESS_PARAMETRIC_MIXIN: Final = re.compile(r'\(@.*\)$')
+
+
+def is_standard_syntax_selector(selector: str) -> bool:
+    """isStandardSyntaxSelector() of stylelint (the plugin has its own)."""
+    if has_interpolation(selector) or selector.startswith('%') or selector.endswith(':'):
+        return False
+    if RE_LESS_EXTEND.search(selector) or RE_LESS_MIXIN_RESOLVED.search(selector):
+        return False
+    if selector.endswith(')') and ':' not in selector:
+        return False
+    if RE_LESS_PARAMETRIC_MIXIN.search(selector):
+        return False
+    return '<%' not in selector and '%>' not in selector and '//' not in selector
+
+
+def is_standard_syntax_rule(node: Node) -> bool:
+    """isStandardSyntaxRule()."""
+    return isinstance(node, Rule) and is_standard_syntax_selector(node.selector)
+
+
+# Values
+
+RE_JS_NOT_WHITESPACE: Final = re.compile(f'[^{re.escape(JS_WHITESPACE)}]')
+RE_SCSS_NAMESPACE_VAR: Final = re.compile(r'^[^\n\r\u2028\u2029]+\.\$')
+RE_SCSS_NAMESPACE_FUNCTION: Final = re.compile(r'^[^\n\r\u2028\u2029]+\.[-\w]+\(', re.ASCII)
+RE_WEBEXTENSION_MSG: Final = re.compile(f'__MSG_[^{re.escape(JS_WHITESPACE)}]+__')
+
+
+def js_split_whitespace(text: str) -> list[str]:
+    """text.split(/\\s+/) on a trimmed text, without empty strings (.filter(Boolean))."""
+    return [part for part in RE_JS_WHITESPACE.split(text) if part]
+
+
+def declaration_value(decl: Declaration) -> str:
+    """getDeclarationValue(): the value as written, comments included."""
+    raw = decl.raws.value
+    return raw.raw if raw is not None and raw.value == decl.value else decl.value
+
+
+def declaration_value_index(decl: Declaration) -> int:
+    """declarationValueIndex(): where the value starts, relative to the start of the declaration."""
+    return len(decl.prop) + len(decl.raws.between or ':')
+
+
+def is_standard_syntax_value(value: str) -> bool:
+    """isStandardSyntaxValue(): not a SCSS or Less variable, nor interpolated."""
+    normalized = value[1:] if value[:1] in ('-', '+', '*', '/') else value
+    if normalized.startswith(('$', '@')):
+        return False
+    if RE_SCSS_NAMESPACE_VAR.search(value) or RE_SCSS_NAMESPACE_FUNCTION.search(value):
+        return False
+    return not has_interpolation(normalized) and not RE_WEBEXTENSION_MSG.search(value)
+
+
+def is_variable(word: str) -> bool:
+    """isVariable()."""
+    return word.lower().startswith('var(')
+
+
+def postcss_list_comma(text: str) -> list[str]:
+    """postcss.list.comma(): split at top-level commas, outside strings, comments and parentheses."""
+    parts: list[str] = []
+    current: list[str] = []
+    func = 0
+    in_quote = escape = in_comment = False
+    prev_quote = ''
+    i = 0
+    n = len(text)
+    while i < n:
+        letter = text[i]
+        if in_comment:
+            current.append(letter)
+            if letter == '*' and text[i + 1 : i + 2] == '/':
+                current.append('/')
+                i += 1
+                in_comment = False
+            i += 1
+            continue
+        split = False
+        if escape:
+            escape = False
+        elif letter == '\\':
+            escape = True
+        elif in_quote:
+            if letter == prev_quote:
+                in_quote = False
+        elif letter in '"\'':
+            in_quote = True
+            prev_quote = letter
+        elif letter == '/' and text[i + 1 : i + 2] == '*':
+            current.append('/*')
+            i += 2
+            in_comment = True
+            continue
+        elif letter == '(':
+            func += 1
+        elif letter == ')':
+            if func > 0:
+                func -= 1
+        elif func == 0 and letter == ',':
+            split = True
+        if split:
+            parts.append(js_trim_str(''.join(current)))
+            current = []
+        else:
+            current.append(letter)
+        i += 1
+    parts.append(js_trim_str(''.join(current)))
+    return parts
+
+
+def js_trim_str(text: str) -> str:
+    return text.strip(JS_WHITESPACE)
+
+
+# Number(text) is not NaN: JavaScript's StringToNumber grammar
+RE_JS_NUMBER: Final = re.compile(
+    r'(?:[+-]?(?:Infinity|(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?)|0[xX][0-9a-fA-F]+|0[oO][0-7]+|0[bB][01]+)?'
+)
+
+
+def is_numbery(value: str) -> bool:
+    """isNumbery(): not blank, and Number(value) is a number (not NaN)."""
+    trimmed = js_trim_str(value)
+    return bool(trimmed) and RE_JS_NUMBER.fullmatch(trimmed) is not None
+
+
+def function_arguments_search(
+    source: str, function_name: re.Pattern[str], callback: Callable[[str, int], None]
+) -> None:
+    """functionArgumentsSearch(): call callback(arguments, index) for each function named function_name."""
+    from kgcss.linter._value_parser import iter_nodes, parse
+
+    for node in iter_nodes(parse(source)):
+        if node.type != 'function' or not function_name.search(node.value):
+            continue
+        expression_index = node.source_index + len(node.value) + 1
+        if node.value.lower() == 'url':
+            reparsed = parse(source[node.source_index + len(node.value) :])[0]
+            last = expression_index + reparsed.source_end_index - 2
+            end = last + 1 - (1 if char_at(source, last) == ')' else 0)
+        else:
+            end = node.source_end_index - (1 if char_at(source, node.source_end_index - 1) == ')' else 0)
+        callback(source[expression_index:end], expression_index)
+
+
+def char_at(text: str, i: int) -> str:
+    """text[i] in JavaScript: undefined (here '') outside the string."""
+    return text[i] if 0 <= i < len(text) else ''
+
+
+def at_rule_param_index(at_rule: AtRule) -> int:
+    """atRuleParamIndex(): where the params start, relative to the start of the at-rule."""
+    return 1 + len(at_rule.name) + len(at_rule.raws.after_name or '')

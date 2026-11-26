@@ -27,10 +27,27 @@ from typing import Final
 class LintRule(StrEnum):
     """The rules: the value is the name stylelint gives the rule."""
 
+    ANNOTATION_NO_UNKNOWN = 'annotation-no-unknown'
     AT_RULE_NO_UNKNOWN = 'at-rule-no-unknown'
     BLOCK_NO_EMPTY = 'block-no-empty'
+    COLOR_NO_INVALID_HEX = 'color-no-invalid-hex'
+    COMMENT_NO_EMPTY = 'comment-no-empty'
+    CUSTOM_PROPERTY_NO_MISSING_VAR_FUNCTION = 'custom-property-no-missing-var-function'
+    DECLARATION_BLOCK_NO_DUPLICATE_CUSTOM_PROPERTIES = 'declaration-block-no-duplicate-custom-properties'
+    DECLARATION_BLOCK_NO_SHORTHAND_PROPERTY_OVERRIDES = 'declaration-block-no-shorthand-property-overrides'
+    FONT_FAMILY_NO_DUPLICATE_NAMES = 'font-family-no-duplicate-names'
+    FONT_FAMILY_NO_MISSING_GENERIC_FAMILY_KEYWORD = 'font-family-no-missing-generic-family-keyword'
+    FUNCTION_LINEAR_GRADIENT_NO_NONSTANDARD_DIRECTION = 'function-linear-gradient-no-nonstandard-direction'
+    FUNCTION_NO_UNKNOWN = 'function-no-unknown'
+    KEYFRAME_DECLARATION_NO_IMPORTANT = 'keyframe-declaration-no-important'
+    NAMED_GRID_AREAS_NO_INVALID = 'named-grid-areas-no-invalid'
+    NO_DUPLICATE_AT_IMPORT_RULES = 'no-duplicate-at-import-rules'
     NO_EMPTY_SOURCE = 'no-empty-source'
     NO_EXTRA_SEMICOLONS = 'no-extra-semicolons'
+    NO_INVALID_DOUBLE_SLASH_COMMENTS = 'no-invalid-double-slash-comments'
+    NO_INVALID_POSITION_AT_IMPORT_RULE = 'no-invalid-position-at-import-rule'
+    PROPERTY_NO_UNKNOWN = 'property-no-unknown'
+    STRING_NO_NEWLINE = 'string-no-newline'
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,25 +73,57 @@ def _stylelint(rule: LintRule, description: str, fixable: bool = False) -> LintR
     )
 
 
+# The rules of @stylistic/stylelint-plugin
+_STYLISTIC: Final = frozenset({LintRule.NO_EXTRA_SEMICOLONS})
+_FIXABLE: Final = frozenset({LintRule.NO_EXTRA_SEMICOLONS})
+_DESCRIPTIONS: Final = {
+    LintRule.FUNCTION_NO_UNKNOWN: 'Disallow unknown functions',
+    LintRule.STRING_NO_NEWLINE: 'Disallow invalid newlines within strings',
+    LintRule.NO_DUPLICATE_AT_IMPORT_RULES: 'Disallow duplicate @import rules',
+    LintRule.NAMED_GRID_AREAS_NO_INVALID: 'Disallow invalid named grid areas',
+    LintRule.FUNCTION_LINEAR_GRADIENT_NO_NONSTANDARD_DIRECTION: (
+        'Disallow non-standard direction values for linear gradient functions'
+    ),
+    LintRule.FONT_FAMILY_NO_MISSING_GENERIC_FAMILY_KEYWORD: (
+        'Disallow a missing generic family keyword within font families'
+    ),
+    LintRule.FONT_FAMILY_NO_DUPLICATE_NAMES: 'Disallow duplicate names within font families',
+    LintRule.CUSTOM_PROPERTY_NO_MISSING_VAR_FUNCTION: 'Disallow missing var function for custom properties',
+    LintRule.COLOR_NO_INVALID_HEX: 'Disallow invalid hex colors',
+    LintRule.ANNOTATION_NO_UNKNOWN: 'Disallow unknown annotations',
+    LintRule.AT_RULE_NO_UNKNOWN: 'Disallow unknown at-rules',
+    LintRule.BLOCK_NO_EMPTY: 'Disallow empty blocks',
+    LintRule.COMMENT_NO_EMPTY: 'Disallow empty comments',
+    LintRule.DECLARATION_BLOCK_NO_DUPLICATE_CUSTOM_PROPERTIES: (
+        'Disallow duplicate custom properties within declaration blocks'
+    ),
+    LintRule.DECLARATION_BLOCK_NO_SHORTHAND_PROPERTY_OVERRIDES: (
+        'Disallow shorthand properties that override related longhand properties'
+    ),
+    LintRule.KEYFRAME_DECLARATION_NO_IMPORTANT: 'Disallow invalid !important within keyframe declarations',
+    LintRule.NO_EMPTY_SOURCE: 'Disallow empty sources',
+    LintRule.NO_EXTRA_SEMICOLONS: 'Disallow extra semicolons',
+    LintRule.NO_INVALID_DOUBLE_SLASH_COMMENTS: (
+        'Disallow double-slash comments (//...) as they are not supported by CSS'
+    ),
+    LintRule.NO_INVALID_POSITION_AT_IMPORT_RULE: 'Disallow invalid position @import rules',
+    LintRule.PROPERTY_NO_UNKNOWN: 'Disallow unknown properties',
+}
+
+
+def _info(rule: LintRule) -> LintRuleInfo:
+    module = 'kgcss.linter._rules.' + rule.value.replace('-', '_')
+    if rule in _STYLISTIC:
+        url = f'https://stylelint-stylistic.github.io/rules/{rule.value}'
+        name = '@stylistic/' + rule.value
+    else:
+        url = f'https://stylelint.io/user-guide/rules/{rule.value}'
+        name = rule.value
+    return LintRuleInfo(rule, _DESCRIPTIONS[rule], url, rule in _FIXABLE, name, module)
+
+
 #: Every rule, in the order of LintRule
-LINT_RULES: Final[Mapping[LintRule, LintRuleInfo]] = MappingProxyType(
-    {
-        info.rule: info
-        for info in (
-            _stylelint(LintRule.AT_RULE_NO_UNKNOWN, 'Disallow unknown at-rules'),
-            _stylelint(LintRule.BLOCK_NO_EMPTY, 'Disallow empty blocks'),
-            _stylelint(LintRule.NO_EMPTY_SOURCE, 'Disallow empty sources'),
-            LintRuleInfo(
-                LintRule.NO_EXTRA_SEMICOLONS,
-                'Disallow extra semicolons',
-                'https://stylelint-stylistic.github.io/rules/no-extra-semicolons',
-                True,
-                '@stylistic/no-extra-semicolons',
-                'kgcss.linter._rules.no_extra_semicolons',
-            ),
-        )
-    }
-)
+LINT_RULES: Final[Mapping[LintRule, LintRuleInfo]] = MappingProxyType({rule: _info(rule) for rule in LintRule})
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,6 +212,7 @@ def lint(
     source: str,
     *,
     disabled: Collection[LintRule] = (),
+    options: Mapping[LintRule, Mapping[str, object]] | None = None,
     fix: bool = False,
 ) -> LintResult:
     """Lint a stylesheet with every rule but those disabled.
@@ -174,10 +224,16 @@ def lint(
     LintRuleInfo.stylelint_name, or by the LintRule value. With fix=True,
     the problems that rules can fix are fixed, and the result has the fixed
     text and the problems left in it.
+
+    options gives rules the secondary options of their stylelint
+    documentation, under the same names: ``{LintRule.SELECTOR_TYPE_NO_UNKNOWN:
+    {'ignore': ['custom-elements']}}``. Where stylelint takes a regular
+    expression, a compiled pattern or a string such as ``'/^my-/i'`` works.
+    An option that a rule does not support raises ValueError.
     """
     from kgcss.linter._engine import lint as run
 
-    return run(source, frozenset(LINT_RULES) - frozenset(disabled), fix=fix)
+    return run(source, frozenset(LINT_RULES) - frozenset(disabled), options or {}, fix=fix)
 
 
 __all__ = [

@@ -89,5 +89,19 @@ LINT_FRAGMENTS = (
     '/* stylelint-disable-line */', '/* stylelint-disable-next-line block-no-empty, at-rule-no-unknown */',
     '/* stylelint-enable block-no-empty */', '/* stylelint-disable @stylistic/no-extra-semicolons -- why */',
     'a{/* stylelint-disable-line */}', 'a /* stylelint-disable-line */ {}',
+    # declarations for the rules that read values
+    'a{color:#ff}', 'a{color:#ffff;background:url(#x) #12}', 'a{colr:red}', 'a{-webkit-foo:1}', 'a{*zoom:1}',
+    'a{font-family:Arial, Arial}', 'a{font: 12px/1.5 "Helvetica Neue", serif}', 'a{font-family:a, "b", c}',
+    'a{font:caption}', 'a{font-family: math}', 'a{font-family: var(--f)}', '@font-face{font-family:x}',
+    'a{grid-template-areas:"a b" "a"}', 'a{grid:"a a" "a ."}', 'a{grid-template-areas:""}',
+    'a{margin-top:1px;margin:0}', 'a{border-color:red;border:0}', 'a{--x:1;--x:2}', 'a{--y:1;color:--y}',
+    'a{anchor-name:--y}', '@property --z{syntax:"*"}', 'a{width:--z}', 'a{color:red !foo}', 'a{b:c ! ie}',
+    'a{background:linear-gradient(top, red, blue)}', 'a{background:-webkit-linear-gradient(to left, red, blue)}',
+    'a{background:linear-gradient(45, red)}', 'a{background:linear-gradient(to top top, red)}',
+    '@import "a.css";', '@import url(a.css) screen;', '@import "a.css" layer(x) supports(a:b) print, screen;',
+    '@keyframes k{from{color:red!important}}', '@-webkit-keyframes k{to{b:c !IMPORTANT}}',
+    '//a{}', 'a{//b:c}', 'a, // b {}', '/**/', '/* */', '/*\n*/',
+    'a{content:"x\ny"}', "a[b='c\nd']{}", '@import "a\nb";', 'a{b:foo(1) bar(x) -webkit-baz() --f() calc(1px)}',
+    'a{width:c\\61 lc(1px)}', 'a{b:[x(y)] (z(w))}',
 )  # fmt: skip
 lint_css = st.lists(st.sampled_from(LINT_FRAGMENTS), max_size=12).map(''.join)
