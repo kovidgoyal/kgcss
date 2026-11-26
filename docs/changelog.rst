@@ -1,8 +1,8 @@
 Changelog
 =========
 
-Unreleased
-----------
+1.3.0
+-----
 
 - :func:`kgcss.lint` lints stylesheets with rules that behave as stylelint's
   rules of the same names do, parsing them with a port of the PostCSS parser.
