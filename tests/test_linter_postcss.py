@@ -6,7 +6,6 @@ The trees, raws included, and the errors must be the same. Skipped unless the
 stylelint oracle is installed (see tests/stylelint_oracle.py).
 """
 
-import re
 from collections.abc import Iterator
 
 import pytest
@@ -15,12 +14,10 @@ from hypothesis import assume, given
 from kgcss.linter._postcss import Container, CssSyntaxError, Node, Parser, RawValue, SafeParser, to_string
 
 from .strategies import css_text
-from .stylelint_oracle import Stylelint, require_oracle, utf16_offsets
+from .stylelint_oracle import RE_ESCAPED_ASTRAL, RE_SURROGATE_PAIR, Stylelint, require_oracle, utf16_offsets
 
 require_oracle()
 
-RE_SURROGATE_PAIR = re.compile('[\ud800-\udbff][\udc00-\udfff]')
-RE_ESCAPED_ASTRAL = re.compile('\\\\[\U00010000-\U0010ffff]')
 RAW_NAMES = {'after_name': 'afterName', 'own_semicolon': 'ownSemicolon'}
 
 

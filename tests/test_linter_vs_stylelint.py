@@ -20,8 +20,7 @@ from kgcss.linter import LINT_RULES, lint
 from .linter_compare import as_stylelint, sort_key
 from .strategies import css_text, lint_css
 from .stylelint_fixtures import ExpectedWarning
-from .stylelint_oracle import Stylelint, StylelintWarning, require_oracle
-from .test_linter_postcss import RE_ESCAPED_ASTRAL, RE_SURROGATE_PAIR
+from .stylelint_oracle import RE_ESCAPED_ASTRAL, RE_SURROGATE_PAIR, Stylelint, StylelintWarning, require_oracle
 from .test_linter_stylelint_cases import IGNORED_MESSAGES
 
 require_oracle()

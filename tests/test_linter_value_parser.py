@@ -14,8 +14,7 @@ from hypothesis import strategies as st
 from kgcss.linter._value_parser import ValueNode, parse, stringify, unit
 
 from .strategies import FRAGMENTS
-from .stylelint_oracle import Stylelint, require_oracle, utf16_offsets
-from .test_linter_postcss import RE_SURROGATE_PAIR
+from .stylelint_oracle import RE_SURROGATE_PAIR, Stylelint, require_oracle, utf16_offsets
 
 require_oracle()
 

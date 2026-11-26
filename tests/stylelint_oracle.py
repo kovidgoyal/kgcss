@@ -12,6 +12,7 @@ Stylelint object, as starting stylelint takes a large part of a second.
 """
 
 import json
+import re
 import shutil
 import subprocess
 from collections.abc import Mapping
@@ -23,6 +24,11 @@ import pytest
 
 INSTALL_DIR = Path(__file__).resolve().parent.parent / 'bench' / '.cache' / 'stylelint'
 SCRIPT = Path(__file__).resolve().parent / 'stylelint_oracle.mjs'
+
+# A high and a low surrogate, which are one character in JavaScript
+RE_SURROGATE_PAIR = re.compile('[\ud800-\udbff][\udc00-\udfff]')
+# A backslash before an astral character, which JavaScript splits into two UTF-16 code units
+RE_ESCAPED_ASTRAL = re.compile('\\\\[\U00010000-\U0010ffff]')
 
 # A rule config as JSON, with {"$regexp": [source, flags]} for regular expressions
 type Config = bool | int | float | str | list[Config] | dict[str, Config] | None
