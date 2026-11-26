@@ -52,12 +52,12 @@ def test_parse_error_construction() -> None:
     assert repr(e) == '<ParseError misplaced-rule at 2:3: msg>'
     assert ParseError('k', 'm').offset == 0
     with pytest.raises(TypeError):
-        ParseError(1, 'm')  # type: ignore[arg-type]
+        ParseError(1, 'm')  # ty: ignore[invalid-argument-type]
 
 
 def test_rejects_non_str() -> None:
     with pytest.raises(TypeError):
-        tokenize(b'a')  # type: ignore[arg-type]
+        tokenize(b'a')  # ty: ignore[invalid-argument-type]
 
 
 def test_empty() -> None:
@@ -271,7 +271,7 @@ def test_delims_and_punctuation() -> None:
     assert not t.is_delim('<')
     assert not single('a').is_delim('a')
     with pytest.raises(TypeError):
-        t.is_delim(1)  # type: ignore[arg-type]
+        t.is_delim(1)  # ty: ignore[invalid-argument-type]
 
 
 def test_positions() -> None:

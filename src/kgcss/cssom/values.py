@@ -271,7 +271,7 @@ def _component(item: Token | Block | SyntaxFunction) -> Component:
         return SimpleBlock(text, item.opener, _build(item.content))
     t = item.type
     if (cls := TOKEN_CLASSES.get(t)) is not None:
-        return cls(text, item.value)  # type: ignore[call-arg]
+        return cls(text, item.value)  # ty: ignore[too-many-positional-arguments]
     match t:
         case TokenType.DIMENSION:
             assert isinstance(item.value, int | float)

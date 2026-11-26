@@ -233,4 +233,4 @@ def serialize_font(font: FontDict) -> str:
         parts.append(size if height is None else f'{size}/{height}')
     if families := font.get('font-family'):
         parts.append(serialize_font_family_in_font(families))
-    return ' '.join(parts)  # type: ignore[arg-type]
+    return ' '.join(parts)

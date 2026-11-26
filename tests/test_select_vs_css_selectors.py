@@ -52,7 +52,7 @@ CALIBRE = Path(__file__).parent.parent / 'bench' / '.cache' / 'calibre'
 if not (CALIBRE / 'css_selectors' / 'select.py').exists():
     pytest.skip('css_selectors is not in the benchmark cache', allow_module_level=True)
 sys.path.insert(0, str(CALIBRE))
-import css_selectors  # type: ignore[import-not-found]  # noqa: E402
+import css_selectors  # ty: ignore[import-not-found]  # noqa: E402
 
 ANBS = ('1', '2', 'odd', 'even', '-n+2', 'n+2', '3n', 'n')
 POSITIONS = (

@@ -83,7 +83,7 @@ def sheet_selectors(name: str, limit: int | None = None) -> tuple[str, ...]:
     import kgcss
 
     sheet = kgcss.parse_stylesheet((CORPUS / name).read_text(encoding='utf-8'))
-    texts = [s.text for r in sheet.iter_rules(kgcss.RuleType.STYLE) for s in r.selectors]  # type: ignore[attr-defined]
+    texts = [s.text for r in sheet.iter_rules(kgcss.RuleType.STYLE) for s in r.selectors]  # ty: ignore[missing-attribute]
     return tuple(texts[:limit])
 
 
@@ -128,7 +128,7 @@ def kgcss_select_workloads() -> dict[str, Workload]:
 def css_selectors_select_workloads() -> dict[str, Workload]:
     if str(CALIBRE) not in sys.path:
         sys.path.insert(0, str(CALIBRE))
-    import css_selectors  # type: ignore[import-not-found]
+    import css_selectors  # ty: ignore[import-not-found]
 
     errors = (css_selectors.SelectorError,)
 

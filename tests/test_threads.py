@@ -515,7 +515,7 @@ def test_fetcher_runs_outside_the_sheet_lock() -> None:
     sheet: kgcss.Stylesheet
 
     def read_other_rule() -> None:
-        finished.append(sheet.rules[1].style['color'] == 'red')  # type: ignore[attr-defined]
+        finished.append(sheet.rules[1].style['color'] == 'red')  # ty: ignore[missing-attribute]
 
     def fetcher(url: str) -> tuple[str | None, str]:
         helper = threading.Thread(target=read_other_rule, daemon=True)
@@ -524,7 +524,7 @@ def test_fetcher_runs_outside_the_sheet_lock() -> None:
         return None, '.imported { color: blue }'
 
     sheet = kgcss.parse_stylesheet('@import "a.css"; p { color: red }', href='http://x/', fetcher=fetcher)
-    imported = sheet.rules[0].style_sheet  # type: ignore[attr-defined]
+    imported = sheet.rules[0].style_sheet  # ty: ignore[missing-attribute]
     assert imported is not None
     assert finished == [True]
 
@@ -536,7 +536,7 @@ def test_log_handler_runs_outside_the_sheet_lock() -> None:
     sheet: kgcss.Stylesheet
 
     def read_other_rule() -> None:
-        finished.append(sheet.rules[1].style['color'] == 'red')  # type: ignore[attr-defined]
+        finished.append(sheet.rules[1].style['color'] == 'red')  # ty: ignore[missing-attribute]
 
     def log(error: kgcss.ParseError) -> None:
         helper = threading.Thread(target=read_other_rule, daemon=True)
@@ -544,6 +544,6 @@ def test_log_handler_runs_outside_the_sheet_lock() -> None:
         helper.join(timeout=10)
 
     sheet = kgcss.parse_stylesheet('a { color: red; margin 0 } p { color: red }', log=log)
-    assert sheet.rules[0].style['color'] == 'red'  # type: ignore[attr-defined]
+    assert sheet.rules[0].style['color'] == 'red'  # ty: ignore[missing-attribute]
     assert finished == [True]
     assert [e.message for e in sheet.errors] == ['Invalid rule ignored']

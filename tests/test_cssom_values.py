@@ -115,7 +115,7 @@ def test_unicode_range() -> None:
     assert [(c.start, c.end) for c in v if isinstance(c, UnicodeRange)] == [(0x25, 0xFF), (0x400, 0x4FF), (0xA5, 0xA5)]
     assert texts(v) == ['U+0025-00FF', 'u+4??', 'U+A5']
     assert [i.css_text for i in v.items] == ['U+0025-00FF', ',', 'u+4??', ',', 'U+A5']
-    assert v[0].value == (0x25, 0xFF)  # type: ignore[attr-defined]
+    assert v[0].value == (0x25, 0xFF)  # ty: ignore[missing-attribute]
     # Invalid ranges are parsed as ordinary values
     for text in ('U+110000', 'U+1?2', 'U+1?-50', 'U+20-10', 'U+', 'U+1, x'):
         assert not any(isinstance(c, UnicodeRange) for c in parse_value(text, property_name='unicode-range')), text
@@ -158,7 +158,7 @@ def test_text_without(value: str, index: int, expected: str) -> None:
 
 
 def first_component(prop: Property) -> object:
-    # A function call, so that mypy does not keep a narrowed type across mutations
+    # A function call, so that the type checker does not keep a narrowed type across mutations
     return prop.parsed_value[0]
 
 

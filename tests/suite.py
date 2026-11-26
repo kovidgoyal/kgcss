@@ -98,7 +98,7 @@ def item_to_json(item: Token | Block | Function) -> list[JSON]:
             return [['function', item.name, *values_to_json(item.arguments)]]
         case Token(type=TokenType.COMMENT):
             return []
-    ans = [token_to_json(item)]
+    ans: list[JSON] = [token_to_json(item)]
     if not item.closed and (marker := EOF_MARKERS.get(item.type)):
         ans.append(['error', marker])
     return ans

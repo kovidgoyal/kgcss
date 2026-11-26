@@ -214,9 +214,9 @@ def test_parse_from_blocks() -> None:
     assert summary(parse_rule_list(media.block)) == ['rule:p', 'rule:s']
     assert parse_rule_list(media.block).errors == ()
     with pytest.raises(TypeError):
-        parse_one_rule(rule.block)  # type: ignore[arg-type]
+        parse_one_rule(rule.block)  # ty: ignore[invalid-argument-type]
     with pytest.raises(TypeError):
-        parse_block_contents(1)  # type: ignore[arg-type]
+        parse_block_contents(1)  # ty: ignore[invalid-argument-type]
 
 
 def test_unknown_at_rules_round_trip() -> None:
@@ -329,22 +329,22 @@ def test_argument_handling() -> None:
     for fn in parsers:
         name = fn.__name__
         with pytest.raises(TypeError, match=r'takes exactly one positional argument \(0 given\)'):
-            fn()  # type: ignore[call-arg]
+            fn()  # ty: ignore[missing-argument]
         with pytest.raises(TypeError, match='takes exactly one positional argument'):
-            fn('a', True)  # type: ignore[call-arg]
+            fn('a', True)  # ty: ignore[too-many-positional-arguments]
         with pytest.raises(TypeError, match=f"{name}\\(\\) got an unexpected keyword argument 'bogus'"):
-            fn('a', bogus=1)  # type: ignore[call-arg]
+            fn('a', bogus=1)  # ty: ignore[unknown-argument]
         with pytest.raises(TypeError):
-            fn(b'a')  # type: ignore[arg-type]
+            fn(b'a')  # ty: ignore[invalid-argument-type]
         # comments takes any truth value
-        fn('/* c */ a', comments=0)  # type: ignore[arg-type]
-        fn('/* c */ a', comments=[])  # type: ignore[arg-type]
-    assert len(kgcss.tokenizer.tokenize('/* c */', comments=0)) == 0  # type: ignore[arg-type]
-    assert len(kgcss.tokenizer.tokenize('/* c */', comments='yes')) == 1  # type: ignore[arg-type]
+        fn('/* c */ a', comments=0)  # ty: ignore[invalid-argument-type]
+        fn('/* c */ a', comments=[])  # ty: ignore[invalid-argument-type]
+    assert len(kgcss.tokenizer.tokenize('/* c */', comments=0)) == 0  # ty: ignore[invalid-argument-type]
+    assert len(kgcss.tokenizer.tokenize('/* c */', comments='yes')) == 1  # ty: ignore[invalid-argument-type]
     with pytest.raises(TypeError, match="unexpected keyword argument 'encoding'"):
-        parse_rule_list('a', encoding='utf-8')  # type: ignore[call-arg]
+        parse_rule_list('a', encoding='utf-8')  # ty: ignore[unknown-argument]
     with pytest.raises(TypeError, match='encoding must be a str or None'):
-        _kgcss.parse_stylesheet('a', encoding=1)  # type: ignore[arg-type]
+        _kgcss.parse_stylesheet('a', encoding=1)  # ty: ignore[invalid-argument-type]
     assert _kgcss.parse_stylesheet('a{}', encoding='x', comments=False).encoding == 'x'
 
 

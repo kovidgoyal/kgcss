@@ -167,7 +167,7 @@ def test_specific_declarations() -> None:
 
 
 def parent_of(prop: Property) -> DeclarationBlock | None:
-    # A function call, so that mypy does not keep a narrowed type across mutations
+    # A function call, so that the type checker does not keep a narrowed type across mutations
     return prop.parent
 
 
@@ -393,9 +393,9 @@ def test_build_properties_checks_its_arguments() -> None:
     with pytest.raises(TypeError):
         build_properties(nodes, Extra, None)
     with pytest.raises(TypeError):
-        build_properties(nodes, str, None)  # type: ignore[type-var]
+        build_properties(nodes, str, None)  # ty: ignore[invalid-argument-type]
     with pytest.raises(TypeError):
-        build_properties((), Property, None)  # type: ignore[arg-type]
+        build_properties((), Property, None)  # ty: ignore[invalid-argument-type]
     built, others = build_properties(nodes, Property, None)
     assert not others
     prop = built[0]

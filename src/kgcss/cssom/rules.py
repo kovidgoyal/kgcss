@@ -157,6 +157,7 @@ class Rule:
         text = serialize(self, SerializeOptions(style='preserve', drop_empty_rules=False))
         new = _build.parse_rule_text(text, context_of(self))
         assert type(new) is type(self), (text, new)
+        assert isinstance(new, type(self))  # for the type checker
         return new
 
     def __deepcopy__(self, memo: dict[int, object]) -> Self:

@@ -242,7 +242,7 @@ def test_options() -> None:
     # Kobo empties a rule to remove it from the output
     sheet = parse_stylesheet('@page { margin: 0 } a { b: c }')
     page = sheet.rules[0]
-    page.style = ''  # type: ignore[attr-defined]
+    page.style = ''  # ty: ignore[missing-attribute]
     assert sheet.css_text == 'a {\n  b: c;\n}'
 
 

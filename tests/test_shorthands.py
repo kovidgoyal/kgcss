@@ -283,7 +283,7 @@ def test_expansion_details() -> None:
         **{f'border-{e}-style': 'none' for e in EDGES},
         **{f'border-{e}-color': 'currentcolor' for e in EDGES},
     }
-    assert expand_shorthand('border-top', 'canvas 1px')['border-top-color'] == 'canvas'  # type: ignore[index]
+    assert expand_shorthand('border-top', 'canvas 1px')['border-top-color'] == 'canvas'  # ty: ignore[not-subscriptable]
     assert expand_shorthand('border-width', '1 2') is None
     assert expand_shorthand('border-width', '1 2', quirks_mode=True) == {
         'border-top-width': '1',

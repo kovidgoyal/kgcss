@@ -75,7 +75,7 @@ def test_serialize_font_family(names: list[str], expected: str) -> None:
 
 
 def font(**kw: str | list[str]) -> FontDict:
-    return {(('line' if k == 'height' else 'font') + '-' + k): v for k, v in kw.items()}  # type: ignore[return-value]
+    return {(('line' if k == 'height' else 'font') + '-' + k): v for k, v in kw.items()}  # ty: ignore[invalid-explicit-return]
 
 
 @pytest.mark.parametrize(

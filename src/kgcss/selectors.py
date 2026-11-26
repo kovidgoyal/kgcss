@@ -379,7 +379,7 @@ def _rename(text: str, kind: type[ClassSelector | IdSelector], mapping: NameMap,
     edits: list[tuple[int, int, str]] = []
     for compiled in compile_selectors(text, nested):
         for s in build_tree(compiled).walk():
-            if type(s) is kind and (new := fn(s.name)) != s.name:
+            if isinstance(s, kind) and (new := fn(s.name)) != s.name:
                 if not new:
                     raise ValueError(f'Cannot rename {prefix}{s.name} to an empty name')
                 start, end = compiled.start + s.span[0], compiled.start + s.span[1]

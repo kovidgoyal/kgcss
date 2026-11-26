@@ -761,10 +761,10 @@ def test_resolved() -> None:
     child, nest, plain, negated, media = outer.rules
     assert outer.selectors[0].resolved() is outer.selectors[0]
     texts = {
-        'child': [s.resolved().text for s in child.selectors],  # type: ignore[attr-defined]
-        'nest': [s.resolved().text for s in nest.selectors],  # type: ignore[attr-defined]
-        'plain': [s.resolved().text for s in plain.selectors],  # type: ignore[attr-defined]
-        'negated': [s.resolved().text for s in negated.selectors],  # type: ignore[attr-defined]
+        'child': [s.resolved().text for s in child.selectors],  # ty: ignore[missing-attribute]
+        'nest': [s.resolved().text for s in nest.selectors],  # ty: ignore[missing-attribute]
+        'plain': [s.resolved().text for s in plain.selectors],  # ty: ignore[missing-attribute]
+        'negated': [s.resolved().text for s in negated.selectors],  # ty: ignore[missing-attribute]
     }
     assert texts == {
         'child': [':is(.p, #q) > a'],

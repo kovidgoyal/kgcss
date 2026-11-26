@@ -48,7 +48,7 @@ def corpus_texts() -> tuple[tuple[str, ...], tuple[str, ...]]:
     for path in sorted(CORPUS.glob('*.css')):
         sheet = kgcss.parse_stylesheet(path.read_text(encoding='utf-8'))
         for rule in sheet.iter_rules(kgcss.RuleType.STYLE):
-            for prop in rule.style:  # type: ignore[attr-defined]
+            for prop in rule.style:  # ty: ignore[missing-attribute]
                 if prop.name.endswith('color'):
                     values.append(prop.value)
                 components.extend(c.css_text for c in prop.parsed_value.items if isinstance(c, (Ident, Hash, Function)))
@@ -61,7 +61,7 @@ def parsers() -> dict[str, Parser]:
     ans: dict[str, Parser] = {'kgcss': kgcss.parse_rgba, 'kgcss parse_color': kgcss.parse_color}
     sys.path.insert(0, str(CALIBRE))
     try:
-        from calibre_extensions.tokenizer import parse_css4_color_string  # type: ignore[import-not-found]
+        from calibre_extensions.tokenizer import parse_css4_color_string  # ty: ignore[import-not-found]
     except ImportError:
         print('calibre_extensions is not in the benchmark cache, run bench/bench_parse.py prepare', file=sys.stderr)
     else:

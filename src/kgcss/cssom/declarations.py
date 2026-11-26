@@ -559,7 +559,7 @@ def block_from_nodes(nodes: NodeList | Iterable[Declaration | Token], parent_rul
     # The properties are created in C (csrc/properties.c), which also exempts them from garbage
     # collection: they cannot be part of a reference cycle, see Property.parent.
     if not isinstance(nodes, NodeList | list):
-        nodes = cast('list[Declaration | Token]', list(nodes))
+        nodes = list(nodes)
     built, has_comments = build_properties(nodes, Property, ref(block))
     items = cast('list[Property | Comment]', built)
     if has_comments:

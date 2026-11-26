@@ -52,4 +52,4 @@ def test_serialize_identifier(src: str, expected: str) -> None:
 @pytest.mark.parametrize('func', [serialize_string, serialize_identifier])
 def test_rejects_non_str(func: Callable[[str], str]) -> None:
     with pytest.raises(TypeError):
-        func(b'abc')  # type: ignore[arg-type]
+        func(b'abc')  # ty: ignore[invalid-argument-type]

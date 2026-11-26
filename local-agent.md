@@ -52,7 +52,7 @@ section before you implement a feature.
 uv sync                                  # build + install into .venv
 uv run pytest -n auto                    # tests, in parallel
 uv run ruff check . && uv run ruff format --check .
-uv run mypy
+uv run ty check
 ```
 
 Before you report work as done, all of the following must pass:
@@ -62,9 +62,9 @@ Before you report work as done, all of the following must pass:
    `setup.py`. Do not add `# noqa` to get around `ANN` rules. Do not use `Any`
    unless nothing narrower is correct.
 2. `uv run ruff format --check .` (single quotes, 120 columns).
-3. `uv run mypy` in strict mode, with no new `type: ignore` unless a test is
-   deliberately passing a wrong type. In that case use the narrowest error
-   code, e.g. `# type: ignore[arg-type]`.
+3. `uv run ty check` with no errors (configured in `pyproject.toml`), and no new
+   `ty: ignore` unless a test is deliberately passing a wrong type. In that case
+   use the narrowest rule, e.g. `# ty: ignore[invalid-argument-type]`.
 4. `uv run pytest -n auto` on a regular CPython build.
 5. For any C change: the tests on a free-threaded build as well (see below),
    and a build with `KGCSS_WERROR=1` that has no warnings.

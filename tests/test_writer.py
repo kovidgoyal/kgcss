@@ -130,7 +130,7 @@ def test_deep_nesting() -> None:
 
 def test_rejects_other_types() -> None:
     with pytest.raises(TypeError):
-        c_write_values([], 0)  # type: ignore[arg-type]
+        c_write_values([], 0)  # ty: ignore[invalid-argument-type]
 
 
 def serialize_both(sheet: Stylesheet, options: SerializeOptions) -> tuple[str, str]:

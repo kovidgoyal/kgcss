@@ -34,7 +34,7 @@ dev = [
     "hypothesis>=6.100",
     "setuptools>=77",  # for tools/sanitize_tests.py, which builds the extension directly
     "ruff>=0.8",
-    "mypy>=1.13",
+    "ty>=0.0.1a0",
     # Select works on any ElementTree-style tree, the tests use lxml trees
     "lxml>=5",
     "lxml-stubs>=0.5",
@@ -134,11 +134,21 @@ quote-style = "single"
 exclude = ["*.md"]
 
 # ---------------------------------------------------------------------------
-# mypy
+# ty
 # ---------------------------------------------------------------------------
-[tool.mypy]
-python_version = "3.14"
-strict = true
-files = ["src", "tests", "tools", "bench"]
-mypy_path = "src"
-warn_unreachable = true
+[tool.ty.environment]
+python-version = "3.14"
+
+[tool.ty.src]
+include = ["src", "tests", "tools", "bench", "setup.py"]
+
+[tool.ty.analysis]
+# Suppress with ty: ignore[rule] comments only
+respect-type-ignore-comments = false
+
+[tool.ty.rules]
+unused-ignore-comment = "error"
+possibly-unresolved-reference = "error"
+
+[tool.ty.terminal]
+error-on-warning = true

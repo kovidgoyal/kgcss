@@ -40,7 +40,7 @@ def corpus_values() -> tuple[tuple[str, ...], tuple[str, ...]]:
     for path in sorted(CORPUS.glob('*.css')):
         sheet = kgcss.parse_stylesheet(path.read_text(encoding='utf-8'))
         for rule in sheet.iter_rules(kgcss.RuleType.STYLE, kgcss.RuleType.FONT_FACE):
-            for prop in rule.style:  # type: ignore[attr-defined]
+            for prop in rule.style:  # ty: ignore[missing-attribute]
                 if prop.name == 'font-family':
                     families.append(prop.value)
                 elif prop.name == 'font':
@@ -51,11 +51,11 @@ def corpus_values() -> tuple[tuple[str, ...], tuple[str, ...]]:
 def tinycss() -> ModuleType | None:
     sys.path.insert(0, str(CALIBRE))
     try:
-        import tinycss.fonts3  # type: ignore[import-not-found]
+        import tinycss.fonts3  # ty: ignore[import-not-found]
     except ImportError:
         print('tinycss is not in the benchmark cache, run bench/bench_parse.py prepare', file=sys.stderr)
         return None
-    return tinycss.fonts3  # type: ignore[no-any-return]
+    return tinycss.fonts3
 
 
 def main() -> None:

@@ -794,7 +794,7 @@ def test_matching_from_the_left(css: str) -> None:
 
 
 def test_select_is_generic_over_the_element_type() -> None:
-    # assert_type is checked by mypy: Select keeps the type of the elements of the tree it was made from
+    # assert_type is checked by ty: Select keeps the type of the elements of the tree it was made from
     import xml.etree.ElementTree as ET
 
     lxml_root = etree.fromstring('<a><b/></a>')

@@ -291,7 +291,7 @@ def tinycss_workloads() -> dict[str, Workload]:
         count = 0
         for decl in iter_declarations(css21.CSS21Parser().parse_stylesheet(css).rules):
             count += 1
-            _ = (decl.name, decl.value.as_css(), decl.priority)  # type: ignore[attr-defined]
+            _ = (decl.name, decl.value.as_css(), decl.priority)  # ty: ignore[missing-attribute]
         return count
 
     return {'tokenize': tokenize, 'parse': parse, 'full': full}
@@ -337,7 +337,7 @@ def css_parser_workloads() -> dict[str, Workload]:
 
     def read_all(sheet: object, selectors: bool = False) -> int:
         count = 0
-        stack = [sheet.cssRules]  # type: ignore[attr-defined]
+        stack = [sheet.cssRules]  # ty: ignore[missing-attribute]
         while stack:
             for rule in stack.pop():
                 if selectors and (text := getattr(rule, 'selectorText', None)) is not None:
@@ -367,7 +367,7 @@ def css_parser_workloads() -> dict[str, Workload]:
         if (sheet := parsed.get(css)) is None:
             parsed[css] = sheet = parser.parseString(css)
             read_all(sheet, selectors=True)
-        return len(sheet.cssText)  # type: ignore[attr-defined]
+        return len(sheet.cssText)  # ty: ignore[missing-union-attribute]
 
     return {
         'tokenize': tokenize, 'parse': parse, 'full': full,

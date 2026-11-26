@@ -9,7 +9,7 @@ kgcss uses `uv <https://docs.astral.sh/uv/>`_:
    uv run pytest -n auto     # run the tests in parallel
    uv run ruff check .       # lint: type annotations are required
    uv run ruff format .      # format
-   uv run mypy               # type check
+   uv run ty check           # type check
 
 ``uv sync`` and ``uv run`` rebuild the extension when files in ``csrc/``
 change. ``python setup.py build_ext --inplace`` builds it in place. Build

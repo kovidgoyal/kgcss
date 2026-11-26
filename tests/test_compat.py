@@ -46,8 +46,8 @@ def test_editor_demo_plugin() -> None:
     sheet = parseString('p { font-size: 12pt } @media print { h1 { font-size: 2em } } a { color: red }')
     magnify_stylesheet(sheet, 2)
     # Only the top level style rules, as css_parser's rulesOfType gives them
-    assert unwrap(sheet).rules[0].style['font-size'] == '24pt'  # type: ignore[attr-defined]
-    assert unwrap(sheet).rules[1].rules[0].style['font-size'] == '2em'  # type: ignore[attr-defined]
+    assert unwrap(sheet).rules[0].style['font-size'] == '24pt'  # ty: ignore[missing-attribute]
+    assert unwrap(sheet).rules[1].rules[0].style['font-size'] == '2em'  # ty: ignore[missing-attribute]
     assert kgcss.compat.serialize(sheet, 'text/css', pretty_print=True) == unwrap(sheet).encode()
     block = parseStyle('font-size: 10px; color: red')
     magnify_declaration(block, 1.5)
@@ -158,10 +158,10 @@ def test_views_are_live() -> None:
     assert unwrap(view) is sheet
     # Changes through the view are in the kgcss objects, and the other way round
     rule = view.cssRules[0]
-    rule.style.setProperty('margin', '0')  # type: ignore[attr-defined]
-    assert sheet.rules[0].style['margin'] == '0'  # type: ignore[attr-defined]
-    sheet.rules[0].selector_text = 'p'  # type: ignore[attr-defined]
-    assert rule.selectorText == 'p'  # type: ignore[attr-defined]
+    rule.style.setProperty('margin', '0')  # ty: ignore[missing-attribute]
+    assert sheet.rules[0].style['margin'] == '0'  # ty: ignore[missing-attribute]
+    sheet.rules[0].selector_text = 'p'  # ty: ignore[missing-attribute]
+    assert rule.selectorText == 'p'  # ty: ignore[missing-attribute]
     # Views of the same object are equal and hash alike
     assert view.cssRules[0] == rule
     assert hash(view.cssRules[0]) == hash(rule)
@@ -170,28 +170,28 @@ def test_views_are_live() -> None:
     # @supports is an unknown rule to css_parser, but its rules are there
     supports = view.cssRules[1]
     assert (supports.type, supports.typeString) == (CSSRule.UNKNOWN_RULE, 'UNKNOWN_RULE')
-    assert supports.atkeyword == '@supports'  # type: ignore[attr-defined]
-    assert supports.cssRules[0].selectorText == 'b'  # type: ignore[attr-defined]
-    supports.insertRule('e { f: g }')  # type: ignore[attr-defined]
-    assert [r.selector_text for r in sheet.iter_rules(kgcss.RuleType.STYLE)] == ['p', 'b', 'e']  # type: ignore[attr-defined]
+    assert supports.atkeyword == '@supports'  # ty: ignore[missing-attribute]
+    assert supports.cssRules[0].selectorText == 'b'  # ty: ignore[missing-attribute]
+    supports.insertRule('e { f: g }')  # ty: ignore[missing-attribute]
+    assert [r.selector_text for r in sheet.iter_rules(kgcss.RuleType.STYLE)] == ['p', 'b', 'e']  # ty: ignore[missing-attribute]
     # wrap() works on rules, blocks and properties too
-    block = sheet.rules[0].style  # type: ignore[attr-defined]
+    block = sheet.rules[0].style  # ty: ignore[missing-attribute]
     assert unwrap(wrap(block)) is block
     assert unwrap(wrap(sheet.rules[0])) is sheet.rules[0]
     prop = block.get_property('color')
     assert prop is not None
     assert wrap(prop).value == 'red'
     with pytest.raises(TypeError):
-        wrap('a')  # type: ignore[call-overload]
+        wrap('a')  # ty: ignore[no-matching-overload]
 
 
 def test_sheet_api() -> None:
     sheet = parseString(b'@charset "latin1"; a { content: "\xe9" }')
     assert sheet.encoding == 'windows-1252'  # the WHATWG encoding for the label latin1
     assert sheet.cssText == '@charset "latin1";\na {\n  content: "\xe9";\n}'.encode('latin1')
-    assert sheet.cssRules[0].encoding == 'latin1'  # type: ignore[attr-defined]
+    assert sheet.cssRules[0].encoding == 'latin1'  # ty: ignore[missing-attribute]
     sheet.cssText = 'b { c: d }'
-    assert [r.selectorText for r in sheet] == ['b']  # type: ignore[attr-defined]
+    assert [r.selectorText for r in sheet] == ['b']  # ty: ignore[missing-attribute]
     # add() puts @import where it is valid; insertRule() and add() copy rules from other sheets
     other = parseString('x { y: z }')
     assert sheet.add('@import "i.css";') == 0
@@ -211,10 +211,10 @@ def test_sheet_api() -> None:
     # Namespaces, media, comments, rules from text
     sheet = parseString('@media print { a {} } /* c */')
     media = sheet.cssRules[0]
-    media.media.appendMedium('screen')  # type: ignore[attr-defined]
-    assert media.media.mediaText == 'print, screen'  # type: ignore[attr-defined]
-    media.media.deleteMedium('print')  # type: ignore[attr-defined]
-    assert (media.media.length, media.media.item(0)) == (1, 'screen')  # type: ignore[attr-defined]
+    media.media.appendMedium('screen')  # ty: ignore[missing-attribute]
+    assert media.media.mediaText == 'print, screen'  # ty: ignore[missing-attribute]
+    media.media.deleteMedium('print')  # ty: ignore[missing-attribute]
+    assert (media.media.length, media.media.item(0)) == (1, 'screen')  # ty: ignore[missing-attribute]
     assert sheet.cssRules[1].type == CSSRule.COMMENT
     sheet.namespaces['h'] = 'http://www.w3.org/1999/xhtml'
     assert b'@namespace h' in sheet.cssText

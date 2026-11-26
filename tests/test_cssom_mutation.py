@@ -3,6 +3,7 @@
 """The object model: modifying it."""
 
 import copy
+from collections.abc import Iterable
 
 import pytest
 
@@ -35,13 +36,12 @@ from kgcss import (
 PRESERVE = SerializeOptions(style='preserve')
 
 
-def types(rules: object) -> list[str]:
-    assert hasattr(rules, '__iter__')
+def types(rules: Iterable[Rule]) -> list[str]:
     return [r.type.name for r in rules]
 
 
 def sheet_of(rule: Rule) -> Stylesheet | None:
-    # Function calls, so that mypy does not keep a narrowed type across mutations
+    # Function calls, so that the type checker does not keep a narrowed type across mutations
     return rule.parent_style_sheet
 
 
@@ -298,7 +298,7 @@ def test_selectors() -> None:
     assert [s.text for s in selectors] == ['a', 'b.c']
     assert selectors.text == 'a, b.c'
     # Callers can attach attributes to selectors (calibre's selector.calibre_used)
-    selectors[1].calibre_used = True  # type: ignore[attr-defined]
+    selectors[1].calibre_used = True  # ty: ignore[missing-attribute]
     del selectors[0]
     assert rule.selector_text == 'b.c'
     # Appending a selector from another rule appends a copy, with its attributes
@@ -306,7 +306,7 @@ def test_selectors() -> None:
     assert other.selector_text == 'd, b.c'
     copied = other.selectors[1]
     assert copied is not selectors[0]
-    assert copied.calibre_used  # type: ignore[attr-defined]
+    assert copied.calibre_used  # ty: ignore[missing-attribute]
     selectors.append(Selector('e > f'))
     selectors.sort(reverse=True)
     assert rule.selector_text == 'e > f, b.c'

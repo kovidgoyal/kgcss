@@ -46,22 +46,22 @@ def corpus_media() -> tuple[str, ...]:
     for path in sorted(CORPUS.glob('*.css')):
         sheet = kgcss.parse_stylesheet(path.read_text(encoding='utf-8'))
         for rule in sheet.iter_rules(kgcss.RuleType.MEDIA, kgcss.RuleType.IMPORT):
-            texts.append(rule.media.media_text)  # type: ignore[attr-defined]
+            texts.append(rule.media.media_text)  # ty: ignore[missing-attribute]
     return tuple(texts)
 
 
 def tinycss() -> Callable[[str], list[object]] | None:
     sys.path.insert(0, str(CALIBRE))
     try:
-        from tinycss.media3 import CSSMedia3Parser  # type: ignore[import-not-found]
-        from tinycss.tokenizer import tokenize_grouped  # type: ignore[import-not-found]
+        from tinycss.media3 import CSSMedia3Parser  # ty: ignore[import-not-found]
+        from tinycss.tokenizer import tokenize_grouped  # ty: ignore[import-not-found]
     except ImportError:
         print('tinycss is not in the benchmark cache, run bench/bench_parse.py prepare', file=sys.stderr)
         return None
     parser = CSSMedia3Parser()
 
     def parse(text: str) -> list[object]:
-        return parser.parse_media(list(tokenize_grouped(text)), [])  # type: ignore[no-any-return]
+        return parser.parse_media(list(tokenize_grouped(text)), [])
 
     return parse
 
@@ -99,7 +99,7 @@ def main() -> None:
     tiny_cell = '-'
     if tiny is not None:
 
-        def run_tiny(css: str) -> int:
+        def run_tiny(css: str, tiny: Callable[[str], list[object]] = tiny) -> int:
             return sum(len(tiny(t)) for t in texts)
 
         tt, tn = best_time(run_tiny, '', 2)

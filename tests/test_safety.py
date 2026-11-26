@@ -130,14 +130,14 @@ def test_values_are_immutable() -> None:
     # Parsed values are shared, through the caches of media queries and the like: they cannot be changed
     value = kgcss.parse_value('1px solid')
     with pytest.raises(dataclasses.FrozenInstanceError):
-        value[0].value = 2  # type: ignore[attr-defined]
+        value[0].value = 2  # ty: ignore[invalid-assignment]
     with pytest.raises(AttributeError):
-        value.css_text = 'x'  # type: ignore[misc]
+        value.css_text = 'x'  # ty: ignore[invalid-assignment]
     query = kgcss.parse_media_queries('(min-width: 600px)')[0]
     feature = next(query.features())
     assert feature.value is not None
     with pytest.raises(dataclasses.FrozenInstanceError):
-        feature.value.css_text = '1px'  # type: ignore[misc]
+        feature.value.css_text = '1px'  # ty: ignore[invalid-assignment]
     assert kgcss.parse_media_queries('(min-width: 600px)')[0].to_css() == '(min-width: 600px)'
     # They are still hashable and comparable
     assert value[0] == kgcss.parse_value('1px')[0]

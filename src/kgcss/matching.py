@@ -63,7 +63,9 @@ class Select[E]:
         self, root: E | _Tree[E], ignore_inappropriate_pseudo_classes: bool = False, *, quirks_mode: bool = False
     ) -> None:
         # Elements are duck typed: the C Snapshot only needs the ElementTree API
-        elem: Any = root.getroot() if hasattr(root, 'getroot') else root  # an ElementTree
+        elem: Any = root
+        if hasattr(elem, 'getroot'):  # an ElementTree
+            elem = elem.getroot()
         self.root: E = elem
         document = elem.getroottree().getroot() if hasattr(elem, 'getroottree') else elem
         self.ignore_inappropriate_pseudo_classes = ignore_inappropriate_pseudo_classes

@@ -186,7 +186,7 @@ def test_current_color() -> None:
 
 def test_argument_type() -> None:
     with pytest.raises(TypeError):
-        parse_rgba(b'red')  # type: ignore[arg-type]
+        parse_rgba(b'red')  # ty: ignore[invalid-argument-type]
 
 
 def test_rgba_type() -> None:
@@ -595,7 +595,7 @@ def colors(draw: st.DrawFn) -> Color:
         return None if none and draw(st.integers(0, 6)) == 0 else draw(s)
 
     c0, c1, c2 = (value(s) for s in SPACE_CHANNELS[space])
-    return Color(space, (c0, c1, c2), value(st.sampled_from((1.0, 0.0)) | channel(0, 1)))  # type: ignore[arg-type]
+    return Color(space, (c0, c1, c2), value(st.sampled_from((1.0, 0.0)) | channel(0, 1)))  # ty: ignore[invalid-argument-type]
 
 
 def close(a: float | None, b: float | None) -> bool:
@@ -635,24 +635,24 @@ def test_color_model() -> None:
     assert parse_color('color(xyz 1 2 3)') == Color('xyz-d65', (1.0, 2.0, 3.0))
     assert parse_color('rgb(none 300 -5 / 2)') == Color('rgb', (0.0, 255.0, 0.0))
     assert parse_color('transparent') == Color('rgb', (0.0, 0.0, 0.0), 0.0)
-    assert parse_color('oklab(0.5 none 0.1)').to_css() == 'oklab(0.5 none 0.1)'  # type: ignore[union-attr]
+    assert parse_color('oklab(0.5 none 0.1)').to_css() == 'oklab(0.5 none 0.1)'  # ty: ignore[missing-union-attribute]
     assert parse_color('currentColor') == 'currentColor'
     assert parse_color('rgb(var(--x))') is None
     assert Color('rgb', (1, 2, 3), 0.9999999).to_css() == 'rgb(1, 2, 3)'
     assert Color('srgb', (1.5, -0.25, 1 / 3), 0.5).to_css() == 'color(srgb 1.5 -0.25 0.333333 / 0.5)'
     assert Color('srgb', (1.5, -0.25, 0)).to_rgba() == (1.0, 0.0, 0.0, 1.0)
     with pytest.raises(TypeError):
-        parse_color(b'red')  # type: ignore[arg-type]
+        parse_color(b'red')  # ty: ignore[invalid-argument-type]
     with pytest.raises(ValueError, match='Unknown color space'):
-        Color('cmyk', (0, 0, 0))  # type: ignore[arg-type]
+        Color('cmyk', (0, 0, 0))  # ty: ignore[invalid-argument-type]
     with pytest.raises(ValueError, match='three channels'):
-        Color('lab', (0, 0))  # type: ignore[arg-type]
+        Color('lab', (0, 0))  # ty: ignore[invalid-argument-type]
     with pytest.raises(ValueError, match='finite'):
         Color('lab', (math.inf, 0, 0))
     with pytest.raises(ValueError, match='no none'):
         Color('rgb', (None, 0, 0))
     with pytest.raises(dataclasses.FrozenInstanceError):
-        c.alpha = 1  # type: ignore[misc]
+        c.alpha = 1  # ty: ignore[invalid-assignment]
 
 
 def test_components() -> None:
@@ -664,6 +664,6 @@ def test_components() -> None:
         None,
         None,
         Color('rgb', (1.0, 2.0, 3.0)),
-        Color('rgb', (255.0,) * 3),
+        Color('rgb', (255.0, 255.0, 255.0)),
         Color('rgb', (255.0, 0.0, 0.0)),
     ]
