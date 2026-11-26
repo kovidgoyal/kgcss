@@ -1,6 +1,6 @@
 # License: GPLv3 Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
-"""Matching selectors against element trees: Select (docs/plan-03-selectors.md, §5)."""
+"""Matching selectors against element trees: Select."""
 
 from collections.abc import Iterable, Iterator, Sequence
 from typing import Any
@@ -18,7 +18,7 @@ type SelectorArg = str | Selector | SelectorList | Iterable[Selector]
 
 
 class Select:
-    """Select elements of a tree with CSS selectors.
+    """Select elements of a tree with CSS selectors::
 
         select = Select(root)
         for elem in select('p.note > a[href]'):

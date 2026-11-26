@@ -1,6 +1,6 @@
 # License: GPLv3 Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
-"""The selector list of a style rule (requirements 3.3).
+"""The selector list of a style rule.
 
 Selectors are kept as text, with normalized whitespace but escapes, case
 and comments as written. They are parsed (kgcss.selectors) when their tree,

@@ -1,6 +1,6 @@
 # License: GPLv3 Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
-"""Value grammar for the longhands of the common shorthands (docs/plan-05-fonts-grammar.md, §2.2).
+"""Value grammar for the longhands of the common shorthands.
 
 This is not a validator for all of CSS. It knows the value types and the longhands that
 shorthand expansion needs: the edges of margin and padding, the parts of border, list-style

@@ -1,6 +1,6 @@
 # License: GPLv3 Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
-"""Expanding shorthands into longhands, and condensing them back (docs/plan-05-fonts-grammar.md, §2.3).
+"""Expanding shorthands into longhands, and condensing them back.
 
 The shorthands are margin, padding, border, border-top (and the other edges),
 border-style, border-width, border-color, list-style and font.

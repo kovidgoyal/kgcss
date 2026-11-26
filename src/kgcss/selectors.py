@@ -163,7 +163,7 @@ class SelectorPseudoClass:
 
 @dataclass(frozen=True, slots=True)
 class NthPseudoClass:
-    """:nth-child(), :nth-last-child(), :nth-of-type() or :nth-last-of-type(): An+B, and for the
+    """An :nth-child(), :nth-last-child(), :nth-of-type() or :nth-last-of-type(): An+B, and for the
     first two optionally the selectors of 'of S'."""
 
     name: str

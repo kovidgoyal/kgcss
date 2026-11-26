@@ -23,6 +23,9 @@ classifiers = [
     "Typing :: Typed",
 ]
 
+[project.urls]
+Documentation = "https://kgcss.readthedocs.io"
+
 [dependency-groups]
 dev = [
     "pytest>=8",
@@ -111,6 +114,8 @@ allow-star-arg-any = false
 
 [tool.ruff.format]
 quote-style = "single"
+# The Python blocks in the Markdown documents are API sketches, laid out by hand
+exclude = ["*.md"]
 
 # ---------------------------------------------------------------------------
 # mypy

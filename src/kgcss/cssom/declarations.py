@@ -1,6 +1,6 @@
 # License: GPLv3 Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
-"""Declaration blocks and properties (requirements §4)."""
+"""Declaration blocks and properties."""
 
 from collections.abc import Iterable, Iterator, MutableSequence
 from typing import TYPE_CHECKING, cast, overload
@@ -176,7 +176,7 @@ class Property(PropertyData):
         return parsed
 
     def remove_component(self, index: int) -> None:
-        """Remove the component at index of parsed_value, with one adjacent separator (requirements V6)."""
+        """Remove the component at index of parsed_value, with one adjacent separator."""
         self.value = self.parsed_value.text_without(index)
 
     @property
@@ -598,7 +598,7 @@ def parse_declarations(
 
 
 def parse_style(text: str, *, log: ErrorHandler | None = None) -> DeclarationBlock:
-    """Parse declarations, such as the contents of a style="" attribute (requirements P2).
+    """Parse declarations, such as the contents of a style="" attribute.
 
     Never raises for bad CSS: invalid declarations and any rules are dropped.
     Problems are in the result's errors list and sent to log. A top level }

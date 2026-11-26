@@ -1,6 +1,6 @@
 # License: GPLv3 Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
-"""Font family lists and the font shorthand (docs/plan-05-fonts-grammar.md, §2.1).
+"""Font family lists and the font shorthand.
 
 These replace calibre's tinycss.fonts3 helpers, with the same results, on kgcss's
 tokenizer.

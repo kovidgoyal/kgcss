@@ -1,6 +1,6 @@
 # License: GPLv3 Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
-"""Finding and rewriting URLs (requirements §7).
+"""Finding and rewriting URLs.
 
 URLs are found at token level: url(x) and url("x") anywhere, at any depth
 of functions (image-set(), cross-fade()), the strings of @import rules, and
@@ -143,7 +143,7 @@ def splice(text: str, spans: Iterable[URLSpan], fn: URLMapper) -> str:
 
 
 def replace_urls_in_text(css: str, fn: URLMapper, *, style_attribute: bool = False) -> str:
-    """Rewrite the URLs in CSS text, leaving everything else exactly as it was (requirements U4).
+    """Rewrite the URLs in CSS text, leaving everything else exactly as it was.
 
     fn is called with each URL, unquoted and unescaped, and returns its
     replacement; quotes are added if the new URL needs them. With
@@ -204,7 +204,7 @@ def _rule_texts(rule: Rule) -> list[str]:
 
 
 def iter_urls(obj: Stylesheet | Rule | DeclarationBlock, *, ignore_imports: bool = False) -> Iterator[str]:
-    """Every URL in a sheet, rule or declaration block, in order (requirements U1, U3).
+    """Every URL in a sheet, rule or declaration block, in order.
 
     This covers @import, all declarations (including in @page, margin rules,
     @font-face and nested rules, at any depth), the conditions of @supports
@@ -226,7 +226,7 @@ def iter_urls(obj: Stylesheet | Rule | DeclarationBlock, *, ignore_imports: bool
 
 
 def replace_urls(obj: Stylesheet | Rule | DeclarationBlock, fn: URLMapper, *, ignore_imports: bool = False) -> bool:
-    """Replace every URL in a sheet, rule or declaration block with fn(url) (requirements U2).
+    """Replace every URL in a sheet, rule or declaration block with fn(url).
 
     fn is called with each URL, unquoted and unescaped, and returns its
     replacement; quotes are added if the new URL needs them. Only the
@@ -269,7 +269,7 @@ def replace_urls(obj: Stylesheet | Rule | DeclarationBlock, fn: URLMapper, *, ig
 
 def remove_url_values(block: DeclarationBlock, predicate: Callable[[str], bool]) -> bool:
     """Remove the parts of values that contain a URL for which predicate is true, and declarations
-    left with nothing (requirements U5). A part is a top level component of the value, such as
+    left with nothing. A part is a top level component of the value, such as
     url(x) or image-set(...). Returns True if anything changed."""
     changed = False
     for prop in list(_properties(block)):

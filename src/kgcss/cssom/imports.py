@@ -1,6 +1,6 @@
 # License: GPLv3 Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
-"""Loading and inlining @import rules (requirements P10, P11)."""
+"""Loading and inlining @import rules."""
 
 import posixpath
 from collections.abc import Callable
@@ -127,12 +127,12 @@ def load_all(sheet: Stylesheet) -> None:
 
 
 def resolve_imports(sheet: Stylesheet) -> Stylesheet:
-    """A copy of sheet with its @import rules replaced by the rules of the imported sheets
-    (requirements P11), as far as they can be loaded with the sheet's fetcher.
+    """A copy of sheet with its @import rules replaced by the rules of the imported sheets, as far as
+    they can be loaded with the sheet's fetcher.
 
     Inlined rules are wrapped in @layer, @media and @supports rules for the
     conditions of their @import (in that order, @supports outermost), and
-    marked with /* START @import url */ and /* END @import url */ comments.
+    marked with ``/* START @import url */`` and ``/* END @import url */`` comments.
     Rules that would not be valid nested in those, which browsers ignore, are
     dropped. Relative URLs in imported rules are rewritten to mean the same
     in sheet: relative to its href if on the same host, else absolute.

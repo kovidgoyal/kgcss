@@ -110,12 +110,12 @@ class Stylesheet:
 
     @property
     def namespaces(self) -> NamespaceMap:
-        """Prefix to namespace URI, backed by the @namespace rules (requirements P9)."""
+        """Prefix to namespace URI, backed by the @namespace rules."""
         return NamespaceMap(self)
 
     def insert_rule(self, rule: Rule | str, index: int | None = None) -> Rule:
         """Insert a rule, or the text of one, at index (default: at the end). A rule that belongs to
-        another sheet or rule is copied (requirements 3.1). Returns the inserted rule.
+        another sheet or rule is copied. Returns the inserted rule.
 
         Raises ValueError if the rule cannot go there: @charset comes first, then @import, then
         @namespace, then everything else. Raises CSSSyntaxError for invalid text.
@@ -284,7 +284,7 @@ class Stylesheet:
 
     def encode(self, options: SerializeOptions | None = None) -> bytes:
         """The serialized sheet as bytes, in the encoding of its @charset rule (UTF-8 if none).
-        Characters that encoding cannot represent are written as CSS escapes (requirements S4)."""
+        Characters that encoding cannot represent are written as CSS escapes."""
         from kgcss.cssom.serializer import DEFAULT_OPTIONS, encode_text, serialize
 
         charset = next((r.encoding for r in self.rules if isinstance(r, CharsetRule)), None)
@@ -314,14 +314,14 @@ def parse_stylesheet(
     ParseError or a logging.Logger. Declaration blocks are parsed when first
     accessed, and problems found then are reported the same way.
 
-    fetcher loads the sheets of @import rules (requirements P10). It is
+    fetcher loads the sheets of @import rules. It is
     called with the URL of the import, resolved against href, and returns
     (encoding, text) where text is str or bytes (decoded with encoding as
     the protocol encoding), or None if there is no such sheet. Imported
     sheets are loaded when ImportRule.style_sheet is first accessed, or
     during parsing with eager_imports. With resolve_imports the result is
     resolve_imports() of the sheet: the imported rules inlined in place of
-    the @import rules (requirements P11).
+    the @import rules.
     """
     from kgcss.cssom.build import build_top_level
     from kgcss.cssom.imports import resolve_imports as inline_imports
@@ -351,7 +351,7 @@ def load_all(sheet: Stylesheet) -> None:
 
 
 def parse_rule(text: str, *, log: ErrorHandler | None = None) -> Rule:
-    """Parse the text of exactly one rule, as at the top level of a sheet (requirements P4).
+    """Parse the text of exactly one rule, as at the top level of a sheet.
     The text of a single comment gives a Comment. Raises CSSSyntaxError for anything else."""
     from kgcss.cssom.build import Context, parse_rule_text
 

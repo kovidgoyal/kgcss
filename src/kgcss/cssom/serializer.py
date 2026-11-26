@@ -1,6 +1,6 @@
 # License: GPLv3 Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
-"""Serializing CSSOM objects to text (requirements §6).
+"""Serializing CSSOM objects to text.
 
 The pretty format is the one calibre writes: each rule starts on its own line,
 one declaration per line, every declaration ends with a semicolon, closing
@@ -537,7 +537,7 @@ def python_write_values(
 
 
 def normalize_selector(text: str, options: SerializeOptions = DEFAULT_OPTIONS) -> str:
-    """Normalise the whitespace of a selector list (requirements 3.3), keeping escapes, case and comments."""
+    """Normalise the whitespace of a selector list, keeping escapes, case and comments."""
     return write_values(parse_component_value_list(text), options, mode='selector')
 
 

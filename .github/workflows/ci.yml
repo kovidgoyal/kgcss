@@ -14,12 +14,18 @@ jobs:
       - run: uv run mypy
 
   test:
+    # The package as users install it (built from the checkout, with KGCSS_WERROR), on regular and
+    # free-threaded Python. lxml is only installed on regular Python: importing it re-enables the GIL,
+    # which the free-threaded run must not have. The tests that need lxml skip themselves without it.
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
         python: ["3.14", "3.14t"]
+        include:
+          - python: "3.14"
+            extra: --with lxml
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -28,7 +34,28 @@ jobs:
           KGCSS_WERROR: "1"
           HYPOTHESIS_PROFILE: thorough
           KGCSS_STRESS: "3"
-        run: uv run --no-project -p ${{ matrix.python }} --isolated --with pytest --with pytest-xdist --with hypothesis --with . -- python -m pytest -n auto
+        run: >-
+          uv run --no-project -p ${{ matrix.python }} --isolated
+          --with pytest --with pytest-xdist --with hypothesis ${{ matrix.extra }} --with .
+          -- python -m pytest -n auto -rs
+
+  compare:
+    # The tests that compare kgcss with the libraries it replaces: calibre's tinycss (and its C color
+    # parser, which is compiled here), css_selectors and css_parser. bench_parse.py prepare fetches
+    # them into bench/.cache; without them those tests are skipped.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --group bench --python "$(which python)"
+      - run: uv run --group bench python bench/bench_parse.py prepare
+      - name: Run tests
+        env:
+          HYPOTHESIS_PROFILE: thorough
+        run: uv run --group bench pytest -n auto -rs
 
   sanitizers:
     # ASan + UBSan. Uses a GCC built Python, whose sanitizer runtimes the script preloads.
@@ -44,6 +71,10 @@ jobs:
 
   fuzz:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [tokenizer, selectors, colors]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -51,9 +82,20 @@ jobs:
           python-version: "3.14"
       - uses: astral-sh/setup-uv@v5
       - run: uv sync --python "$(which python)"
-      - run: uv run python tools/fuzz.py run --seconds 120
+      - run: uv run python tools/fuzz.py run --target ${{ matrix.target }} --seconds 120
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: fuzz-crashes
-          path: build/fuzz/crash-*
+          name: fuzz-crashes-${{ matrix.target }}
+          path: build/fuzz/${{ matrix.target }}/crash-*
+
+  docs:
+    # The same build as Read the Docs (.readthedocs.yaml), with warnings as errors, and the examples
+    # of the guide run as doctests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      - run: uv run --with-requirements docs/requirements.txt sphinx-build -W --keep-going -b html docs build/docs
+      - run: uv run --with-requirements docs/requirements.txt sphinx-build -W -b doctest docs build/doctest

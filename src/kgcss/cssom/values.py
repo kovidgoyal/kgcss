@@ -1,6 +1,6 @@
 # License: GPLv3 Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
-"""Parsed property values (requirements §5).
+"""Parsed property values.
 
 A PropertyValue is an immutable sequence of components. Components are
 immutable too, by convention: they are plain slots classes rather than frozen
@@ -358,7 +358,7 @@ def _unicode_ranges(text: str) -> PropertyValue | None:
 
 
 def parse_value(text: str, *, property_name: str | None = None) -> PropertyValue:
-    """Parse a property value (requirements P3). Never raises: anything unrecognised becomes an Other component.
+    """Parse a property value. Never raises: anything unrecognised becomes an Other component.
 
     For property_name 'unicode-range' the value is parsed as unicode ranges.
     """

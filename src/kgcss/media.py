@@ -1,6 +1,6 @@
 # License: GPLv3 Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
-"""Media queries, as Media Queries Level 4 defines them (docs/plan-04-media-colors.md, §5).
+"""Media queries, as Media Queries Level 4 defines them.
 
 parse_media_queries() parses a media query list, such as the prelude of @media, the
 media of @import or the media attribute of <link>, into MediaQuery objects. It never

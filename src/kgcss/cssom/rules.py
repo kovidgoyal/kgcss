@@ -899,7 +899,7 @@ class ImportRule(Rule):
     @property
     def style_sheet(self) -> Stylesheet | None:
         """The imported sheet, fetched and parsed on first access with the fetcher of the sheet this
-        rule is in (requirements P10). None if there is no fetcher, or the sheet cannot be loaded, in
+        rule is in. None if there is no fetcher, or the sheet cannot be loaded, in
         which case the problem is reported to the sheet's errors and log handler. It is loaded once,
         even by concurrent threads, and again if href changes or the rule moves to another sheet."""
         sheet = self.parent_style_sheet
@@ -1016,7 +1016,7 @@ class MarginRule(LazyBlockRule):
 
 @final
 class Comment(Rule):
-    """A comment between rules. text is the content, without the /* and */."""
+    """A comment between rules. text is the content, without the ``/*`` and ``*/``."""
 
     __slots__ = ('_text',)
     type = RuleType.COMMENT
@@ -1029,7 +1029,7 @@ class Comment(Rule):
 
     @property
     def text(self) -> str:
-        """The text between /* and */."""
+        """The text between ``/*`` and ``*/``."""
         return self._text
 
     @text.setter

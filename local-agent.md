@@ -45,6 +45,7 @@ section before you implement a feature.
 | `tests/` | pytest test suite |
 | `setup.py` | Builds the extension only; all metadata lives in `pyproject.toml` |
 | `docs/plan-*.md` | Implementation plans. Read the relevant one before starting work on a feature |
+| `docs/*.rst`, `docs/guide/` | The user documentation (Sphinx, built by Read the Docs from `.readthedocs.yaml`). Update it with any change to the public API: the guide's examples are doctests, run by `sphinx-build -b doctest`, and the API reference lists members explicitly in `docs/api.rst` |
 
 ## Workflow
 

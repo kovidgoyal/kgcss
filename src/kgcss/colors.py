@@ -1,6 +1,6 @@
 # License: GPLv3 Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
-"""CSS colors, as CSS Color Module Level 4 defines them (docs/plan-04-media-colors.md, §4).
+"""CSS colors, as CSS Color Module Level 4 defines them.
 
 Two functions share one parser, written in C. It understands named colors, hex colors,
 rgb(), hsl(), hwb(), lab(), lch(), oklab(), oklch() and color() with the predefined color
