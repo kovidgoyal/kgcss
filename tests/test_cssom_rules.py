@@ -7,6 +7,7 @@ import logging
 
 import pytest
 
+import kgcss
 from kgcss import (
     CharsetRule,
     Comment,
@@ -398,3 +399,28 @@ def test_parsing_is_linear() -> None:
     small, large = best(unit), best(unit * 4)
     # Linear would be 4x, quadratic 16x. Allow generous noise.
     assert large < small * 9, (small, large)
+
+
+def test_iter_declaration_blocks() -> None:
+    # requirements 3.4: every declaration block, at any depth
+    css = (
+        'a{b:c; d{e:f} g:h} @media x { i{j:k} } @page { l:m; @top-left { n:o } } @font-face { src: url(x) } '
+        '@supports (a:b) { p{q:r} } @keyframes k { from { s:t } } @import "i.css";'
+    )
+    sheet = kgcss.parse_stylesheet(css.replace('@import "i.css";', ''))
+    blocks = [b.to_css(single_line=True) for b in sheet.iter_declaration_blocks()]
+    assert blocks == ['b: c', 'e: f', 'g: h', 'j: k', 'l: m', 'n: o', 'src: url(x)', 'q: r']
+    sheet = kgcss.parse_stylesheet('@import "i.css"; a{b:c}', href='http://e/', fetcher=lambda url: ('utf-8', 'z{y:x}'))
+    assert [b.to_css(single_line=True) for b in sheet.iter_declaration_blocks()] == ['b: c']
+    assert [b.to_css(single_line=True) for b in sheet.iter_declaration_blocks(follow_imports=True)] == ['y: x', 'b: c']
+    # The blocks are the rules' own: changing them changes the sheet
+    for b in sheet.iter_declaration_blocks():
+        b.set('color', 'red')
+    assert 'color: red' in sheet.css_text
+
+
+def test_encoding_from_charset() -> None:
+    # requirements 3.1, S4: for text, the encoding is what @charset says; for bytes, what decoded them
+    assert kgcss.parse_stylesheet('@charset "latin1"; a{}').encoding == 'latin1'
+    assert kgcss.parse_stylesheet('a{}').encoding is None
+    assert kgcss.parse_stylesheet(b'a{}').encoding == 'utf-8'

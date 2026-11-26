@@ -711,6 +711,29 @@ def test_rename_text() -> None:
     assert rename_classes('> .a', {'a': 'b'}) == '> .b'
 
 
+@pytest.mark.parametrize(
+    ('selector', 'expected'),
+    [
+        # calibre's tests of rename_ids_in_selector (polish/tests/structure.py), with {'_x': 'id_x'}
+        ('#_x', '#id_x'),
+        ('p#_x:hover > #_y', 'p#id_x:hover > #_y'),
+        ('#\\5f x, #_xy', '#id_x, #_xy'),
+        (':not(#_x)', ':not(#id_x)'),
+        (
+            '[id="_x"], [ id = _x ], [id~="_x"], [data-a="_x"]',
+            '[id="id_x"], [ id = "id_x" ], [id~="_x"], [data-a="_x"]',
+        ),
+        ('#_x.c /* c */ i', '#id_x.c /* c */ i'),
+        # More: the name is ASCII case-insensitive, flags and comments stay, namespaces are not ids
+        ('[ID=_x i]', '[ID="id_x" i]'),
+        ('[id=/**/_x]', '[id=/**/"id_x"]'),
+        ('[ns|id=_x], [*|id=_x]', '[ns|id=_x], [*|id=_x]'),
+    ],
+)
+def test_rename_ids_like_calibre(selector: str, expected: str) -> None:
+    assert rename_ids(selector, {'_x': 'id_x'}) == expected
+
+
 def test_rename_selectors() -> None:
     sheet = parse_stylesheet('.a, .b!, .a.c { x: y } .d { x: y }')
     rule = sheet.rules[0]

@@ -7,7 +7,9 @@ from typing import TYPE_CHECKING
 
 from kgcss.cssom.rules import (
     CharsetRule,
+    LazyBlockRule,
     NamespaceRule,
+    NestedDeclarationsRule,
     Rule,
     RuleList,
     RuleType,
@@ -21,6 +23,7 @@ from kgcss.syntax import parse_stylesheet as parse_syntax_tree
 from kgcss.tokenizer import ParseError
 
 if TYPE_CHECKING:
+    from kgcss.cssom.declarations import DeclarationBlock
     from kgcss.cssom.imports import ImportFetcher
     from kgcss.cssom.rules import ImportRule
     from kgcss.cssom.serializer import SerializeOptions
@@ -177,6 +180,15 @@ class Stylesheet:
             elif follow_imports and isinstance(rule, ImportRule) and (imported := rule.style_sheet) is not None:
                 stack.append(iter(imported.rules))
 
+    def iter_declaration_blocks(self, *, follow_imports: bool = False) -> Iterator[DeclarationBlock]:
+        """The declaration block of every rule that has one, in document order, at any depth (requirements
+        3.4): style rules and those nested in them, the declarations nested among their rules, @font-face,
+        and @page with its margin rules, inside grouping rules too. With follow_imports=True the blocks of
+        imported sheets are included, as for iter_rules()."""
+        for rule in self.iter_rules(follow_imports=follow_imports):
+            if isinstance(rule, LazyBlockRule | NestedDeclarationsRule):
+                yield rule.style
+
     def browser_index_path(self, rule: Rule) -> tuple[int, ...]:
         """The path of indices to rule in the browser CSSOM (cssRules at each level).
 
@@ -301,6 +313,9 @@ def parse_stylesheet(
     sheet._state.log = log
     sheet._source = Source(nodes.stream, 0, len(nodes.stream.source))
     sheet.rules = RuleList(build_top_level(nodes, sheet), sheet)
+    if sheet.encoding is None:
+        # Text was not decoded here, but its @charset still says which encoding it is meant for (S4)
+        sheet.encoding = next((r.encoding for r in sheet.rules if isinstance(r, CharsetRule)), None)
     if eager_imports:
         sheet._eager_imports = True
         load_all(sheet)

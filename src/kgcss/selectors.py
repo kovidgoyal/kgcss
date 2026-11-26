@@ -18,6 +18,7 @@ from kgcss._kgcss import CompiledSelector, SelectorParseError
 from kgcss._kgcss import parse_selectors as c_parse_selectors
 from kgcss.cssom.exceptions import SelectorSyntaxError
 from kgcss.escaping import serialize_identifier, serialize_string
+from kgcss.tokenizer import TokenType, tokenize
 
 __all__ = [
     'INAPPROPRIATE_PSEUDO_CLASSES',
@@ -383,6 +384,22 @@ def _rename(text: str, kind: type[ClassSelector | IdSelector], mapping: NameMap,
                     raise ValueError(f'Cannot rename {prefix}{s.name} to an empty name')
                 start, end = compiled.start + s.span[0], compiled.start + s.span[1]
                 edits.append((start, end, prefix + serialize_identifier(new)))
+            elif (
+                kind is IdSelector
+                and type(s) is AttributeSelector
+                and s.operator == '='
+                and s.namespace is None
+                and _ascii_lower(s.name) == 'id'
+                and s.value is not None
+                and (new := fn(s.value)) != s.value
+            ):
+                # [id="x"] and [id=x] select by id too: replace the value, as a string
+                if not new:
+                    raise ValueError(f'Cannot rename [id={s.value!r}] to an empty name')
+                start = compiled.start + s.span[0]
+                value_span = _attribute_value_span(text[start : compiled.start + s.span[1]])
+                if value_span is not None:
+                    edits.append((start + value_span[0], start + value_span[1], serialize_string(new)))
     if not edits:
         return text
     parts = []
@@ -395,6 +412,17 @@ def _rename(text: str, kind: type[ClassSelector | IdSelector], mapping: NameMap,
     return ''.join(parts)
 
 
+def _attribute_value_span(text: str) -> tuple[int, int] | None:
+    """The span of the value in the text of an attribute selector, [name op value flag]"""
+    tokens = [t for t in tokenize(text) if t.type not in (TokenType.WHITESPACE, TokenType.COMMENT)]
+    for i, t in enumerate(tokens[:-1]):
+        if t.is_delim('='):
+            value = tokens[i + 1]
+            if value.type in (TokenType.STRING, TokenType.IDENT):
+                return value.pos, value.end
+    return None
+
+
 def rename_classes(text: str, mapping: NameMap, *, nested: bool = True) -> str:
     """The selector list text with class names renamed, at any depth, by a mapping of old names to new
     ones or a function. Only the renamed class selectors change, everything else stays exactly as
@@ -405,7 +433,9 @@ def rename_classes(text: str, mapping: NameMap, *, nested: bool = True) -> str:
 
 
 def rename_ids(text: str, mapping: NameMap, *, nested: bool = True) -> str:
-    """Like rename_classes(), for IDs."""
+    """Like rename_classes(), for IDs: in #id selectors, and in [id=value] attribute selectors, whose value
+    is written back as a string, as calibre's rename_ids_in_selector() does. [id~=value] and the other
+    operators are left alone."""
     return _rename(text, IdSelector, mapping, nested)
 
 
