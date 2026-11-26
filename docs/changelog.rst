@@ -1,6 +1,34 @@
 Changelog
 =========
 
+1.2.0
+-----
+
+- ``@supports`` conditions are parsed and evaluated, with a callback that
+  decides which declarations are supported: :func:`kgcss.parse_supports_condition`,
+  :func:`kgcss.supports_matches`, :attr:`kgcss.SupportsRule.condition`,
+  :meth:`kgcss.SupportsRule.matches`, and for the ``supports()`` of
+  ``@import``, :attr:`kgcss.ImportRule.supports_condition` and
+  :meth:`kgcss.ImportRule.supports_matches`. See :doc:`guide/supports`.
+- :meth:`kgcss.Property.value_to_css` gives the value alone, normalized as in
+  a stylesheet (``.50em 0px`` is ``0.5em 0``).
+- :func:`kgcss.condense_shorthands` compares values normalized, so
+  ``padding-right: 0pt`` and ``padding-top: 0`` are equal, and the shorthand
+  is the shortest form: ``padding: 0``, not ``padding: 0 0``.
+- A function passed to :func:`kgcss.replace_urls` or
+  :func:`kgcss.replace_urls_in_text` can return ``None`` to leave a URL as it
+  is. It used to raise ``TypeError``.
+- :class:`kgcss.ElementTreeLike`, the protocol of the ElementTrees that
+  :class:`kgcss.Select` takes, is exported, for subclasses that repeat its
+  overloads.
+- Type checkers know the class of the rules that
+  :meth:`kgcss.RuleList.of_type` and :meth:`kgcss.Stylesheet.iter_rules`
+  return for one rule type: ``of_type(RuleType.STYLE)`` is a
+  ``list[StyleRule]``.
+- The annotations of the public API can be evaluated at run time, so
+  ``help()`` and ``inspect.signature()`` work on everything: names such as
+  ``ImportFetcher`` used to be imported only for type checkers.
+
 1.1.1
 -----
 
