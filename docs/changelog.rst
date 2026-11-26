@@ -1,6 +1,17 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+- :meth:`kgcss.Stylesheet.browser_index_path` and
+  :meth:`kgcss.Stylesheet.rule_at_browser_index_path` skip the rules that
+  browsers leave out of their object model: at-rules they do not know
+  (``@-foo-bar {...}``, but not ``@keyframes``, ``@property`` and the like),
+  ``@document``, and style rules whose selector list does not parse
+  (``*html p {}``). Before, these were counted, so a path from a browser could
+  resolve to the wrong rule.
+
 1.2.1
 -----
 

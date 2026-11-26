@@ -16,9 +16,11 @@ from kgcss import (
     Rule,
     RuleList,
     RuleType,
+    SelectorSyntaxError,
     SerializeOptions,
     StyleRule,
     Stylesheet,
+    UnknownAtRule,
     parse_style,
     parse_stylesheet,
     parse_value,
@@ -34,7 +36,29 @@ from kgcss.syntax import QualifiedRule
 from .strategies import css_text
 
 PRESERVE = SerializeOptions(style='preserve')
-NOT_IN_BROWSER = (RuleType.COMMENT, RuleType.CHARSET)
+NOT_IN_BROWSER = (RuleType.COMMENT, RuleType.CHARSET, RuleType.DOCUMENT)
+BROWSER_AT_RULES = {'keyframes', '-webkit-keyframes', 'property', 'counter-style', 'font-feature-values'}
+
+
+def in_browser(rule: Rule) -> bool:
+    """An independent version of the rules browsers keep, for the inputs css_text generates."""
+    if rule.type in NOT_IN_BROWSER:
+        return False
+    nested = False
+    parent = rule.parent_rule
+    while parent is not None:
+        nested = nested or isinstance(parent, StyleRule)
+        if not in_browser(parent):
+            return False
+        parent = parent.parent_rule
+    if isinstance(rule, UnknownAtRule):
+        return not nested and rule.name.lower() in BROWSER_AT_RULES
+    if isinstance(rule, StyleRule):
+        try:
+            compile_selectors(rule.selector_text, nested)
+        except SelectorSyntaxError:
+            return False
+    return True
 
 
 def follow_browser_path(sheet: Stylesheet, path: tuple[int, ...]) -> Rule:
@@ -42,7 +66,7 @@ def follow_browser_path(sheet: Stylesheet, path: tuple[int, ...]) -> Rule:
     rule: Rule | None = None
     for index in path:
         assert rules is not None
-        rule = [r for r in rules if r.type not in NOT_IN_BROWSER][index]
+        rule = [r for r in rules if in_browser(r)][index]
         rules = rule.child_rules()
     assert rule is not None
     return rule
@@ -63,7 +87,7 @@ def test_cssom_invariants(css: str) -> None:
         if (children := rule.child_rules()) is not None:
             for child in children:
                 assert child.parent_rule is rule
-        if rule.type not in NOT_IN_BROWSER:
+        if in_browser(rule):
             assert follow_browser_path(sheet, sheet.browser_index_path(rule)) is rule
             assert sheet.rule_at_browser_index_path(sheet.browser_index_path(rule)) is rule
     for rule in sheet.rules:

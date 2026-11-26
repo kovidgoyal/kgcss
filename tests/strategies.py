@@ -40,10 +40,24 @@ declarations = st.builds(
     importance,
 )
 selectors = st.sampled_from(
-    ('a', 'a > b', '&:hover', '.c\\31', '#id', '[x="y"]', 'p::before', '<!--', ':is(a, b)', '--x:')
+    (
+        'a',
+        'a > b',
+        '&:hover',
+        '.c\\31',
+        '#id',
+        '[x="y"]',
+        'p::before',
+        '<!--',
+        ':is(a, b)',
+        '--x:',
+        '*html p',
+        'p[a!=b]',
+    )
 )
 at_preludes = st.sampled_from((
     '@media screen', '@supports (x: y)', '@import url(a.css)', '@charset "x"', '@page :first', '@foo', '@layer a, b',
+    '@keyframes k', '@-moz-document url(x)',
 ))  # fmt: skip
 closers = st.sampled_from(('}', '}', '}', ''))
 

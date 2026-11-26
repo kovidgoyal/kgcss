@@ -350,10 +350,51 @@ def test_browser_index_path() -> None:
         if isinstance(r, StyleRule)
     }
     assert paths == {'a': (1,), 'b': (2, 0), 'c': (2, 1, 0)}
-    with pytest.raises(ValueError, match='do not exist in the browser CSSOM'):
+    with pytest.raises(ValueError, match='does not exist in the browser CSSOM'):
         sheet.browser_index_path(sheet.rules[0])
     with pytest.raises(ValueError, match='not part of this stylesheet'):
         sheet.browser_index_path(parse_stylesheet('a {}').rules[0])
+
+
+@pytest.mark.parametrize(
+    ('css', 'expected'),
+    [
+        # Style rules whose selector list does not parse, and at-rules browsers do not know, are dropped
+        ('*html p {} @-foo-bar {x} .target {}', {'.target': (0,)}),
+        ('p[a!=b] {} @media x { @-moz-document url(y) { c {} } @foo; .target {} }', {'.target': (0, 0)}),
+        # At-rules that kgcss does not model but browsers do keep their slot
+        (
+            '@keyframes k { from {} } @-webkit-keyframes k {} @property --x {} @counter-style c {} .target {}',
+            {'.target': (4,)},
+        ),
+        ('@font-feature-values F {} @font-palette-values --p {} @view-transition {} .target {}', {'.target': (3,)}),
+        # Unless they are nested in a style rule, where browsers drop them; relative selectors are valid there
+        ('a { @keyframes k {} > .target {} } b {}', {'a': (0,), '> .target': (0, 0), 'b': (1,)}),
+        # Selectors are only checked for syntax
+        ('p:unknown-pseudo {} .target {}', {'p:unknown-pseudo': (0,), '.target': (1,)}),
+    ],
+)
+def test_browser_index_path_skips_dropped_rules(css: str, expected: dict[str, tuple[int, ...]]) -> None:
+    sheet = parse_stylesheet(css)
+    paths: dict[str, tuple[int, ...]] = {}
+    for rule in sheet.iter_rules():
+        if isinstance(rule, StyleRule) and rule.selector_text in ('a', 'b', '> .target', '.target', 'p:unknown-pseudo'):
+            paths[rule.selector_text] = sheet.browser_index_path(rule)
+            assert sheet.rule_at_browser_index_path(paths[rule.selector_text]) is rule
+    assert paths == expected
+
+
+def test_browser_index_path_of_dropped_rules() -> None:
+    sheet = parse_stylesheet('*html p {} @-foo {} @document url(x) { a {} } b { @keyframes k {} }')
+    star, unknown, document, b = sheet.rules
+    assert isinstance(document, kgcss.DocumentRule)
+    assert isinstance(b, StyleRule)
+    for rule in (star, unknown, document, document.rules[0], b.rules[0]):
+        with pytest.raises(ValueError, match='does not exist in the browser CSSOM'):
+            sheet.browser_index_path(rule)
+    assert sheet.rule_at_browser_index_path((0,)) is b
+    with pytest.raises(IndexError):
+        sheet.rule_at_browser_index_path((0, 0))
 
 
 def test_rule_list() -> None:

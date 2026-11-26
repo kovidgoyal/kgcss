@@ -3,8 +3,9 @@
 """The Stylesheet class, parse_stylesheet() and parse_rule()."""
 
 from collections.abc import Iterator, MutableMapping, Sequence
-from typing import Literal, overload
+from typing import Final, Literal, overload
 
+from kgcss.cssom.exceptions import SelectorSyntaxError
 from kgcss.cssom.rules import (
     CharsetRule,
     Comment,
@@ -28,12 +29,14 @@ from kgcss.cssom.rules import (
     StyleRule,
     SupportsRule,
     UnknownAtRule,
+    context_of,
     delete_from,
     insert_into,
     set_sheet,
 )
 from kgcss.cssom.state import ErrorHandler, SheetState, Source
 from kgcss.decode import Buffer
+from kgcss.selectors import compile_selectors
 from kgcss.syntax import parse_stylesheet as parse_syntax_tree
 from kgcss.tokenizer import ParseError
 
@@ -80,6 +83,44 @@ class NamespaceMap(MutableMapping[str, str]):
 
     def __repr__(self) -> str:
         return f'<NamespaceMap {dict(self)!r}>'
+
+
+# At-rules that kgcss keeps as UnknownAtRule but browsers have in their CSSOM (CSSKeyframesRule and so on)
+BROWSER_AT_RULES: Final = frozenset(
+    {
+        'keyframes',
+        '-webkit-keyframes',
+        'property',
+        'counter-style',
+        'font-feature-values',
+        'font-palette-values',
+        'view-transition',
+        'position-try',
+        'function',
+    }
+)
+
+
+def in_browser_cssom(rule: Rule) -> bool:
+    """Whether browsers have rule in their CSSOM, which leaves out comments, @charset, at-rules they do not
+    know, @document (only allowed in user sheets) and style rules whose selector list they cannot parse.
+    Selectors are only checked for syntax: what a browser makes of pseudo-classes it does not know, or of
+    prefixed ones, differs between browsers."""
+    match rule.type:
+        case RuleType.COMMENT | RuleType.CHARSET | RuleType.DOCUMENT:
+            return False
+        case RuleType.UNKNOWN:
+            assert isinstance(rule, UnknownAtRule)
+            # Inside style rules only the conditional group rules are allowed, which kgcss models
+            return rule.name.lower() in BROWSER_AT_RULES and context_of(rule) is not _build.Context.NESTED
+        case RuleType.STYLE:
+            assert isinstance(rule, StyleRule)
+            try:
+                compile_selectors(rule.selector_text, context_of(rule) is _build.Context.NESTED)
+            except SelectorSyntaxError:
+                return False
+            return True
+    return True
 
 
 class Stylesheet:
@@ -279,14 +320,16 @@ class Stylesheet:
     def browser_index_path(self, rule: Rule) -> tuple[int, ...]:
         """The path of indices to rule in the browser CSSOM (cssRules at each level).
 
-        Browsers have no comment rules and no @charset rule, so those are
-        skipped when counting, and asking for the path of one is an error.
+        Rules that browsers leave out of their object model are skipped when
+        counting, and asking for the path of one, or of a rule inside one, is
+        an error: comments, @charset, at-rules browsers do not know, @document,
+        and style rules whose selector list does not parse.
         """
-        if rule.type in (RuleType.COMMENT, RuleType.CHARSET):
-            raise ValueError(f'{rule.type.value} rules do not exist in the browser CSSOM')
         path: list[int] = []
         current = rule
         while True:
+            if not in_browser_cssom(current):
+                raise ValueError(f'{current!r} does not exist in the browser CSSOM')
             parent = current.parent_rule
             siblings = self.rules if parent is None else parent.child_rules()
             if siblings is None:
@@ -299,7 +342,7 @@ class Stylesheet:
             for sibling in siblings:
                 if sibling is current:
                     break
-                if sibling.type not in (RuleType.COMMENT, RuleType.CHARSET):
+                if in_browser_cssom(sibling):
                     index += 1
             path.append(index)
             if parent is None:
@@ -317,10 +360,16 @@ class Stylesheet:
         for index in path:
             if rules is None:
                 raise IndexError(f'No rule at {tuple(path)}: {rule!r} has no child rules')
-            in_browser = [r for r in rules if r.type not in (RuleType.COMMENT, RuleType.CHARSET)]
-            if not 0 <= index < len(in_browser):
+            if index < 0:
                 raise IndexError(f'No rule at {tuple(path)}')
-            rule = in_browser[index]
+            for candidate in rules:
+                if in_browser_cssom(candidate):
+                    if index == 0:
+                        rule = candidate
+                        break
+                    index -= 1
+            else:
+                raise IndexError(f'No rule at {tuple(path)}')
             rules = rule.child_rules()
         assert rule is not None
         return rule
@@ -444,6 +493,9 @@ def parse_rule(text: str, *, log: ErrorHandler | None = None) -> Rule:
 
     return parse_rule_text(text, Context.TOP, log)
 
+
+# build is used through the module object, so that works whichever module is imported first
+import kgcss.cssom.build as _build  # noqa: E402
 
 # Names used only in annotations. Imported at the end, after this module is complete, because of
 # import cycles, so that annotations can be evaluated at run time (inspect.signature(), help())

@@ -130,8 +130,11 @@ Namespaces
 Rule indexes as browsers see them
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Browsers have no comment or ``@charset`` rules in their object model, so
-their rule indexes differ from ``sheet.rules``.
+Browsers leave some rules out of their object model, so their rule indexes
+differ from ``sheet.rules``: comments, ``@charset``, at-rules they do not know
+(``@-foo-bar {...}``, but not ``@keyframes``, ``@property`` and the like),
+``@document`` and style rules whose selector list does not parse
+(``*html p {}``).
 :meth:`kgcss.Stylesheet.browser_index_path` gives the path of indexes to a
 rule as a browser counts them, and
 :meth:`kgcss.Stylesheet.rule_at_browser_index_path` goes the other way, for
@@ -144,3 +147,6 @@ at:
    >>> rule = sheet.rule_at_browser_index_path((0, 0))
    >>> rule.selector_text, rule.line, sheet.browser_index_path(rule)
    ('a', 4, (0, 0))
+   >>> sheet = kgcss.parse_stylesheet('*html p {} @-foo-bar {x} .target {}')
+   >>> sheet.rule_at_browser_index_path((0,)).selector_text
+   '.target'
