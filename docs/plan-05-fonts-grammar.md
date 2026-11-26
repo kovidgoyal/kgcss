@@ -180,7 +180,49 @@ from kgcss import (
 
 ## 5. Milestones
 
-Status: milestones 1 and 2 are done.
+Status: milestones 1 to 3 are done.
+
+Notes from milestone 3:
+- **`kgcss.shorthands`**: `expand_shorthand`, `longhands`,
+  `condense_shorthands` and `INITIAL_VALUES`, for `margin`, `padding`,
+  `border`, `border-<edge>`, `border-style`, `border-width`,
+  `border-color`, `list-style` and `font`.
+- **Every component is checked** with the grammar of milestone 2, so an
+  invalid value gives `None`, as a browser would ignore it. calibre's test
+  `margin: 1 2 3 4` relies on unitless lengths, which only the HTML quirks
+  mode allows, so `expand_shorthand` has `quirks_mode=False`, as `Select`
+  does; calibre passes `True` to keep its behaviour. It applies to the
+  edges of margin and padding, and border widths.
+- **`font` also sets `font-stretch`**, which the shorthand resets in CSS.
+  calibre's composition did not have it: its tests are ported with
+  `font-stretch: normal` added, and `longhands('font')` includes it.
+- **Differences from calibre's tests, marked in `tests/test_shorthands.py`**:
+  `border-width: 10%` is not expanded (a percentage is not a border
+  width), and `font` has `font-stretch`. The others are those of §2.4.
+- **A bug found by the property test**: condensing four edges where one
+  is invalid (`padding-left: auto`) gave `padding: 0 0 0 auto`, an
+  invalid shorthand, which a browser drops whole, losing the three valid
+  edges. Condensation now expands the new shorthand and merges only if
+  it gives back exactly the longhands. The property test models the
+  cascade (shorthands expanded, `!important`, invalid declarations
+  ignored) and checks that condensing never changes what any longhand
+  ends up as, and is idempotent. Nearly half the generated blocks are
+  condensed.
+- **Condensation is conservative**: it skips a group when a declaration
+  is `!important` (as calibre), when a shorthand that overlaps it is in
+  the block (`margin` with the margin edges; `border`, `border-<edge>`
+  and the like with border parts; and, for `border`, any border longhand,
+  which would otherwise end up after it and override it), and when CSS-wide
+  keywords are mixed with other values. The shorthand goes where the
+  first longhand was.
+- **Speed**, pinned to the fast cores: `expand_shorthand('border', '1px
+  solid red')` 9.1 µs (target 20 µs), `margin: 1em 2em` 6.2 µs,
+  `list-style` 8.5 µs, and `font` 20.8 µs, most of it `parse_font`.
+  Condensing a block with nothing to merge costs about 1 µs; merging
+  sixteen longhands into `border` and `margin` about 110 µs, mostly in
+  creating the new `Property` objects, which check their values by
+  parsing them. Removing the longhands one by one first made it 300 µs:
+  each removal rebuilt the declaration list.
 
 Notes from milestone 2:
 - **`kgcss.grammar`** knows 30 longhands (`PROPERTIES`): the four edges

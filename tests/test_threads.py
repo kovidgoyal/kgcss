@@ -418,3 +418,24 @@ def test_grammar_concurrently() -> None:
         return True
 
     assert all(run_concurrently(work))
+
+
+def test_shorthands_concurrently() -> None:
+    # Each thread condenses its own blocks; the expansion caches are shared
+    css = '; '.join(f'border-{e}-{p}: {v}' for e in ('top', 'right', 'bottom', 'left')
+                    for p, v in (('color', 'red'), ('style', 'solid'), ('width', '5px')))  # fmt: skip
+    css += '; margin-top: 1px; margin-right: 2px; margin-bottom: 1px; margin-left: 2px'
+
+    def work(idx: int) -> bool:
+        check_gil()
+        for k in range(100 * STRESS):
+            padding = f'{idx + 1}px {k + 1}px'  # not 0px, which the serializer writes as 0
+            block = kgcss.parse_style(f'{css}; padding: {padding}')
+            kgcss.condense_shorthands(block)
+            if block.to_css(single_line=True) != f'border: red solid 5px; margin: 1px 2px; padding: {padding}':
+                return False
+            if kgcss.expand_shorthand('padding', padding) is None:
+                return False
+        return True
+
+    assert all(run_concurrently(work))

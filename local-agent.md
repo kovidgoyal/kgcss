@@ -13,6 +13,11 @@ section before you implement a feature.
 | `src/kgcss/selectors.py` | Parsed selectors (plan 03): the selector tree, `compile_selectors()` (the cached parse) and `build_tree()` |
 | `src/kgcss/matching.py` | `Select`: matching selectors against ElementTree-style trees (plan 03) |
 | `src/kgcss/escaping.py` | `serialize_string()` and `serialize_identifier()`, the CSSOM escaping idioms |
+| `src/kgcss/colors.py` | `parse_rgba()`, `parse_color()` and `Color` (plan 04), on the C parser in `csrc/color.c` |
+| `src/kgcss/media.py` | Media queries (plan 04): the parser, the model and three-valued evaluation |
+| `src/kgcss/fonts.py` | The font helpers that replace tinycss.fonts3 (plan 05) |
+| `src/kgcss/grammar.py` | `matches()` and `is_color()`: value grammar for the longhands of the shorthands (plan 05) |
+| `src/kgcss/shorthands.py` | Shorthand expansion and condensation (plan 05) |
 | `src/kgcss/_kgcss.pyi` | Type stubs for the C extension. **Must** match `csrc/` exactly |
 | `csrc/` | C99 sources of the `kgcss._kgcss` extension module |
 | `csrc/kgcss.h` | Shared header: included first by every `.c` file, module state, helpers |
@@ -28,6 +33,7 @@ section before you implement a feature.
 | `csrc/properties.c` | `PropertyData`, the C base of `Property` holding its fields, and `build_properties()` |
 | `csrc/selectors.c` | The selector parser, `CompiledSelector` (a flat array of nodes) and specificity. `selectors.h` has the node layout |
 | `csrc/select.c` | `Snapshot`, the matcher's view of a tree, and matching |
+| `csrc/color.c` | The CSS Color 4 parser, ported from calibre's tinycss, and `RGBA` |
 | `fuzz/` | libFuzzer harnesses, run with `tools/fuzz.py` |
 | `src/kgcss/decode.py` | Decoding stylesheet bytes: BOM, protocol/`@charset`/environment encodings, WHATWG decoders |
 | `src/kgcss/_encodings.py` | **Generated** by `tools/generate_encodings.py` from WHATWG data. Do not edit by hand. Any new generated file must also be marked `linguist-generated` in `.gitattributes` |

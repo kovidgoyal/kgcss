@@ -70,10 +70,12 @@ from kgcss.grammar import is_color, matches
 from kgcss.matching import Select
 from kgcss.media import MediaFeature, MediaQuery, media_matches, parse_media_queries
 from kgcss.selectors import INAPPROPRIATE_PSEUDO_CLASSES, rename_classes, rename_ids
+from kgcss.shorthands import INITIAL_VALUES, condense_shorthands, expand_shorthand, longhands
 from kgcss.tokenizer import ParseError
 
 __all__ = [
     'INAPPROPRIATE_PSEUDO_CLASSES',
+    'INITIAL_VALUES',
     'RGBA',
     'CSSSyntaxError',
     'CharsetRule',
@@ -123,10 +125,13 @@ __all__ = [
     'SupportsRule',
     'UnknownAtRule',
     '__version__',
+    'condense_shorthands',
     'decode_stylesheet',
+    'expand_shorthand',
     'invalid_selectors',
     'is_color',
     'iter_urls',
+    'longhands',
     'lookup_encoding',
     'matches',
     'media_matches',
