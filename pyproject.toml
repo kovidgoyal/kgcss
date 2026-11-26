@@ -17,6 +17,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Free Threading :: 2 - Beta",
     "Topic :: Text Processing :: Markup",
@@ -67,6 +68,21 @@ kgcss = ["py.typed", "*.pyi"]
 
 [tool.setuptools.dynamic]
 version = { attr = "kgcss._version.__version__" }
+
+# ---------------------------------------------------------------------------
+# cibuildwheel: the wheels built by .github/workflows/release.yml. By default it builds every
+# supported CPython, regular and free-threaded, for manylinux, musllinux, macOS and Windows.
+# Try it locally with: uvx cibuildwheel --platform linux
+# ---------------------------------------------------------------------------
+[tool.cibuildwheel]
+# 64-bit only: the 32-bit builds (win32, i686) are not tested by CI
+archs = ["auto64"]
+# The tests run from a temporary directory, against the installed wheel. pyproject.toml brings the
+# pytest configuration, README.md is needed by test_readme.py. lxml is left out, as it re-enables
+# the GIL on free-threaded Python; the tests that need it skip themselves.
+test-requires = ["pytest", "pytest-xdist", "hypothesis"]
+test-sources = ["tests", "pyproject.toml", "README.md"]
+test-command = "python -m pytest -n auto -q -rs"
 
 # ---------------------------------------------------------------------------
 # pytest. Run in parallel with: pytest -n auto
