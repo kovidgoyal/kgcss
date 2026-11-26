@@ -116,6 +116,15 @@ extern const uint8_t kg_char_class[256];
 #define KG_EOF ((uint32_t)0xFFFFFFFFu)
 #define KG_REPLACEMENT_CHAR ((uint32_t)0xFFFD)
 
+/* The next capacity of an array indexed by uint32_t: doubled, without wrapping around. Every count kept in such
+ * an array is at most the input length, below UINT32_MAX, so the saturated capacity is always enough. Returns 0
+ * when cap cannot grow. Callers compute byte sizes in size_t. */
+static inline uint32_t kg_grow_capacity(uint32_t cap, uint32_t initial) {
+    if (cap == 0) return initial;
+    if (cap == UINT32_MAX) return 0;
+    return cap > UINT32_MAX / 2 ? UINT32_MAX : cap * 2;
+}
+
 static inline bool kg_is_opener(uint8_t type) {
     return type == KG_TOK_LEFT_CURLY || type == KG_TOK_LEFT_SQUARE || type == KG_TOK_LEFT_PAREN || type == KG_TOK_FUNCTION;
 }

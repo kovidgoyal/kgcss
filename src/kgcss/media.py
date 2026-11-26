@@ -63,7 +63,7 @@ RESERVED: Final = frozenset(('only', 'not', 'and', 'or', 'layer'))
 FLIPPED: Final[dict[Operator, Operator]] = {'<': '>', '<=': '>=', '>': '<', '>=': '<=', '=': '='}
 
 
-@dataclass(slots=True, unsafe_hash=True)
+@dataclass(frozen=True, slots=True)
 class Ratio(Component):
     """A ratio such as 16/9, in a media feature."""
 

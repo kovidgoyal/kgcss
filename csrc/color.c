@@ -719,7 +719,11 @@ parse_tokens(PyObject *src, kg_color *out) {
     abuf b = {0};
     int ans = KG_COLOR_INVALID;
     bool err = false;
-    if (!kg_tokenize(kind, data, (uint32_t)len, true, &tokens)) { PyErr_NoMemory(); return -1; }
+    if (!kg_tokenize(kind, data, (uint32_t)len, true, &tokens)) {
+        kg_token_array_free(&tokens);  /* it may have allocated before failing */
+        PyErr_NoMemory();
+        return -1;
+    }
     for (uint32_t i = 0; i < tokens.count; i++) {
         const kg_token *t = tokens.tokens + i;
         bool ok = true;

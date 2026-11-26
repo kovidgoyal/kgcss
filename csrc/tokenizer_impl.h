@@ -496,8 +496,9 @@ FN(build_line_table)(const CHAR_T *d, uint32_t len, uint32_t **out, uint32_t *co
         if (c != '\n' && c != '\r' && c != '\f') continue;
         if (c == '\r' && i + 1 < len && d[i + 1] == '\n') i++;
         if (n >= cap) {
-            cap *= 2;
-            uint32_t *nl = PyMem_RawRealloc(lines, cap * sizeof(uint32_t));
+            /* More than 2**31 line breaks are possible: the capacity must not wrap around */
+            cap = kg_grow_capacity(cap, 64);
+            uint32_t *nl = cap ? PyMem_RawRealloc(lines, (size_t)cap * sizeof(uint32_t)) : NULL;
             if (nl == NULL) { PyMem_RawFree(lines); return false; }
             lines = nl;
         }

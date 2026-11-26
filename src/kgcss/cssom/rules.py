@@ -2,6 +2,7 @@
 
 """Rule classes of the CSS object model."""
 
+import threading
 from collections.abc import Callable, Iterable, Iterator, MutableSequence, Sequence
 from enum import Enum, unique
 from typing import TYPE_CHECKING, ClassVar, Self, final, overload
@@ -20,6 +21,9 @@ if TYPE_CHECKING:
     from kgcss.media import MediaFeature, MediaQuery
 
 CSS_WHITESPACE = ' \t\n\r\f'
+# Rules built by the API rather than parsed have no sheet state, and so no sheet lock: this one guards the
+# lazy creation of their parts, so that concurrent readers get the same objects. It is only taken on first use.
+CONSTRUCTED_RULES_LOCK = threading.RLock()
 
 
 @unique
@@ -524,9 +528,11 @@ class LazyBlockRule(Rule):
         if style is not None:
             return style
         if self._state is None:
-            self._load()
-            self._style = style = DeclarationBlock(parent_rule=self)
-            return style
+            with CONSTRUCTED_RULES_LOCK:
+                if self._style is None:
+                    self._load_locked()
+                    self._style = DeclarationBlock(parent_rule=self)
+                return self._style
         with self._state.lock:  # one lock for both steps, as this is hot
             self._load_locked()
             if self._style is None:
@@ -545,9 +551,7 @@ class LazyBlockRule(Rule):
         rules = self._rules
         if rules is not None:
             return rules
-        if self._state is None:
-            return self._load_locked()
-        with self._state.lock:
+        with self._state.lock if self._state is not None else CONSTRUCTED_RULES_LOCK:
             return self._load_locked()
 
     def _load_locked(self) -> RuleList | tuple[()]:
@@ -571,11 +575,7 @@ class LazyBlockRule(Rule):
         if type(rules) is RuleList:
             return rules
         self._load()
-        if self._state is None:
-            if not isinstance(self._rules, RuleList):
-                self._rules = RuleList(owner=self)
-            return self._rules
-        with self._state.lock:
+        with self._state.lock if self._state is not None else CONSTRUCTED_RULES_LOCK:
             if not isinstance(self._rules, RuleList):
                 self._rules = RuleList(owner=self)
             return self._rules
@@ -647,11 +647,8 @@ class StyleRule(LazyBlockRule, RuleContainer):
             # Hot: one parse gives each selector, and its text is exactly its span in the list
             return SelectorList(self, [Selector._from_normalized(text[c.start : c.end], c, nested) for c in compiled])
 
-        if self._state is None:
-            self._selectors = selectors = create()
-            return selectors
         # Under the sheet lock, so that concurrent readers all get the same list
-        with self._state.lock:
+        with self._state.lock if self._state is not None else CONSTRUCTED_RULES_LOCK:
             if self._selectors is None:
                 self._selectors = create()
             return self._selectors
@@ -817,8 +814,10 @@ class NestedDeclarationsRule(Rule):
         if style is not None:
             return style
         if self._state is None:
-            self._style = style = DeclarationBlock(parent_rule=self)
-            return style
+            with CONSTRUCTED_RULES_LOCK:
+                if self._style is None:
+                    self._style = DeclarationBlock(parent_rule=self)
+                return self._style
         with self._state.lock:
             if self._style is None:
                 self._style = block_from_nodes(self._declaration_items, self)
@@ -866,7 +865,7 @@ class LayerStatementRule(Rule):
 class ImportRule(Rule):
     """An @import rule."""
 
-    __slots__ = ('_href', '_href_is_string', '_layer', '_loaded', '_supports', 'media')
+    __slots__ = ('_href', '_href_is_string', '_layer', '_load_lock', '_loaded', '_supports', 'media')
     type = RuleType.IMPORT
     # None if no layer was given, '' for an anonymous layer
     layer = Tracked[str | None]()
@@ -884,6 +883,8 @@ class ImportRule(Rule):
         self._href_is_string = False
         # (sheet it was loaded for, imported sheet), None until loaded
         self._loaded: tuple[Stylesheet, Stylesheet | None] | None = None
+        # Makes loading happen once, without holding the sheet lock while the fetcher runs
+        self._load_lock = threading.Lock()
 
     @property
     def href(self) -> str:
@@ -908,10 +909,13 @@ class ImportRule(Rule):
         loaded = self._loaded
         if loaded is not None and loaded[0] is sheet:
             return loaded[1]
-        with sheet._state.lock:
+        # Not under the sheet lock: the fetcher is user code, which may wait for other threads that use the sheet
+        with self._load_lock:
             loaded = self._loaded
             if loaded is None or loaded[0] is not sheet:
-                loaded = self._loaded = (sheet, _imports.load_import(self))
+                loaded = (sheet, _imports.load_import(self))
+                with sheet._state.lock:
+                    self._loaded = loaded
         return loaded[1]
 
     def _adopt_contents(self) -> None:

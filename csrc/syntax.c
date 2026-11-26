@@ -65,8 +65,8 @@ skip_ignorable(const kg_parser *p, uint32_t i, uint32_t last) {
 static bool
 add_error(kg_parser *p, uint32_t offset, kg_error_kind kind) {
     if (p->error_count >= p->error_capacity) {
-        uint32_t cap = p->error_capacity ? p->error_capacity * 2 : 8;
-        kg_error *e = PyMem_Realloc(p->errors, cap * sizeof(kg_error));
+        const uint32_t cap = kg_grow_capacity(p->error_capacity, 8);
+        kg_error *e = cap ? PyMem_Realloc(p->errors, (size_t)cap * sizeof(kg_error)) : NULL;
         if (e == NULL) { PyErr_NoMemory(); return false; }
         p->errors = e;
         p->error_capacity = cap;
@@ -79,8 +79,8 @@ add_error(kg_parser *p, uint32_t offset, kg_error_kind kind) {
 static bool
 push_sib(kg_parser *p, uint32_t idx) {
     if (p->sib_count >= p->sib_capacity) {
-        uint32_t cap = p->sib_capacity ? p->sib_capacity * 2 : 64;
-        uint32_t *s = PyMem_Realloc(p->sibs, cap * sizeof(uint32_t));
+        const uint32_t cap = kg_grow_capacity(p->sib_capacity, 64);
+        uint32_t *s = cap ? PyMem_Realloc(p->sibs, (size_t)cap * sizeof(uint32_t)) : NULL;
         if (s == NULL) { PyErr_NoMemory(); return false; }
         p->sibs = s;
         p->sib_capacity = cap;

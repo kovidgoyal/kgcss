@@ -6,6 +6,7 @@ import logging
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
+from types import TracebackType
 from typing import Protocol
 
 from kgcss.tokenizer import ParseError, TokenStream
@@ -57,18 +58,61 @@ class Source:
         return self.stream.line_col(self.pos)[1]
 
 
+class SheetLock:
+    """The lock of a sheet, re-entrant. Errors reported by the thread that holds it are sent to the log handler
+    only when that thread releases it, so that handlers, which are user code, never run under the lock: a
+    handler that waits for another thread using the same sheet would deadlock."""
+
+    __slots__ = ('_depth', '_lock', '_owner', '_pending', '_state')
+
+    def __init__(self, state: SheetState) -> None:
+        self._lock = threading.RLock()
+        self._depth = 0
+        self._owner = 0
+        self._pending: list[ParseError] = []
+        self._state = state
+
+    def __enter__(self) -> None:
+        self._lock.acquire()
+        if self._depth == 0:
+            self._owner = threading.get_ident()
+        self._depth += 1
+
+    def __exit__(
+        self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+    ) -> None:
+        self._depth -= 1
+        pending = None
+        if self._depth == 0:
+            self._owner = 0
+            if self._pending:
+                pending, self._pending = self._pending, []
+        self._lock.release()
+        if pending:
+            for error in pending:
+                self._state.log_now(error)
+
+    def defer(self, error: ParseError) -> bool:
+        """Queue error to be logged when the lock is released, if the current thread holds it."""
+        if self._depth and self._owner == threading.get_ident():
+            self._pending.append(error)
+            return True
+        return False
+
+
 class SheetState:
     """Shared by every object of a parsed stylesheet.
 
     The lock guards lazy materialization, so that concurrent readers always
     see the same objects. Errors found later, while parsing blocks lazily, are
-    added to the sheet's error list and sent to its handler.
+    added to the sheet's error list and sent to its handler, once the lock is
+    released.
     """
 
     __slots__ = ('batch', 'errors', 'href', 'lock', 'log')
 
     def __init__(self, log: ErrorHandler | None, href: str | None) -> None:
-        self.lock = threading.RLock()
+        self.lock = SheetLock(self)
         self.log = log
         self.href = href
         self.errors: list[ParseError] = []
@@ -88,6 +132,10 @@ class SheetState:
             self.batch.append(error)
             return
         self.errors.append(error)
+        if self.log is not None and not self.lock.defer(error):
+            self.log_now(error)
+
+    def log_now(self, error: ParseError) -> None:
         match self.log:
             case None:
                 pass

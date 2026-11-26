@@ -194,14 +194,16 @@ add_element(builder *b, PyObject *e, PyObject *tag, uint32_t parent) {
     }
     PyObject *items = PyObject_CallMethodNoArgs(e, b->str_items);
     if (items == NULL) return false;
-    PyObject *seq = PySequence_Fast(items, "items() must return a sequence");
+    /* A tuple of our own: hashing the names and values can run Python code, which must not be able to free
+     * the pairs we are reading by changing the list items() returned */
+    PyObject *seq = PySequence_Tuple(items);
     Py_DECREF(items);
     if (seq == NULL) return false;
     el = s->els + idx;
     el->attr_start = s->n_attrs;
     bool ok = true;
-    for (Py_ssize_t i = 0; ok && i < PySequence_Fast_GET_SIZE(seq); i++) {
-        PyObject *pair = PySequence_Fast_GET_ITEM(seq, i);
+    for (Py_ssize_t i = 0; ok && i < PyTuple_GET_SIZE(seq); i++) {
+        PyObject *pair = PyTuple_GET_ITEM(seq, i);
         if (!PyTuple_Check(pair) || PyTuple_GET_SIZE(pair) != 2) continue;
         PyObject *k = PyTuple_GET_ITEM(pair, 0), *v = PyTuple_GET_ITEM(pair, 1);
         if (!PyUnicode_Check(k) || !PyUnicode_Check(v)) continue;
@@ -452,6 +454,8 @@ Snapshot_clear(PyObject *o) {
     kg_Snapshot *s = (kg_Snapshot *)o;
     for (uint32_t i = 0; i < s->n; i++) Py_CLEAR(s->elements[i]);
     Py_CLEAR(s->index_map);
+    /* No elements left: every index is out of range from now on */
+    s->n = 0;
     return 0;
 }
 
@@ -482,36 +486,52 @@ Snapshot_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
     return (PyObject *)s;
 }
 
-/* :empty needs text, which is read from the elements on first use */
+/* :empty needs text, which is read from the elements on first use. Reading it runs Python code (text and
+ * tail can be properties), which lets other threads run, and on free-threaded builds suspends the critical
+ * section. So the result is computed into a private array, and published, with the flag, under the critical
+ * section only when complete, by the first thread to finish. Matching reads it only after seeing the flag. */
 static bool
 ensure_content(kg_Snapshot *s) {
-    bool ok = true;
+    bool done;
     Py_BEGIN_CRITICAL_SECTION(s);
-    for (uint32_t i = 0; ok && !s->content_done && i < s->n; i++) {
-        snap_el *el = s->els + i;
-        if (el->first_child != NONE) { el->has_content = 1; continue; }
-        PyObject *e = s->elements[i];
+    done = s->content_done;
+    Py_END_CRITICAL_SECTION();
+    if (done) return true;
+    uint8_t *content = PyMem_Calloc(s->n ? s->n : 1, 1);
+    if (content == NULL) { PyErr_NoMemory(); return false; }
+    bool ok = true;
+    for (uint32_t i = 0; ok && i < s->n; i++) {
+        if (s->els[i].first_child != NONE) { content[i] = 1; continue; }
+        PyObject *e = Py_NewRef(s->elements[i]);
         PyObject *text = PyObject_GetAttrString(e, "text");
-        if (text == NULL) { ok = false; break; }
-        el->has_content = text != Py_None && PyObject_IsTrue(text) == 1;
+        if (text == NULL) { ok = false; Py_DECREF(e); break; }
+        content[i] = text != Py_None && PyObject_IsTrue(text) == 1;
         Py_DECREF(text);
         /* The tails of comments and processing instructions are text too */
-        PyObject *it = el->has_content ? NULL : PyObject_GetIter(e);
-        if (!el->has_content && it == NULL) { ok = false; break; }
+        PyObject *it = content[i] ? NULL : PyObject_GetIter(e);
+        Py_DECREF(e);
+        if (!content[i] && it == NULL) { ok = false; break; }
         PyObject *child;
         while (it != NULL && (child = PyIter_Next(it)) != NULL) {
             PyObject *tail = PyObject_GetAttrString(child, "tail");
             Py_DECREF(child);
             if (tail == NULL) { ok = false; break; }
-            if (tail != Py_None && PyObject_IsTrue(tail) == 1) el->has_content = 1;
+            if (tail != Py_None && PyObject_IsTrue(tail) == 1) content[i] = 1;
             Py_DECREF(tail);
-            if (el->has_content) break;
+            if (content[i]) break;
         }
         if (it != NULL && PyErr_Occurred()) ok = false;
         Py_XDECREF(it);
     }
-    if (ok) s->content_done = true;
-    Py_END_CRITICAL_SECTION();
+    if (ok) {
+        Py_BEGIN_CRITICAL_SECTION(s);
+        if (!s->content_done) {
+            for (uint32_t i = 0; i < s->n; i++) s->els[i].has_content = content[i];
+            s->content_done = true;
+        }
+        Py_END_CRITICAL_SECTION();
+    }
+    PyMem_Free(content);
     return ok;
 }
 
@@ -1299,16 +1319,18 @@ Snapshot_match(PyObject *o, PyObject *args) {
         PyErr_SetString(PyExc_IndexError, "element index out of range");
         return NULL;
     }
-    PyObject *seq = PySequence_Fast(selectors, "selectors must be a sequence");
+    /* A tuple of our own: the selectors must stay alive while they are used, which includes Python code run
+     * while preparing and the time the GIL is released, so they cannot be borrowed from the caller's list */
+    PyObject *seq = PySequence_Tuple(selectors);
     if (seq == NULL) return NULL;
-    const Py_ssize_t count = PySequence_Fast_GET_SIZE(seq);
+    const Py_ssize_t count = PyTuple_GET_SIZE(seq);
     prepared *ps = PyMem_Calloc(count ? count : 1, sizeof(prepared));
     if (ps == NULL) { Py_DECREF(seq); return PyErr_NoMemory(); }
     PyObject *ans = NULL;
     bool needs_content = false, needs_types = false, needs_lang = false;
     Py_ssize_t prepared_count = 0;
     for (Py_ssize_t q = 0; q < count; q++) {
-        PyObject *c = PySequence_Fast_GET_ITEM(seq, q);
+        PyObject *c = PyTuple_GET_ITEM(seq, q);
         if (!Py_IS_TYPE(c, state->CompiledSelector_type)) {
             PyErr_SetString(PyExc_TypeError, "selectors must be CompiledSelector objects");
             goto end;
@@ -1322,9 +1344,10 @@ Snapshot_match(PyObject *o, PyObject *args) {
         needs_types |= ps[q].needs_types;
         needs_lang |= ps[q].needs_lang;
     }
-    if (needs_content && !s->content_done && !ensure_content(s)) goto end;
+    /* These check their flags under the critical section, which also orders the reads of what they built */
+    if (needs_content && !ensure_content(s)) goto end;
     if (needs_types && !ensure_types(s)) goto end;
-    if (needs_lang && !s->lang_done && !ensure_lang(s)) goto end;
+    if (needs_lang && !ensure_lang(s)) goto end;
     run_args r = {
         .s = s, .ps = ps, .count = count, .scope = (uint32_t)scope, .lo = (uint32_t)root,
         .hi = s->els[root].subtree_end, .target = target < 0 ? NONE : (uint32_t)target, .first_only = first_only,
@@ -1359,22 +1382,28 @@ end:
 static PyObject *
 Snapshot_index_of(PyObject *o, PyObject *element) {
     kg_Snapshot *s = (kg_Snapshot *)o;
-    PyObject *ans = NULL;
-    bool ok = true;
+    PyObject *map = NULL;
     Py_BEGIN_CRITICAL_SECTION(s);
-    if (s->index_map == NULL) {
-        PyObject *map = PyDict_New();
+    map = Py_XNewRef(s->index_map);
+    Py_END_CRITICAL_SECTION();
+    if (map == NULL) {
+        /* Built outside the critical section: hashing elements runs Python code. Another thread may build
+         * one at the same time; the first to finish is kept. */
+        map = PyDict_New();
         for (uint32_t i = 0; map != NULL && i < s->n; i++) {
             PyObject *num = PyLong_FromUnsignedLong(i);
             if (num == NULL || PyDict_SetItem(map, s->elements[i], num) != 0) Py_CLEAR(map);
             Py_XDECREF(num);
         }
-        if (map == NULL) ok = false;
-        else s->index_map = map;
+        if (map == NULL) return NULL;
+        Py_BEGIN_CRITICAL_SECTION(s);
+        if (s->index_map == NULL) s->index_map = Py_NewRef(map);
+        else Py_SETREF(map, Py_NewRef(s->index_map));
+        Py_END_CRITICAL_SECTION();
     }
-    Py_END_CRITICAL_SECTION();
-    if (!ok) return NULL;
-    if (PyDict_GetItemRef(s->index_map, element, &ans) == 0) PyErr_SetObject(PyExc_KeyError, element);
+    PyObject *ans = NULL;
+    if (PyDict_GetItemRef(map, element, &ans) == 0) PyErr_SetObject(PyExc_KeyError, element);
+    Py_DECREF(map);
     return ans;
 }
 

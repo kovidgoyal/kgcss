@@ -22,7 +22,7 @@ from kgcss.syntax import Function as SyntaxFunction
 from kgcss.tokenizer import TokenType
 
 
-@dataclass(slots=True, unsafe_hash=True)
+@dataclass(frozen=True, slots=True)
 class Component:
     """Base of all value components. css_text is the exact source text."""
 
@@ -30,13 +30,13 @@ class Component:
     type: ClassVar[str] = ''
 
 
-@dataclass(slots=True, unsafe_hash=True)
+@dataclass(frozen=True, slots=True)
 class Ident(Component):
     value: str
     type: ClassVar[str] = 'ident'
 
 
-@dataclass(slots=True, unsafe_hash=True)
+@dataclass(frozen=True, slots=True)
 class String(Component):
     """A quoted string. value is unquoted and unescaped."""
 
@@ -44,7 +44,7 @@ class String(Component):
     type: ClassVar[str] = 'string'
 
 
-@dataclass(slots=True, unsafe_hash=True)
+@dataclass(frozen=True, slots=True)
 class Number(Component):
     """A number. value is an int for integers (700 stays 700) and a float otherwise."""
 
@@ -52,13 +52,13 @@ class Number(Component):
     type: ClassVar[str] = 'number'
 
 
-@dataclass(slots=True, unsafe_hash=True)
+@dataclass(frozen=True, slots=True)
 class Percentage(Component):
     value: int | float
     type: ClassVar[str] = 'percentage'
 
 
-@dataclass(slots=True, unsafe_hash=True)
+@dataclass(frozen=True, slots=True)
 class Dimension(Component):
     """A number with a unit. 1.0E1px has the value 10.0 and the unit px."""
 
@@ -67,7 +67,7 @@ class Dimension(Component):
     type: ClassVar[str] = 'dimension'
 
 
-@dataclass(slots=True, unsafe_hash=True)
+@dataclass(frozen=True, slots=True)
 class Url(Component):
     """url(x), url("x") or url('x'). value is the URL without quotes or escapes."""
 
@@ -79,7 +79,7 @@ class Url(Component):
         return self.value
 
 
-@dataclass(slots=True, unsafe_hash=True)
+@dataclass(frozen=True, slots=True)
 class Hash(Component):
     """#xxx. value has no #. is_id is true if the value is a valid identifier."""
 
@@ -88,7 +88,7 @@ class Hash(Component):
     type: ClassVar[str] = 'hash'
 
 
-@dataclass(slots=True, unsafe_hash=True)
+@dataclass(frozen=True, slots=True)
 class UnicodeRange(Component):
     """A range of code points, in a unicode-range descriptor."""
 
@@ -101,7 +101,7 @@ class UnicodeRange(Component):
         return self.start, self.end
 
 
-@dataclass(slots=True, unsafe_hash=True)
+@dataclass(frozen=True, slots=True)
 class Operator(Component):
     """A delimiter that is not a separator, such as + in calc() or a :."""
 
@@ -109,7 +109,7 @@ class Operator(Component):
     type: ClassVar[str] = 'operator'
 
 
-@dataclass(slots=True, unsafe_hash=True)
+@dataclass(frozen=True, slots=True)
 class Separator(Component):
     """A comma or /. Separators are in PropertyValue.items, but they are not components."""
 
@@ -117,7 +117,7 @@ class Separator(Component):
     type: ClassVar[str] = 'separator'
 
 
-@dataclass(slots=True, unsafe_hash=True)
+@dataclass(frozen=True, slots=True)
 class Function(Component):
     """A function such as rgb(...) or image-set(...). url("x") is a Url, not a Function."""
 
@@ -130,7 +130,7 @@ class Function(Component):
         return self.name
 
 
-@dataclass(slots=True, unsafe_hash=True)
+@dataclass(frozen=True, slots=True)
 class SimpleBlock(Component):
     """A [], () or {} block."""
 
@@ -143,7 +143,7 @@ class SimpleBlock(Component):
         return self.content
 
 
-@dataclass(slots=True, unsafe_hash=True)
+@dataclass(frozen=True, slots=True)
 class Other(Component):
     """Any other token: an at-keyword, a bad string or bad URL, <!--, --> or an unmatched closing bracket."""
 
@@ -159,10 +159,10 @@ class PropertyValue(Sequence[Component]):
     exact text of the whole value.
     """
 
-    __slots__ = ('_components', '_items', '_spans', 'css_text')
+    __slots__ = ('_components', '_css_text', '_items', '_spans')
 
     def __init__(self, css_text: str, items: Sequence[Component] = (), spans: Sequence[int] = ()) -> None:
-        self.css_text = css_text
+        self._css_text = css_text
         self._items = items = tuple(items)
         # start and end of each item in css_text, flattened: start0, end0, start1, end1, ...
         self._spans = tuple(spans)
@@ -172,6 +172,11 @@ class PropertyValue(Sequence[Component]):
                 has_separators = True
                 break
         self._components = tuple(i for i in items if not isinstance(i, Separator)) if has_separators else items
+
+    @property
+    def css_text(self) -> str:
+        """The exact text of the whole value."""
+        return self._css_text
 
     @property
     def items(self) -> tuple[Component, ...]:

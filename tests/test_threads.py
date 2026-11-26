@@ -9,7 +9,8 @@ Set KGCSS_STRESS to a number to multiply the amount of work.
 
 import os
 import threading
-from collections.abc import Callable
+import time
+from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 
 import kgcss
@@ -439,3 +440,110 @@ def test_shorthands_concurrently() -> None:
         return True
 
     assert all(run_concurrently(work))
+
+
+class SlowElement:
+    """An element whose text and tail are Python properties that sleep: reading them lets other threads run,
+    and suspends the critical sections of free-threaded Python."""
+
+    def __init__(self, tag: object, children: list[SlowElement] | None = None, text: str | None = None) -> None:
+        self.tag = tag
+        self.children = children or []
+        self._text = text
+        self._tail: str | None = None
+
+    def items(self) -> list[tuple[str, str]]:
+        return []
+
+    def __iter__(self) -> Iterator[SlowElement]:
+        return iter(self.children)
+
+    @property
+    def text(self) -> str | None:
+        time.sleep(0.0002)
+        return self._text
+
+    @property
+    def tail(self) -> str | None:
+        time.sleep(0.0002)
+        return self._tail
+
+
+def test_empty_while_content_is_read_concurrently() -> None:
+    # The content of elements, for :empty, is read from the tree on first use. Two threads reading it at once
+    # once let one match against the other's half-written content: a p whose only text is the tail of a
+    # comment matched :empty.
+    def comment() -> SlowElement:
+        c = SlowElement(object())  # a tag that is not a str: not an element
+        c._tail = 'tail text'
+        return c
+
+    bad = 0
+    for _ in range(4 * STRESS):
+        root = SlowElement('html', [SlowElement('body', [SlowElement('p', [comment()]) for _ in range(30)])])
+        select = kgcss.Select(root)
+        barrier = threading.Barrier(THREADS)
+
+        def work(idx: int, select: kgcss.Select = select, barrier: threading.Barrier = barrier) -> int:
+            barrier.wait()
+            return len(list(select('p:empty')))
+
+        bad += sum(run_concurrently(work))
+    assert bad == 0
+
+
+def test_constructed_rules_concurrently() -> None:
+    # Rules made by the API, not parsed, have no sheet lock: their parts were once created by each racing
+    # thread, so that the threads got different objects, and changes made through all but one were lost
+    for _ in range(50 * STRESS):
+        sheet = kgcss.Stylesheet()
+        rule = sheet.insert_rule(kgcss.StyleRule('p.a, div'))
+        assert isinstance(rule, kgcss.StyleRule)
+        barrier = threading.Barrier(THREADS)
+
+        def work(idx: int, rule: kgcss.StyleRule = rule, barrier: threading.Barrier = barrier) -> tuple[int, ...]:
+            barrier.wait()
+            return id(rule.style), id(rule.selectors), id(rule.rules)
+
+        assert len(set(run_concurrently(work))) == 1
+
+
+def test_fetcher_runs_outside_the_sheet_lock() -> None:
+    # The fetcher is user code: it once ran under the sheet lock, so a fetcher that waits for another thread
+    # that reads the same sheet deadlocked
+    finished: list[bool] = []
+    sheet: kgcss.Stylesheet
+
+    def read_other_rule() -> None:
+        finished.append(sheet.rules[1].style['color'] == 'red')  # type: ignore[attr-defined]
+
+    def fetcher(url: str) -> tuple[str | None, str]:
+        helper = threading.Thread(target=read_other_rule, daemon=True)
+        helper.start()
+        helper.join(timeout=10)
+        return None, '.imported { color: blue }'
+
+    sheet = kgcss.parse_stylesheet('@import "a.css"; p { color: red }', href='http://x/', fetcher=fetcher)
+    imported = sheet.rules[0].style_sheet  # type: ignore[attr-defined]
+    assert imported is not None
+    assert finished == [True]
+
+
+def test_log_handler_runs_outside_the_sheet_lock() -> None:
+    # Errors found while parsing blocks lazily are logged once the sheet lock is released, so that a handler
+    # that waits for another thread using the same sheet cannot deadlock
+    finished: list[bool] = []
+    sheet: kgcss.Stylesheet
+
+    def read_other_rule() -> None:
+        finished.append(sheet.rules[1].style['color'] == 'red')  # type: ignore[attr-defined]
+
+    def log(error: kgcss.ParseError) -> None:
+        helper = threading.Thread(target=read_other_rule, daemon=True)
+        helper.start()
+        helper.join(timeout=10)
+
+    sheet = kgcss.parse_stylesheet('a { color: red; margin 0 } p { color: red }', log=log)
+    assert sheet.rules[0].style['color'] == 'red'  # type: ignore[attr-defined]
+    assert finished == [True]
+    assert [e.message for e in sheet.errors] == ['Invalid rule ignored']

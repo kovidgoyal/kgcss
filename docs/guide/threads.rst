@@ -11,13 +11,25 @@ code release the GIL: tokenizing large inputs and matching selectors.
 
 What can be shared between threads:
 
-- **Immutable objects**: values, parsed selectors, media queries, colors,
-  tokens and syntax trees can be read from any number of threads.
-- **Sheets and their rules**: kgcss guards its lazily built state (blocks
-  parsed on first use, caches) with locks, so several threads can read the
-  same sheet at once. Changing a sheet while other threads read or change it
-  needs your own locking, as with any mutable Python object.
-- **Select**: a ``Select`` can be used from several threads at once.
+- **Immutable objects**: value components and :class:`kgcss.PropertyValue`,
+  parsed selectors, media queries, colors, tokens and syntax trees cannot be
+  changed, so any number of threads can read them. This matters because
+  some are shared through caches: two calls to
+  :func:`kgcss.parse_media_queries` with the same text return the same
+  objects.
+- **Sheets and their rules**: kgcss guards their lazily built parts (blocks
+  parsed on first use, selector lists, nested rules) with locks, for parsed
+  sheets and for rules made with the API alike, so several threads can read
+  the same sheet at once and always see the same objects. Changing a sheet
+  while other threads read or change it needs your own locking, as with any
+  mutable Python object: a property written while another thread serializes
+  it can be written with some fields old and some new.
+- **Callbacks** that you give kgcss, the ``fetcher`` of ``@import`` and the
+  ``log`` handler, are never called while kgcss holds a lock, so they can
+  wait for other threads that use the same sheet.
+- **Select**: a ``Select`` can be used from several threads at once,
+  including with element classes of your own whose ``text`` or ``tail`` are
+  Python properties.
 - **Caches** of parsed selectors, media queries and grammar matches are
   shared and thread-safe.
 

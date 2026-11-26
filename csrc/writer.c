@@ -846,9 +846,12 @@ put_str(w_state *w, PyObject *s) {
     return true;
 }
 
-/* Strong references to the fields of a property used for writing it. Taken together under a
- * critical section on the property, as another thread could be assigning them (the member
- * descriptors of PropertyData use the same critical section). */
+/* Strong references to the fields of a property used for writing it. Taken under a critical section on
+ * the property (the member descriptors of PropertyData use the same one), so that a field assigned by
+ * another thread at the same time can never be read half written or freed while in use. The Python setters
+ * of Property assign several fields one after the other, so writing a property that another thread is
+ * changing can still mix old and new fields: as for any mutable object, changes made while other threads
+ * read need the caller's own locking. */
 typedef struct {
     PyObject *name, *value, *priority, *node;
     bool value_from_node;
