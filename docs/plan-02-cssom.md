@@ -355,8 +355,10 @@ class Property:
 | `UnicodeRange` | `'unicode-range'` | `start`, `end`, parsed from tokens for `unicode-range` (plan 01 §3.4) |
 | `Operator` | `'operator'` | other delimiters such as `+` and `!` |
 
-- `PropertyValue.remove(index)` removes one component structurally (V6,
-  U5), instead of calibre's substring replacement.
+- `Property.remove_component(index)` removes one component structurally,
+  with one adjacent separator (V6, U5), instead of calibre's substring
+  replacement. (`PropertyValue` stays immutable; `text_without(index)` gives
+  the text without the component.)
 
 ---
 
