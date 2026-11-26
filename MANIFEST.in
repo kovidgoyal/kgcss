@@ -1,0 +1,3 @@
+# The whole test suite, so that it can be run from the sdist (setuptools only adds tests/test_*.py by itself)
+graft tests
+global-exclude *.py[cod] __pycache__
