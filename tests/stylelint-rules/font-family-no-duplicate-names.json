@@ -1,0 +1,194 @@
+{
+ "rule": "font-family-no-duplicate-names",
+ "source": "stylelint 18.1.0: lib/rules/font-family-no-duplicate-names/__tests__/index.mjs",
+ "groups": [
+  {
+   "config": [
+    true
+   ],
+   "compute_edit_info": false,
+   "accept": [
+    {
+     "code": "a { font-family: \"Lucida Grande\", \"Arial\", sans-serif; }"
+    },
+    {
+     "code": "a { font: 1em \"Lucida Grande\", 'Arial', sans-serif; }"
+    },
+    {
+     "code": "a { font: 1em \"Lucida Grande\", 'Arial', \"sans-serif\", sans-serif; }"
+    },
+    {
+     "code": "a { font-family: Times, serif; }"
+    },
+    {
+     "code": "b { font: normal 14px/32px -apple-system, BlinkMacSystemFont, sans-serif; }"
+    }
+   ],
+   "reject": [
+    {
+     "code": "a { font-family: \"Lucida Grande\", 'Arial', sans-serif, sans-serif; }",
+     "warnings": [
+      {
+       "message": "Duplicate font-family name \"sans-serif\" (font-family-no-duplicate-names)",
+       "line": 1,
+       "column": 56,
+       "endLine": 1,
+       "endColumn": 66
+      }
+     ]
+    },
+    {
+     "code": "a { font-family: 'Arial', \"Lucida Grande\", Arial, sans-serif; }",
+     "warnings": [
+      {
+       "message": "Duplicate font-family name \"Arial\" (font-family-no-duplicate-names)",
+       "line": 1,
+       "column": 44,
+       "endLine": 1,
+       "endColumn": 49
+      }
+     ]
+    },
+    {
+     "code": "a { fOnT-fAmIlY: '  Lucida Grande ', \"Lucida Grande\", sans-serif; }",
+     "warnings": [
+      {
+       "message": "Duplicate font-family name \"Lucida Grande\" (font-family-no-duplicate-names)",
+       "line": 1,
+       "column": 38,
+       "endLine": 1,
+       "endColumn": 53
+      }
+     ]
+    },
+    {
+     "code": "a { font-family: 'Times', Times, \"serif\", serif; }",
+     "warnings": [
+      {
+       "message": "Duplicate font-family name \"Times\" (font-family-no-duplicate-names)",
+       "line": 1,
+       "column": 27,
+       "endLine": 1,
+       "endColumn": 32
+      }
+     ]
+    },
+    {
+     "code": "a { FONT: italic 300 16px/30px Arial, \" Arial\", serif; }",
+     "warnings": [
+      {
+       "message": "Duplicate font-family name \"Arial\" (font-family-no-duplicate-names)",
+       "line": 1,
+       "column": 39,
+       "endLine": 1,
+       "endColumn": 46
+      }
+     ]
+    },
+    {
+     "code": "b { font: normal 14px/32px -apple-system, BlinkMacSystemFont, sans-serif, sans-serif; }",
+     "warnings": [
+      {
+       "message": "Duplicate font-family name \"sans-serif\" (font-family-no-duplicate-names)",
+       "line": 1,
+       "column": 75,
+       "endLine": 1,
+       "endColumn": 85
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "config": [
+    true,
+    {
+     "ignoreFontFamilyNames": [
+      "monospace",
+      "/my-/",
+      "/^YOUR-/i"
+     ]
+    }
+   ],
+   "compute_edit_info": false,
+   "accept": [
+    {
+     "code": "pre { font-family: monospace, monospace }"
+    },
+    {
+     "code": "pre { font: 1em monospace, monospace}"
+    },
+    {
+     "code": "pre { font-family: monospace, \"Roberto Mono\", monospace}"
+    },
+    {
+     "code": "pre { font-family: \"my-font\", \"my-font\", sans-serif}"
+    },
+    {
+     "code": "pre { font-family: \"your-font\", \"YOUR-font\", sans-serif}"
+    }
+   ],
+   "reject": [
+    {
+     "code": "pre { font-family: \"Roberto Mono\", \"Roberto Mono\", monospace}",
+     "warnings": [
+      {
+       "message": "Duplicate font-family name \"Roberto Mono\" (font-family-no-duplicate-names)",
+       "line": 1,
+       "column": 36,
+       "endLine": 1,
+       "endColumn": 50
+      }
+     ]
+    },
+    {
+     "code": "pre { font-family: My-font, \"My-font\", sans-serif}",
+     "warnings": [
+      {
+       "message": "Duplicate font-family name \"My-font\" (font-family-no-duplicate-names)",
+       "line": 1,
+       "column": 29,
+       "endLine": 1,
+       "endColumn": 38
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "config": [
+    true,
+    {
+     "ignoreFontFamilyNames": [
+      {
+       "$regexp": [
+        "my-",
+        ""
+       ]
+      }
+     ]
+    }
+   ],
+   "compute_edit_info": false,
+   "accept": [
+    {
+     "code": "pre { font-family: \"my-font\", \"my-font\", sans-serif}"
+    }
+   ],
+   "reject": [
+    {
+     "code": "pre { font-family: \"Roberto Mono\", \"Roberto Mono\", monospace}",
+     "warnings": [
+      {
+       "message": "Duplicate font-family name \"Roberto Mono\" (font-family-no-duplicate-names)",
+       "line": 1,
+       "column": 36,
+       "endLine": 1,
+       "endColumn": 50
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

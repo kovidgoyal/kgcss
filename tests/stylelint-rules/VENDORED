@@ -1,0 +1,5 @@
+Test cases extracted by tools/extract_stylelint_tests.py from the rule tests of
+stylelint 18.1.0 (https://github.com/stylelint/stylelint at 39f029d687cf2e667a43bc7005c1a16e8c36930d) and
+@stylistic/stylelint-plugin 6.0.1 (https://github.com/stylelint-stylistic/stylelint-stylistic at 3cd01e1c32e87a7d92b99c3a35e869bc36c019bb),
+both MIT licensed (see LICENSE-stylelint and LICENSE-stylistic). Do not edit;
+re-run the tool, and record deliberate differences in the test runners instead.

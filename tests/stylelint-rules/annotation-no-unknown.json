@@ -1,0 +1,73 @@
+{
+ "rule": "annotation-no-unknown",
+ "source": "stylelint 18.1.0: lib/rules/annotation-no-unknown/__tests__/index.mjs",
+ "groups": [
+  {
+   "config": [
+    true,
+    {
+     "ignoreAnnotations": [
+      "/^--foo-/",
+      "--bar"
+     ]
+    }
+   ],
+   "compute_edit_info": false,
+   "accept": [
+    {
+     "code": "a { color: green !important; }"
+    },
+    {
+     "code": "a { color: green !IMPORTANT; }"
+    },
+    {
+     "code": "a { color: green !ImPoRtAnT; }"
+    },
+    {
+     "code": "a { color: green !--foo--bar; }"
+    },
+    {
+     "code": "a { color: green !--bar; }"
+    }
+   ],
+   "reject": [
+    {
+     "code": "a { color: green !imprtant }",
+     "warnings": [
+      {
+       "message": "Unknown annotation \"!imprtant\" (annotation-no-unknown)",
+       "line": 1,
+       "column": 18,
+       "endLine": 1,
+       "endColumn": 27
+      }
+     ]
+    },
+    {
+     "code": "a { color: green !IMPRTANT }",
+     "warnings": [
+      {
+       "message": "Unknown annotation \"!IMPRTANT\" (annotation-no-unknown)",
+       "line": 1,
+       "column": 18,
+       "endLine": 1,
+       "endColumn": 27
+      }
+     ]
+    },
+    {
+     "code": "a { color: green !ImPrTaNt }",
+     "warnings": [
+      {
+       "message": "Unknown annotation \"!ImPrTaNt\" (annotation-no-unknown)",
+       "line": 1,
+       "column": 18,
+       "endLine": 1,
+       "endColumn": 27
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

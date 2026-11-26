@@ -1,0 +1,181 @@
+{
+ "rule": "no-invalid-position-at-import-rule",
+ "source": "stylelint 18.1.0: lib/rules/no-invalid-position-at-import-rule/__tests__/index.mjs",
+ "groups": [
+  {
+   "config": [
+    true
+   ],
+   "compute_edit_info": false,
+   "accept": [
+    {
+     "code": "@import 'foo.css';\na {}",
+     "description": "@import on first line"
+    },
+    {
+     "code": "/* some comment */\n@import 'foo.css';",
+     "description": "@import after comment"
+    },
+    {
+     "code": "@charset 'utf-8';\n@import 'foo.css';",
+     "description": "@import after @charset "
+    },
+    {
+     "code": "@import 'foo.css';\n@import 'bar.css';",
+     "description": "@import after another @import"
+    },
+    {
+     "code": "@CHARSET 'utf-8';\n@imPORT 'foo.css';\n@import 'bar.css';",
+     "description": "case insensitive"
+    },
+    {
+     "code": "@layer default;\n@import url(theme.css) layer(theme);",
+     "description": "@import after @layer"
+    }
+   ],
+   "reject": [
+    {
+     "code": "a {}\n@import 'foo.css';",
+     "description": "@import after selector",
+     "warnings": [
+      {
+       "message": "Invalid position for @import rule (no-invalid-position-at-import-rule)",
+       "line": 2,
+       "column": 1,
+       "endLine": 2,
+       "endColumn": 18
+      }
+     ]
+    },
+    {
+     "code": "@media print {}\n@import url('foo.css');",
+     "description": "@import after another at-rule",
+     "warnings": [
+      {
+       "message": "Invalid position for @import rule (no-invalid-position-at-import-rule)",
+       "line": 2,
+       "column": 1,
+       "endLine": 2,
+       "endColumn": 23
+      }
+     ]
+    },
+    {
+     "code": "@layer foo {}\n@import url('foo.css');",
+     "description": "layer block before import",
+     "warnings": [
+      {
+       "message": "Invalid position for @import rule (no-invalid-position-at-import-rule)",
+       "line": 2,
+       "column": 1,
+       "endLine": 2,
+       "endColumn": 23
+      }
+     ]
+    },
+    {
+     "code": "@media print {}\n@imPort URl('foo.css');",
+     "description": "case insensitive",
+     "warnings": [
+      {
+       "message": "Invalid position for @import rule (no-invalid-position-at-import-rule)",
+       "line": 2,
+       "column": 1,
+       "endLine": 2,
+       "endColumn": 23
+      }
+     ]
+    },
+    {
+     "code": "@import 'foo.css';\na {}\n@import 'bar.css';",
+     "description": "only second @import reported",
+     "warnings": [
+      {
+       "message": "Invalid position for @import rule (no-invalid-position-at-import-rule)",
+       "line": 3,
+       "column": 1,
+       "endLine": 3,
+       "endColumn": 18
+      }
+     ]
+    },
+    {
+     "code": "a {}\n@import 'foo.css';\n@import 'bar.css';",
+     "description": "all @import reported",
+     "warnings": [
+      {
+       "message": "Invalid position for @import rule (no-invalid-position-at-import-rule)",
+       "line": 2,
+       "column": 1,
+       "endLine": 2,
+       "endColumn": 18
+      },
+      {
+       "message": "Invalid position for @import rule (no-invalid-position-at-import-rule)",
+       "line": 3,
+       "column": 1,
+       "endLine": 3,
+       "endColumn": 18
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "config": [
+    true,
+    {
+     "ignoreAtRules": [
+      "bar",
+      "/^my-/",
+      {
+       "$regexp": [
+        "foo",
+        ""
+       ]
+      }
+     ]
+    }
+   ],
+   "compute_edit_info": false,
+   "accept": [
+    {
+     "code": "@bar 'bar.css';\n@import 'foo.css';",
+     "description": "ignored atRule at the beginning - equal string"
+    },
+    {
+     "code": "@foofoo 'bar.css';\n@import 'foo.css';",
+     "description": "ignored atRule at the beginning - match regExp"
+    },
+    {
+     "code": "@my-custom-rule {};\n@import 'foo.css';",
+     "description": "ignored atRule at the beginning - match regExp"
+    }
+   ],
+   "reject": [
+    {
+     "code": "@baz 'bar.css';\n@import 'foo.css';",
+     "description": "atRule does not match the pattern",
+     "warnings": [
+      {
+       "message": "Invalid position for @import rule (no-invalid-position-at-import-rule)",
+       "line": 2,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": "@bar 'bar.css';\n@baz 'bar.css';\n@import 'foo.css';",
+     "description": "one of atRules before @import does not match the pattern",
+     "warnings": [
+      {
+       "message": "Invalid position for @import rule (no-invalid-position-at-import-rule)",
+       "line": 3,
+       "column": 1
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

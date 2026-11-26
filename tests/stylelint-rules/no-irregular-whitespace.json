@@ -1,0 +1,465 @@
+{
+ "rule": "no-irregular-whitespace",
+ "source": "stylelint 18.1.0: lib/rules/no-irregular-whitespace/__tests__/index.mjs",
+ "groups": [
+  {
+   "config": true,
+   "compute_edit_info": false,
+   "accept": [
+    {
+     "code": " ",
+     "description": "regular whitespace"
+    },
+    {
+     "code": "\n",
+     "description": "new line"
+    },
+    {
+     "code": "/* Irregular whitespace\nin multi line comments\nare allowed */",
+     "description": "irregular whitespace in multi line comments"
+    },
+    {
+     "code": "/* stylelint-disable-next-line no-irregular-whitespace */\n b, /* stylelint-disable-next-line no-irregular-whitespace */\na b\n/* stylelint-disable-next-line no-irregular-whitespace */\n \n{}"
+    },
+    {
+     "code": "/* stylelint-disable-next-line no-irregular-whitespace */\n @media\n/* stylelint-disable-next-line no-irregular-whitespace */\n  /* stylelint-disable-next-line no-irregular-whitespace */\nonly screen\n{}"
+    },
+    {
+     "code": ".foo {\n\t/* stylelint-disable-next-line no-irregular-whitespace */\n\tpadding : /* stylelint-disable-next-line no-irregular-whitespace */\n\t  /* stylelint-disable-next-line no-irregular-whitespace */\n\t1px 2px\n\t/* stylelint-disable-next-line no-irregular-whitespace */\n\tcalc(5px + 6px);\n}"
+    },
+    {
+     "code": "a { content: ' '; }",
+     "description": "non-breaking space as content value inside declaration"
+    },
+    {
+     "code": "a { content: \"foo \t \n  bar\"; }",
+     "description": "non-breaking space inside a quoted string value in declaration"
+    },
+    {
+     "code": "@charset \" \"",
+     "description": "non-breaking space within at-rule"
+    },
+    {
+     "code": "a[id=\" \"] {}",
+     "description": "non-breaking space as attribute in selector"
+    },
+    {
+     "code": "a { animation-name: \"foo \" }"
+    },
+    {
+     "code": "a { animation-name: 'ba r' }"
+    },
+    {
+     "code": "a { font-family: 'TimesNew  Roman', serif; }"
+    },
+    {
+     "code": "@font-feature-values \"foo bar\""
+    },
+    {
+     "code": "a[title=\"irregular\u000bwhitespace\"] { color: pink; }",
+     "description": "irregular whitespace in attribute selector: \\u000B"
+    },
+    {
+     "code": "a[title=\"irregular\fwhitespace\"] { color: pink; }",
+     "description": "irregular whitespace in attribute selector: \\u000C"
+    },
+    {
+     "code": "a[title=\"irregular whitespace\"] { color: pink; }",
+     "description": "irregular whitespace in attribute selector: \\u00A0"
+    },
+    {
+     "code": "a[title=\"irregularwhitespace\"] { color: pink; }",
+     "description": "irregular whitespace in attribute selector: \\u0085"
+    },
+    {
+     "code": "a[title=\"irregular whitespace\"] { color: pink; }",
+     "description": "irregular whitespace in attribute selector: \\u1680"
+    },
+    {
+     "code": "a[title=\"irregular᠎whitespace\"] { color: pink; }",
+     "description": "irregular whitespace in attribute selector: \\u180E"
+    },
+    {
+     "code": "a[title=\"irregular﻿whitespace\"] { color: pink; }",
+     "description": "irregular whitespace in attribute selector: \\uFEFF"
+    },
+    {
+     "code": "a[title=\"irregular whitespace\"] { color: pink; }",
+     "description": "irregular whitespace in attribute selector: \\u2000"
+    },
+    {
+     "code": "a[title=\"irregular whitespace\"] { color: pink; }",
+     "description": "irregular whitespace in attribute selector: \\u2001"
+    },
+    {
+     "code": "a[title=\"irregular whitespace\"] { color: pink; }",
+     "description": "irregular whitespace in attribute selector: \\u2002"
+    },
+    {
+     "code": "a[title=\"irregular whitespace\"] { color: pink; }",
+     "description": "irregular whitespace in attribute selector: \\u2003"
+    },
+    {
+     "code": "a[title=\"irregular whitespace\"] { color: pink; }",
+     "description": "irregular whitespace in attribute selector: \\u2004"
+    },
+    {
+     "code": "a[title=\"irregular whitespace\"] { color: pink; }",
+     "description": "irregular whitespace in attribute selector: \\u2005"
+    },
+    {
+     "code": "a[title=\"irregular whitespace\"] { color: pink; }",
+     "description": "irregular whitespace in attribute selector: \\u2006"
+    },
+    {
+     "code": "a[title=\"irregular whitespace\"] { color: pink; }",
+     "description": "irregular whitespace in attribute selector: \\u2007"
+    },
+    {
+     "code": "a[title=\"irregular whitespace\"] { color: pink; }",
+     "description": "irregular whitespace in attribute selector: \\u2008"
+    },
+    {
+     "code": "a[title=\"irregular whitespace\"] { color: pink; }",
+     "description": "irregular whitespace in attribute selector: \\u2009"
+    },
+    {
+     "code": "a[title=\"irregular whitespace\"] { color: pink; }",
+     "description": "irregular whitespace in attribute selector: \\u200A"
+    },
+    {
+     "code": "a[title=\"irregular​whitespace\"] { color: pink; }",
+     "description": "irregular whitespace in attribute selector: \\u200B"
+    },
+    {
+     "code": "a[title=\"irregular whitespace\"] { color: pink; }",
+     "description": "irregular whitespace in attribute selector: \\u2028"
+    },
+    {
+     "code": "a[title=\"irregular whitespace\"] { color: pink; }",
+     "description": "irregular whitespace in attribute selector: \\u2029"
+    },
+    {
+     "code": "a[title=\"irregular whitespace\"] { color: pink; }",
+     "description": "irregular whitespace in attribute selector: \\u202F"
+    },
+    {
+     "code": "a[title=\"irregular whitespace\"] { color: pink; }",
+     "description": "irregular whitespace in attribute selector: \\u205F"
+    },
+    {
+     "code": "a[title=\"irregular　whitespace\"] { color: pink; }",
+     "description": "irregular whitespace in attribute selector: \\u3000"
+    },
+    {
+     "code": ":lang(\"en us \")"
+    },
+    {
+     "code": ":not([data-id=\"a b\"])"
+    },
+    {
+     "code": "a[data-x='foo    bar'] {}"
+    },
+    {
+     "code": ":is(.class[attr=\" a\"])"
+    },
+    {
+     "code": ":is(input[type=\"checkbox \"])"
+    },
+    {
+     "code": "a[class=' foo'] {}"
+    },
+    {
+     "code": "a[id='f oo'] {}"
+    },
+    {
+     "code": "[data-y=\"foo\tbar\"] {}"
+    },
+    {
+     "code": "input[placeholder=\"foo bar\"] {}"
+    },
+    {
+     "code": ":nth-child(\" 2n+ 1 \")"
+    },
+    {
+     "code": "a/*foo bar*/[attr=\"test\"] {}"
+    },
+    {
+     "code": "a { /* comment */ color: red; }"
+    },
+    {
+     "code": "a { grid-template-areas: /* \"comment \" */ none /* \" comment \" */; }"
+    },
+    {
+     "code": "a { grid-template-areas: /* comment  */ none /*  comment */; }"
+    },
+    {
+     "code": "a { cursor: url(\"pointer.cur \"), pointer; }"
+    },
+    {
+     "code": "@counter-style custom-list { symbols: \"- \" \"◦\" \"‣\"; }"
+    }
+   ],
+   "reject": [
+    {
+     "code": "@ charset \"utf-8\"",
+     "description": "irregular whitespace in at-charset css rule",
+     "warnings": [
+      {
+       "message": "Irregular whitespace (no-irregular-whitespace)",
+       "line": 1,
+       "column": 2,
+       "endLine": 1,
+       "endColumn": 3
+      }
+     ]
+    },
+    {
+     "code": "@charset  \"utf-8\"",
+     "description": "irregular whitespace after at-charset css rule",
+     "warnings": [
+      {
+       "message": "Irregular whitespace (no-irregular-whitespace)",
+       "line": 1,
+       "column": 9,
+       "endLine": 1,
+       "endColumn": 10
+      }
+     ]
+    },
+    {
+     "code": ".firstClass .secondClass { color: pink; }",
+     "description": "irregular whitespace in selector",
+     "warnings": [
+      {
+       "message": "Irregular whitespace (no-irregular-whitespace)",
+       "line": 1,
+       "column": 12,
+       "endLine": 1,
+       "endColumn": 13
+      }
+     ]
+    },
+    {
+     "code": ".firstClass .secondClass  { color: pink; }",
+     "description": "irregular whitespace after selector",
+     "warnings": [
+      {
+       "message": "Irregular whitespace (no-irregular-whitespace)",
+       "line": 1,
+       "column": 26,
+       "endLine": 1,
+       "endColumn": 27
+      }
+     ]
+    },
+    {
+     "code": "margin: 1rem 2rem;",
+     "description": "irregular whitespace in declaration value",
+     "warnings": [
+      {
+       "message": "Irregular whitespace (no-irregular-whitespace)",
+       "line": 1,
+       "column": 13,
+       "endLine": 1,
+       "endColumn": 14
+      }
+     ]
+    },
+    {
+     "code": "margin: 1rem 2rem ;",
+     "description": "irregular whitespace after value",
+     "warnings": [
+      {
+       "message": "Irregular whitespace (no-irregular-whitespace)",
+       "line": 1,
+       "column": 18,
+       "endLine": 1,
+       "endColumn": 19
+      }
+     ]
+    },
+    {
+     "code": "$variable : 5rem;",
+     "description": "irregular whitespace in variable name",
+     "warnings": [
+      {
+       "message": "Irregular whitespace (no-irregular-whitespace)",
+       "line": 1,
+       "column": 10,
+       "endLine": 1,
+       "endColumn": 11
+      }
+     ]
+    },
+    {
+     "code": "@media screen {\f}",
+     "description": "irregular whitespace in the after of an at rule",
+     "warnings": [
+      {
+       "message": "Irregular whitespace (no-irregular-whitespace)",
+       "line": 1,
+       "column": 16,
+       "endLine": 1,
+       "endColumn": 17
+      }
+     ]
+    },
+    {
+     "code": ".a {\f}",
+     "description": "irregular whitespace in the after of a rule",
+     "warnings": [
+      {
+       "message": "Irregular whitespace (no-irregular-whitespace)",
+       "line": 1,
+       "column": 5,
+       "endLine": 1,
+       "endColumn": 6
+      }
+     ]
+    },
+    {
+     "code": ".a {\f\f}",
+     "description": "irregular whitespace in the after of a rule",
+     "warnings": [
+      {
+       "message": "Irregular whitespace (no-irregular-whitespace)",
+       "line": 1,
+       "column": 5,
+       "endLine": 1,
+       "endColumn": 7
+      }
+     ]
+    },
+    {
+     "code": "/* a comment */\n b, /* a comment */\na b\n/* a comment */\n \n{}",
+     "warnings": [
+      {
+       "message": "Irregular whitespace (no-irregular-whitespace)",
+       "line": 2,
+       "column": 1,
+       "endLine": 2,
+       "endColumn": 2
+      },
+      {
+       "message": "Irregular whitespace (no-irregular-whitespace)",
+       "line": 3,
+       "column": 2,
+       "endLine": 3,
+       "endColumn": 3
+      },
+      {
+       "message": "Irregular whitespace (no-irregular-whitespace)",
+       "line": 5,
+       "column": 1,
+       "endLine": 5,
+       "endColumn": 2
+      }
+     ]
+    },
+    {
+     "code": "/* a comment */\n @media\n/* a comment */\n  /* a comment */\nonly screen\n{}",
+     "warnings": [
+      {
+       "message": "Irregular whitespace (no-irregular-whitespace)",
+       "line": 2,
+       "column": 1,
+       "endLine": 2,
+       "endColumn": 2
+      },
+      {
+       "message": "Irregular whitespace (no-irregular-whitespace)",
+       "line": 4,
+       "column": 1,
+       "endLine": 4,
+       "endColumn": 2
+      },
+      {
+       "message": "Irregular whitespace (no-irregular-whitespace)",
+       "line": 5,
+       "column": 5,
+       "endLine": 5,
+       "endColumn": 6
+      }
+     ]
+    },
+    {
+     "code": ".foo {\n\t/* a comment */\n\tpadding : /* a comment */\n\t  /* a comment */\n\t1px 2px\n\t/* a comment */\n\tcalc(5px + 6px);\n}",
+     "warnings": [
+      {
+       "message": "Irregular whitespace (no-irregular-whitespace)",
+       "line": 3,
+       "column": 9,
+       "endLine": 3,
+       "endColumn": 10
+      },
+      {
+       "message": "Irregular whitespace (no-irregular-whitespace)",
+       "line": 4,
+       "column": 2,
+       "endLine": 4,
+       "endColumn": 3
+      },
+      {
+       "message": "Irregular whitespace (no-irregular-whitespace)",
+       "line": 5,
+       "column": 5,
+       "endLine": 5,
+       "endColumn": 6
+      },
+      {
+       "message": "Irregular whitespace (no-irregular-whitespace)",
+       "line": 7,
+       "column": 10,
+       "endLine": 7,
+       "endColumn": 11
+      }
+     ]
+    },
+    {
+     "code": "a {\n\tgrid-template:\n\t\t\"a a a\" 40px\n\t\t\"b c c\" 40px\n\t\t\"b c c\" 40px / 1fr 1fr 1fr;\n}",
+     "warnings": [
+      {
+       "message": "Irregular whitespace (no-irregular-whitespace)",
+       "line": 3,
+       "column": 7,
+       "endLine": 3,
+       "endColumn": 8
+      },
+      {
+       "message": "Irregular whitespace (no-irregular-whitespace)",
+       "line": 5,
+       "column": 5,
+       "endLine": 5,
+       "endColumn": 6
+      }
+     ]
+    },
+    {
+     "code": "a { grid-template-areas: \"a a\" \"b b\"; }",
+     "warnings": [
+      {
+       "message": "Irregular whitespace (no-irregular-whitespace)",
+       "line": 1,
+       "column": 28,
+       "endLine": 1,
+       "endColumn": 29
+      }
+     ]
+    },
+    {
+     "code": "a { grid: \"foo \" 1fr /*  comment */ \"bar\" 1fr; }",
+     "warnings": [
+      {
+       "message": "Irregular whitespace (no-irregular-whitespace)",
+       "line": 1,
+       "column": 15,
+       "endLine": 1,
+       "endColumn": 16
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

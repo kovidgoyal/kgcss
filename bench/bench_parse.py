@@ -10,7 +10,9 @@
 prepare downloads the corpus, and calibre's tinycss and css_selectors
 (pinned, checksummed corpus) into bench/.cache, builds calibre's C
 tokenizer, and generates the synthetic
-sheets. run measures, for every library and corpus file, the syntax suite:
+sheets. If npm is installed, it also installs stylelint, pinned by
+bench/stylelint/package-lock.json, for the tests that compare kgcss.lint
+with it (tests/stylelint_oracle.py). run measures, for every library and corpus file, the syntax suite:
 
     tokenize  produce all tokens (tinycss2 has no flat tokenizer, so this is
               its component value parser, which is also how its parsers work)
@@ -37,6 +39,7 @@ import hashlib
 import importlib
 import os
 import random
+import shutil
 import subprocess
 import sys
 import sysconfig
@@ -50,6 +53,7 @@ ROOT = Path(__file__).resolve().parent
 CACHE = ROOT / '.cache'
 CORPUS = CACHE / 'corpus'
 CALIBRE = CACHE / 'calibre'
+STYLELINT = CACHE / 'stylelint'
 
 DOWNLOADS = {
     'bootstrap-5.3.3.css': (
@@ -185,7 +189,25 @@ def prepare() -> None:
             check=True,
         )  # fmt: skip
         stamp.write_text(' '.join(flags))
+    install_stylelint()
     print('Corpus:', ', '.join(sorted(p.name for p in CORPUS.glob('*.css'))))
+
+
+def install_stylelint() -> None:
+    npm = shutil.which('npm')
+    if npm is None:
+        print('npm is not installed: not installing stylelint, so the tests that compare with it will be skipped')
+        return
+    STYLELINT.mkdir(parents=True, exist_ok=True)
+    lock = (ROOT / 'stylelint' / 'package-lock.json').read_text()
+    stamp = STYLELINT / 'installed-lock.json'
+    if stamp.exists() and stamp.read_text() == lock and (STYLELINT / 'node_modules').exists():
+        return
+    print('Installing stylelint')
+    for name in ('package.json', 'package-lock.json'):
+        shutil.copyfile(ROOT / 'stylelint' / name, STYLELINT / name)
+    subprocess.run([npm, 'ci', '--ignore-scripts', '--no-audit', '--no-fund'], cwd=STYLELINT, check=True)
+    stamp.write_text(lock)
 
 
 # ---------------------------------------------------------------------------

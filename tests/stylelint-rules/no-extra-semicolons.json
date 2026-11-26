@@ -1,0 +1,1418 @@
+{
+ "rule": "@stylistic/no-extra-semicolons",
+ "source": "@stylistic/stylelint-plugin 6.0.1: lib/rules/no-extra-semicolons/index.test.ts",
+ "groups": [
+  {
+   "config": [
+    true
+   ],
+   "compute_edit_info": false,
+   "accept": [
+    {
+     "code": "@import 'x.css';",
+     "description": "an import closed by its own semicolon"
+    },
+    {
+     "code": ".foo { color: red }",
+     "description": "a declaration with no semicolon behind it"
+    },
+    {
+     "code": ".foo { color: red; }",
+     "description": "a declaration closed by a semicolon"
+    },
+    {
+     "code": ".foo { color: red; display: block; }",
+     "description": "two declarations, each closed by a semicolon"
+    },
+    {
+     "code": ".foo { color: red; display: block }",
+     "description": "two declarations, the last with no semicolon behind it"
+    },
+    {
+     "code": "@media screen { a { color: red; } }",
+     "description": "a rule nested inside a media query"
+    },
+    {
+     "code": "/* comment */",
+     "description": "a comment"
+    },
+    {
+     "code": "/* comment; */",
+     "description": "a semicolon inside a comment"
+    },
+    {
+     "code": "/* ;;comment;; words;; */",
+     "description": "semicolons standing among the words of a comment"
+    },
+    {
+     "code": "a { content: ''; }",
+     "description": "an empty string for a value"
+    },
+    {
+     "code": "a { content: ';'; }",
+     "description": "a semicolon inside a string"
+    },
+    {
+     "code": "a { content: ';;'; }",
+     "description": "two semicolons inside a string"
+    },
+    {
+     "code": "a { content: ';\t; ;'; }",
+     "description": "semicolons and whitespace inside a string"
+    },
+    {
+     "code": ":root { --foo: red; --bar: blue; }",
+     "description": "two custom properties, each closed by a semicolon"
+    }
+   ],
+   "reject": [
+    {
+     "code": ";",
+     "description": "a semicolon standing alone in the stylesheet",
+     "fixed": "",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": " ;",
+     "description": "the same semicolon behind a space",
+     "fixed": " ",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 2
+      }
+     ]
+    },
+    {
+     "code": "  ;",
+     "description": "the same behind two spaces",
+     "fixed": "  ",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 3
+      }
+     ]
+    },
+    {
+     "code": "\n;",
+     "description": "the same behind a newline",
+     "fixed": "\n",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 2,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": "\n\n;",
+     "description": "the same behind two newlines",
+     "fixed": "\n\n",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 3,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": "\r\n;",
+     "description": "the same behind a carriage-return line break",
+     "fixed": "\r\n",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 2,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": "\r\n\r\n;",
+     "description": "the same behind two carriage-return line breaks",
+     "fixed": "\r\n\r\n",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 3,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": "\r;",
+     "description": "the same behind a bare carriage return",
+     "fixed": "\r",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 2
+      }
+     ]
+    },
+    {
+     "code": "\r\r;",
+     "description": "the same behind two bare carriage returns",
+     "fixed": "\r\r",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 3
+      }
+     ]
+    },
+    {
+     "code": "\t;",
+     "description": "the same behind a tab",
+     "fixed": "\t",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 2
+      }
+     ]
+    },
+    {
+     "code": "\t\t;",
+     "description": "the same behind two tabs",
+     "fixed": "\t\t",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 3
+      }
+     ]
+    },
+    {
+     "code": "a {b: c;;\n}\n;",
+     "description": "a semicolon in front of a closing brace a stray semicolon on the next line follows",
+     "fixed": "a {b: c;\n}\n",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 9
+      },
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 3,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": "a[x=\"<!--\"] {b: c;;} ;",
+     "description": "semicolons in front of and behind the closing brace of a rule whose selector holds an opening HTML comment",
+     "fixed": "a[x=\"\\3c !--\"] {b: c;} ",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 19
+      },
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 22
+      }
+     ]
+    },
+    {
+     "code": "a {b: c;;} ;",
+     "description": "the same with the stray semicolon on the brace's line",
+     "fixed": "a {b: c;} ",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 9
+      },
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 12
+      }
+     ]
+    },
+    {
+     "code": "; ; ;",
+     "description": "three semicolons standing apart in the stylesheet",
+     "fixed": "  ",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 1
+      },
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 3
+      },
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 5
+      }
+     ]
+    },
+    {
+     "code": "a {;}",
+     "description": "a semicolon standing alone inside a block",
+     "fixed": "a {}",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 4
+      }
+     ]
+    },
+    {
+     "code": "a { ;}",
+     "description": "the same semicolon behind a space",
+     "fixed": "a { }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 5
+      }
+     ]
+    },
+    {
+     "code": "a {; }",
+     "description": "the same in front of a space",
+     "fixed": "a { }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 4
+      }
+     ]
+    },
+    {
+     "code": "a { ; }",
+     "description": "the same between two spaces",
+     "fixed": "a {  }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 5
+      }
+     ]
+    },
+    {
+     "code": "a {  ;}",
+     "description": "the same behind two spaces",
+     "fixed": "a {  }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 6
+      }
+     ]
+    },
+    {
+     "code": "a {;  }",
+     "description": "the same in front of two spaces",
+     "fixed": "a {  }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 4
+      }
+     ]
+    },
+    {
+     "code": "a {  ;  }",
+     "description": "the same between two spaces on either side",
+     "fixed": "a {    }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 6
+      }
+     ]
+    },
+    {
+     "code": "a {   ;   }",
+     "description": "the same between three spaces on either side",
+     "fixed": "a {      }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 7
+      }
+     ]
+    },
+    {
+     "code": "a {\n;}",
+     "description": "the same behind a newline",
+     "fixed": "a {\n}",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 2,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": "a {;\n}",
+     "description": "the same in front of a newline",
+     "fixed": "a {\n}",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 4
+      }
+     ]
+    },
+    {
+     "code": "a {\n;\n}",
+     "description": "the same between two newlines",
+     "fixed": "a {\n\n}",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 2,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": "a {\r\n;}",
+     "description": "the same behind a carriage-return line break",
+     "fixed": "a {\r\n}",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 2,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": "a {;\r\n}",
+     "description": "the same in front of a carriage-return line break",
+     "fixed": "a {\r\n}",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 4
+      }
+     ]
+    },
+    {
+     "code": "a {\r\n;\r\n}",
+     "description": "the same between two carriage-return line breaks",
+     "fixed": "a {\r\n\r\n}",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 2,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": "a {\t;}",
+     "description": "the same behind a tab",
+     "fixed": "a {\t}",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 5
+      }
+     ]
+    },
+    {
+     "code": "a {;\t}",
+     "description": "the same in front of a tab",
+     "fixed": "a {\t}",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 4
+      }
+     ]
+    },
+    {
+     "code": "a {\t;\t}",
+     "description": "the same between two tabs",
+     "fixed": "a {\t\t}",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 5
+      }
+     ]
+    },
+    {
+     "code": "a { ;\n;\t; }",
+     "description": "three semicolons standing alone inside a block",
+     "fixed": "a { \n\t }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 5
+      },
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 2,
+       "column": 1
+      },
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 2,
+       "column": 3
+      }
+     ]
+    },
+    {
+     "code": "@layer(a);; @layer(l);",
+     "description": "a second semicolon in front of an at-rule spelled without a space in front of its options",
+     "fixed": "@layer(a); @layer(l);",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 11
+      }
+     ]
+    },
+    {
+     "code": "a { color: red; };",
+     "description": "a semicolon behind the closing brace",
+     "fixed": "a { color: red; }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 18
+      }
+     ]
+    },
+    {
+     "code": "a { color: red; } ;",
+     "description": "the same semicolon behind a space",
+     "fixed": "a { color: red; } ",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 19
+      }
+     ]
+    },
+    {
+     "code": "a { color: red; }\n;",
+     "description": "the same behind a newline",
+     "fixed": "a { color: red; }\n",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 2,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": "a { color: red; }\n\n;",
+     "description": "the same behind two newlines",
+     "fixed": "a { color: red; }\n\n",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 3,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": "a { color: red; }\r\n;",
+     "description": "the same behind a carriage-return line break",
+     "fixed": "a { color: red; }\r\n",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 2,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": "a { color: red; }\r\n\r\n;",
+     "description": "the same behind two carriage-return line breaks",
+     "fixed": "a { color: red; }\r\n\r\n",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 3,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": "a { color: red; }\r;",
+     "description": "the same behind a bare carriage return",
+     "fixed": "a { color: red; }\r",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 19
+      }
+     ]
+    },
+    {
+     "code": "a { color: red; }\r\r;",
+     "description": "the same behind two bare carriage returns",
+     "fixed": "a { color: red; }\r\r",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 20
+      }
+     ]
+    },
+    {
+     "code": "a { color: red; }\t;",
+     "description": "the same behind a tab",
+     "fixed": "a { color: red; }\t",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 19
+      }
+     ]
+    },
+    {
+     "code": "a { color: red; }\t\t;",
+     "description": "the same behind two tabs",
+     "fixed": "a { color: red; }\t\t",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 20
+      }
+     ]
+    },
+    {
+     "code": "a { color: red; };\t;\n; ;",
+     "description": "four semicolons behind the closing brace",
+     "fixed": "a { color: red; }\t\n ",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 20
+      },
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 2,
+       "column": 1
+      },
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 2,
+       "column": 3
+      },
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 18
+      }
+     ]
+    },
+    {
+     "code": ";a { color: red; }",
+     "description": "a semicolon in front of a rule",
+     "fixed": "a { color: red; }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": "; a { color: red; }",
+     "description": "the same semicolon in front of a space",
+     "fixed": " a { color: red; }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": ";  a { color: red; }",
+     "description": "the same in front of two spaces",
+     "fixed": "  a { color: red; }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": ";\na { color: red; }",
+     "description": "the same in front of a newline",
+     "fixed": "\na { color: red; }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": ";\n\na { color: red; }",
+     "description": "the same in front of two newlines",
+     "fixed": "\n\na { color: red; }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": ";\r\na { color: red; }",
+     "description": "the same in front of a carriage-return line break",
+     "fixed": "\r\na { color: red; }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": ";\r\n\r\na { color: red; }",
+     "description": "the same in front of two carriage-return line breaks",
+     "fixed": "\r\n\r\na { color: red; }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": ";\ta { color: red; }",
+     "description": "the same in front of a tab",
+     "fixed": "\ta { color: red; }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": ";\t\ta { color: red; }",
+     "description": "the same in front of two tabs",
+     "fixed": "\t\ta { color: red; }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": ";\n;\t; ;a { color: red; }",
+     "description": "four semicolons in front of a rule",
+     "fixed": "\n\t a { color: red; }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 1
+      },
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 2,
+       "column": 1
+      },
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 2,
+       "column": 3
+      },
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 2,
+       "column": 5
+      }
+     ]
+    },
+    {
+     "code": "/*comment*/\n;\t; ;a { color: red; }",
+     "description": "semicolons standing between a comment and a rule",
+     "fixed": "/*comment*/\n\t a { color: red; }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 2,
+       "column": 1
+      },
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 2,
+       "column": 3
+      },
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 2,
+       "column": 5
+      }
+     ]
+    },
+    {
+     "code": ";/*comment*/\n;\t; ;a { color: red; }",
+     "description": "the same, with one more semicolon in front of the comment",
+     "fixed": "/*comment*/\n\t a { color: red; }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 1
+      },
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 2,
+       "column": 1
+      },
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 2,
+       "column": 3
+      },
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 2,
+       "column": 5
+      }
+     ]
+    },
+    {
+     "code": "@media screen { ; }",
+     "description": "a semicolon standing alone inside a media query",
+     "fixed": "@media screen {  }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 17
+      }
+     ]
+    },
+    {
+     "code": "@media screen { ;a { color: red; } }",
+     "description": "a semicolon in front of a rule inside a media query",
+     "fixed": "@media screen { a { color: red; } }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 17
+      }
+     ]
+    },
+    {
+     "code": "@media screen { a { color: red; }; }",
+     "description": "a semicolon behind a rule inside a media query",
+     "fixed": "@media screen { a { color: red; } }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 34
+      }
+     ]
+    },
+    {
+     "code": "@media screen { };",
+     "description": "a semicolon behind the closing brace of a media query",
+     "fixed": "@media screen { }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 18
+      }
+     ]
+    },
+    {
+     "code": ";@media screen { }",
+     "description": "a semicolon in front of a media query",
+     "fixed": "@media screen { }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": ";/* comment */",
+     "description": "a semicolon in front of a comment",
+     "fixed": "/* comment */",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": "/* comment */;",
+     "description": "a semicolon behind a comment",
+     "fixed": "/* comment */",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 14
+      }
+     ]
+    },
+    {
+     "code": "/* comment */ ; /*comment */",
+     "description": "a semicolon between two comments",
+     "fixed": "/* comment */  /*comment */",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 15
+      }
+     ]
+    },
+    {
+     "code": "/* comment */\n;\n/* comment */",
+     "description": "the same semicolon on a line of its own",
+     "fixed": "/* comment */\n\n/* comment */",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 2,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": "/* comment */\r\n;\r\n/* comment */",
+     "description": "the same written with carriage-return line breaks",
+     "fixed": "/* comment */\r\n\r\n/* comment */",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 2,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": "/* comment */\t;\t/* comment */",
+     "description": "the same between tabs",
+     "fixed": "/* comment */\t\t/* comment */",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 15
+      }
+     ]
+    },
+    {
+     "code": "a {;/*c*/;/*c*/; color: red;; }",
+     "description": "semicolons around two comments, and a second one behind the declaration",
+     "fixed": "a {/*c*//*c*/ color: red; }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 29
+      },
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 4
+      },
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 10
+      },
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 16
+      }
+     ]
+    },
+    {
+     "code": "a { color: red;; }",
+     "description": "a second semicolon behind a declaration",
+     "fixed": "a { color: red; }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 16
+      }
+     ]
+    },
+    {
+     "code": "a { color: red; ; }",
+     "description": "the same semicolon behind a space",
+     "fixed": "a { color: red;  }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 17
+      }
+     ]
+    },
+    {
+     "code": "a { color: red;  ; }",
+     "description": "the same behind two spaces",
+     "fixed": "a { color: red;   }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 18
+      }
+     ]
+    },
+    {
+     "code": "a { color: red;\n; }",
+     "description": "the same behind a newline",
+     "fixed": "a { color: red;\n }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 2,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": "a { color: red;\n\n; }",
+     "description": "the same behind two newlines",
+     "fixed": "a { color: red;\n\n }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 3,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": "a { color: red;\r\n; }",
+     "description": "the same behind a carriage-return line break",
+     "fixed": "a { color: red;\r\n }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 2,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": "a { color: red;\r\n\r\n; }",
+     "description": "the same behind two carriage-return line breaks",
+     "fixed": "a { color: red;\r\n\r\n }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 3,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": "a { color: red;\t; }",
+     "description": "the same behind a tab",
+     "fixed": "a { color: red;\t }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 17
+      }
+     ]
+    },
+    {
+     "code": "a { color: red;\t\t; }",
+     "description": "the same behind two tabs",
+     "fixed": "a { color: red;\t\t }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 18
+      }
+     ]
+    },
+    {
+     "code": "a { color: red ;; }",
+     "description": "a second semicolon behind a declaration whose value ends in a space",
+     "fixed": "a { color: red ; }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 17
+      }
+     ]
+    },
+    {
+     "code": "a { color: red  ;; }",
+     "description": "the same, with two spaces in front of the first semicolon",
+     "fixed": "a { color: red  ; }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 18
+      }
+     ]
+    },
+    {
+     "code": "a { color: red   ;; }",
+     "description": "the same, with three",
+     "fixed": "a { color: red   ; }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 19
+      }
+     ]
+    },
+    {
+     "code": "a { color: red\n;; }",
+     "description": "the same, with a newline in front of the first semicolon",
+     "fixed": "a { color: red\n; }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 2,
+       "column": 2
+      }
+     ]
+    },
+    {
+     "code": "a { color: red\n\n;; }",
+     "description": "the same, with two newlines",
+     "fixed": "a { color: red\n\n; }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 3,
+       "column": 2
+      }
+     ]
+    },
+    {
+     "code": "a { color: red\r\n;; }",
+     "description": "the same, with a carriage-return line break",
+     "fixed": "a { color: red\r\n; }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 2,
+       "column": 2
+      }
+     ]
+    },
+    {
+     "code": "a { color: red\r\n\r\n;; }",
+     "description": "the same, with two carriage-return line breaks",
+     "fixed": "a { color: red\r\n\r\n; }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 3,
+       "column": 2
+      }
+     ]
+    },
+    {
+     "code": "a { color: red\t;; }",
+     "description": "the same, with a tab",
+     "fixed": "a { color: red\t; }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 17
+      }
+     ]
+    },
+    {
+     "code": "a {\n  color: #FFF;;\n  /* foo */\n  /* bar */\n}",
+     "description": "a second semicolon in front of the two comments that close the block",
+     "fixed": "a {\n  color: #FFF;\n  /* foo */\n  /* bar */\n}",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 2,
+       "column": 15
+      }
+     ]
+    },
+    {
+     "code": "a {\n  /* foo */\n  /* bar */\n  color: #FFF;;\n}",
+     "description": "a second semicolon behind the two comments that open the block",
+     "fixed": "a {\n  /* foo */\n  /* bar */\n  color: #FFF;\n}",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 4,
+       "column": 15
+      }
+     ]
+    },
+    {
+     "code": "a {\n  /* foo */\n  color: #FFF;;\n  /* bar */\n}",
+     "description": "a second semicolon between two comments",
+     "fixed": "a {\n  /* foo */\n  color: #FFF;\n  /* bar */\n}",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 3,
+       "column": 15
+      }
+     ]
+    },
+    {
+     "code": "@import 'x.css';;",
+     "description": "a second semicolon behind an import",
+     "fixed": "@import 'x.css';",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 17
+      }
+     ]
+    },
+    {
+     "code": "@charset \"utf-8\";;",
+     "description": "a second semicolon behind a charset, which is no at-rule to the rules reading an at-rule's own text but whose semicolons are the file's, the file getting the warning asking for the core rule as well",
+     "fixed": "@charset \"utf-8\";",
+     "warnings": [
+      {
+       "message": "The \"@stylistic/\" rules pass over \"@charset\"; enable the \"at-charset-rule-no-invalid\" rule to have its spelling checked (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 1
+      },
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 18
+      }
+     ]
+    },
+    {
+     "code": "@import 'x.css'; ;",
+     "description": "the same semicolon behind a space",
+     "fixed": "@import 'x.css'; ",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 18
+      }
+     ]
+    },
+    {
+     "code": "@import 'x.css';  ;",
+     "description": "the same behind two spaces",
+     "fixed": "@import 'x.css';  ",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 19
+      }
+     ]
+    },
+    {
+     "code": "@import 'x.css';\n;",
+     "description": "the same behind a newline",
+     "fixed": "@import 'x.css';\n",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 2,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": "@import 'x.css';\n\n;",
+     "description": "the same behind two newlines",
+     "fixed": "@import 'x.css';\n\n",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 3,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": "@import 'x.css';\r\n;",
+     "description": "the same behind a carriage-return line break",
+     "fixed": "@import 'x.css';\r\n",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 2,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": "@import 'x.css';\r\n\r\n;",
+     "description": "the same behind two carriage-return line breaks",
+     "fixed": "@import 'x.css';\r\n\r\n",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 3,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": "@import 'x.css';\t;",
+     "description": "the same behind a tab",
+     "fixed": "@import 'x.css';\t",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 18
+      }
+     ]
+    },
+    {
+     "code": "div a {\n  float: left;\n}\ndiv {\n  float: left;;\n}",
+     "description": "a second semicolon behind the declaration of the second rule",
+     "fixed": "div a {\n  float: left;\n}\ndiv {\n  float: left;\n}",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 5,
+       "column": 15
+      }
+     ]
+    },
+    {
+     "code": "div a {\n  float: left;\n}\ndiv {\n  float: left;  ;\n}",
+     "description": "the same semicolon behind two spaces",
+     "fixed": "div a {\n  float: left;\n}\ndiv {\n  float: left;  \n}",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 5,
+       "column": 17
+      }
+     ]
+    },
+    {
+     "code": "div a {\n  float: left;\n}\ndiv {\n  float: left;\n;\n}",
+     "description": "the same on a line of its own",
+     "fixed": "div a {\n  float: left;\n}\ndiv {\n  float: left;\n\n}",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 6,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": ":root { --foo: red;; --bar: blue; }",
+     "description": "a second semicolon behind the first custom property",
+     "fixed": ":root { --foo: red; --bar: blue; }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 20
+      }
+     ]
+    },
+    {
+     "code": ":root { --foo: red; --bar: blue;; }",
+     "description": "a second semicolon behind the last custom property",
+     "fixed": ":root { --foo: red; --bar: blue; }",
+     "warnings": [
+      {
+       "message": "Unexpected extra semicolon (@stylistic/no-extra-semicolons)",
+       "line": 1,
+       "column": 33
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,228 @@
+{
+ "rule": "named-grid-areas-no-invalid",
+ "source": "stylelint 18.1.0: lib/rules/named-grid-areas-no-invalid/__tests__/index.mjs",
+ "groups": [
+  {
+   "config": [
+    true
+   ],
+   "compute_edit_info": false,
+   "accept": [
+    {
+     "code": "a { grid-template-areas: 1fr / auto 1fr auto; }"
+    },
+    {
+     "code": "a { grid-template-areas: \"a a a\" \"b b b\"; }"
+    },
+    {
+     "code": "a { GRID-TEMPLATE-AREAS: \"a a a\" \"b b b\"; }"
+    },
+    {
+     "code": "a {\n\tgrid-template-areas: \"head head\"\n\t\t\"nav  main\"\n\t\t\"nav  foot\";\n}"
+    },
+    {
+     "code": "a {\n\tgrid-template-areas:\n\t\t/* \"\" */ \"head head\"\n\t\t\"nav  main\" /* \"a b c\" */\n\t\t\"nav  foot\" /* \"\" */;\n}"
+    },
+    {
+     "code": "a { grid-template-areas: none; }"
+    },
+    {
+     "code": "a { grid-template-areas:    none; }"
+    },
+    {
+     "code": "a { grid-template-areas: /*comment*/ none /* comment */; }"
+    },
+    {
+     "code": "a { grid-template-areas: /*comment*/ NONE /* comment */; }"
+    },
+    {
+     "code": "a { grid-template-areas: NONE; }"
+    },
+    {
+     "code": "a { grid-template-areas: /* comment \"\" \" */ none; }"
+    },
+    {
+     "code": "a {\n\tgrid-template-areas: /* \"comment\" */ none /* \"comment \" */;\n}"
+    },
+    {
+     "code": "a {\n\tgrid-template:\n\t\t\"a a a\" 40px\n\t\t\"b c c\" 40px\n\t\t\"b c c\" 40px / 1fr 1fr 1fr;\n}"
+    },
+    {
+     "code": "a { grid-template-areas: ({ $foo }) => ($foo === 'any string with different number of tokens than return values' ? 'a a a' : 'b b b'); }",
+     "description": "Skip non-standard values to fix false positive in named-grid-areas-no-invalid with styled-components"
+    },
+    {
+     "code": ".test-grid {\n\tgrid-template:\n\t\t\"a a a\"\n\t\t\"b b\tb\";\n}",
+     "description": "Issue #8134 - tabs should be treated as valid whitespace separators"
+    }
+   ],
+   "reject": [
+    {
+     "code": "a { grid-template-areas: \"a a a\" \"b b\"; }",
+     "warnings": [
+      {
+       "message": "Expected same number of cell tokens in each string (named-grid-areas-no-invalid)",
+       "line": 1,
+       "column": 34,
+       "endLine": 1,
+       "endColumn": 39
+      }
+     ]
+    },
+    {
+     "code": "a { grid-template-areas: \"a a a\" \"b b a\"; }",
+     "warnings": [
+      {
+       "message": "Expected single filled-in rectangle for \"a\" (named-grid-areas-no-invalid)",
+       "line": 1,
+       "column": 26,
+       "endLine": 1,
+       "endColumn": 33
+      }
+     ]
+    },
+    {
+     "code": "a { grid-template-areas: \"a c a\" \"c b a\"; }",
+     "warnings": [
+      {
+       "message": "Expected single filled-in rectangle for \"a\" (named-grid-areas-no-invalid)",
+       "line": 1,
+       "column": 26,
+       "endLine": 1,
+       "endColumn": 33
+      },
+      {
+       "message": "Expected single filled-in rectangle for \"c\" (named-grid-areas-no-invalid)",
+       "line": 1,
+       "column": 26,
+       "endLine": 1,
+       "endColumn": 33
+      }
+     ]
+    },
+    {
+     "code": "a {\n\tgrid-template-areas: \"header header header header\"\n\t\t\"main main . sidebar\"\n\t\t\"footer footer footer header\";\n}",
+     "warnings": [
+      {
+       "message": "Expected single filled-in rectangle for \"header\" (named-grid-areas-no-invalid)",
+       "line": 2,
+       "column": 23,
+       "endLine": 2,
+       "endColumn": 52
+      }
+     ]
+    },
+    {
+     "code": "a { grid-template-areas: \"\"; }",
+     "warnings": [
+      {
+       "message": "Expected cell token within string (named-grid-areas-no-invalid)",
+       "line": 1,
+       "column": 26,
+       "endLine": 1,
+       "endColumn": 28
+      }
+     ]
+    },
+    {
+     "code": "a { grid-template-areas: /* \"comment\" */ \"\"; }",
+     "warnings": [
+      {
+       "message": "Expected cell token within string (named-grid-areas-no-invalid)",
+       "line": 1,
+       "column": 42,
+       "endLine": 1,
+       "endColumn": 44
+      }
+     ]
+    },
+    {
+     "code": "a { grid-template-areas:\n\t\"\";\n}",
+     "warnings": [
+      {
+       "message": "Expected cell token within string (named-grid-areas-no-invalid)",
+       "line": 2,
+       "column": 2,
+       "endLine": 2,
+       "endColumn": 4
+      }
+     ]
+    },
+    {
+     "code": "a { grid-template-areas: \"\" \"\" \"\"; }",
+     "warnings": [
+      {
+       "message": "Expected cell token within string (named-grid-areas-no-invalid)",
+       "line": 1,
+       "column": 26,
+       "endLine": 1,
+       "endColumn": 28
+      },
+      {
+       "message": "Expected cell token within string (named-grid-areas-no-invalid)",
+       "line": 1,
+       "column": 29,
+       "endLine": 1,
+       "endColumn": 31
+      },
+      {
+       "message": "Expected cell token within string (named-grid-areas-no-invalid)",
+       "line": 1,
+       "column": 32,
+       "endLine": 1,
+       "endColumn": 34
+      }
+     ]
+    },
+    {
+     "code": "a {\n\tgrid-template-areas: /* none */\n\t\t\t\"\" /* none */;\n}",
+     "warnings": [
+      {
+       "message": "Expected cell token within string (named-grid-areas-no-invalid)",
+       "line": 3,
+       "column": 4,
+       "endLine": 3,
+       "endColumn": 6
+      }
+     ]
+    },
+    {
+     "code": "a { GRID-TEMPLATE-AREAS: \"\"; }",
+     "warnings": [
+      {
+       "message": "Expected cell token within string (named-grid-areas-no-invalid)",
+       "line": 1,
+       "column": 26,
+       "endLine": 1,
+       "endColumn": 28
+      }
+     ]
+    },
+    {
+     "code": "a {\n\tgrid-template:\n\t\t\"a a\" 40px\n\t\t\"b c c\" 40px\n\t\t\"b c c\" 40px / 1fr 1fr 1fr;\n}",
+     "warnings": [
+      {
+       "message": "Expected same number of cell tokens in each string (named-grid-areas-no-invalid)",
+       "line": 4,
+       "column": 3,
+       "endLine": 4,
+       "endColumn": 10
+      }
+     ]
+    },
+    {
+     "code": "a { grid: \"\" 200px \"b\" min-content; }",
+     "warnings": [
+      {
+       "message": "Expected cell token within string (named-grid-areas-no-invalid)",
+       "line": 1,
+       "column": 11,
+       "endLine": 1,
+       "endColumn": 13
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

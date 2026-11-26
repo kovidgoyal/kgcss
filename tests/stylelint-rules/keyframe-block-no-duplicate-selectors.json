@@ -1,0 +1,123 @@
+{
+ "rule": "keyframe-block-no-duplicate-selectors",
+ "source": "stylelint 18.1.0: lib/rules/keyframe-block-no-duplicate-selectors/__tests__/index.mjs",
+ "groups": [
+  {
+   "config": [
+    true
+   ],
+   "compute_edit_info": false,
+   "accept": [
+    {
+     "code": "@keyframes foo { 0% {} 100% {} }"
+    },
+    {
+     "code": "@keyframes foo { from {} to {} }"
+    },
+    {
+     "code": "@keyframes foo {\n\tfrom {}\n\t/* stylelint-disable-next-line keyframe-block-no-duplicate-selectors */\n\tfrom, /* stylelint-disable-next-line keyframe-block-no-duplicate-selectors */\n\tfrom,\n\t/* stylelint-disable-next-line keyframe-block-no-duplicate-selectors */\n\tfrom\n\t{}\n}"
+    }
+   ],
+   "reject": [
+    {
+     "code": "@keyframes foo { from {} from {} }",
+     "warnings": [
+      {
+       "message": "Duplicate keyframe selector \"from\" (keyframe-block-no-duplicate-selectors)",
+       "line": 1,
+       "column": 26,
+       "endLine": 1,
+       "endColumn": 30
+      }
+     ]
+    },
+    {
+     "code": "@keyframes foo { 0% {} 0% {} }",
+     "warnings": [
+      {
+       "message": "Duplicate keyframe selector \"0%\" (keyframe-block-no-duplicate-selectors)",
+       "line": 1,
+       "column": 24,
+       "endLine": 1,
+       "endColumn": 26
+      }
+     ]
+    },
+    {
+     "code": "@keyframes foo { from {} FROM {} }",
+     "warnings": [
+      {
+       "message": "Duplicate keyframe selector \"FROM\" (keyframe-block-no-duplicate-selectors)"
+      }
+     ]
+    },
+    {
+     "code": "@keyframes foo { from {} to {} to {} }",
+     "warnings": [
+      {
+       "message": "Duplicate keyframe selector \"to\" (keyframe-block-no-duplicate-selectors)"
+      }
+     ]
+    },
+    {
+     "code": "@keyframes foo { 0% {} 0% {} 100% {} }",
+     "warnings": [
+      {
+       "message": "Duplicate keyframe selector \"0%\" (keyframe-block-no-duplicate-selectors)"
+      }
+     ]
+    },
+    {
+     "code": "@-webkit-keyframes foo { 0% {} 0% {} 100% {} }",
+     "warnings": [
+      {
+       "message": "Duplicate keyframe selector \"0%\" (keyframe-block-no-duplicate-selectors)"
+      }
+     ]
+    },
+    {
+     "code": "@-moz-keyframes foo { 0% {} 0% {} 100% {} }",
+     "warnings": [
+      {
+       "message": "Duplicate keyframe selector \"0%\" (keyframe-block-no-duplicate-selectors)"
+      }
+     ]
+    },
+    {
+     "code": "@keyframes foo { 0% {} 0%, 100% {} }",
+     "warnings": [
+      {
+       "message": "Duplicate keyframe selector \"0%\" (keyframe-block-no-duplicate-selectors)"
+      }
+     ]
+    },
+    {
+     "code": "@keyframes foo {\n\tfrom {}\n\t/* a comment */\n\tfrom, /* a comment */\n\tfrom,\n\t/* a comment */\n\tfrom\n\t{}\n}",
+     "warnings": [
+      {
+       "message": "Duplicate keyframe selector \"from\" (keyframe-block-no-duplicate-selectors)",
+       "line": 4,
+       "column": 2,
+       "endLine": 4,
+       "endColumn": 6
+      },
+      {
+       "message": "Duplicate keyframe selector \"from\" (keyframe-block-no-duplicate-selectors)",
+       "line": 5,
+       "column": 2,
+       "endLine": 5,
+       "endColumn": 6
+      },
+      {
+       "message": "Duplicate keyframe selector \"from\" (keyframe-block-no-duplicate-selectors)",
+       "line": 7,
+       "column": 2,
+       "endLine": 7,
+       "endColumn": 6
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

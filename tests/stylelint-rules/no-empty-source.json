@@ -1,0 +1,167 @@
+{
+ "rule": "no-empty-source",
+ "source": "stylelint 18.1.0: lib/rules/no-empty-source/__tests__/index.mjs",
+ "groups": [
+  {
+   "config": [
+    true
+   ],
+   "compute_edit_info": false,
+   "accept": [
+    {
+     "code": ".class {}"
+    },
+    {
+     "code": "   .class {}   "
+    },
+    {
+     "code": "/* comment */"
+    },
+    {
+     "code": "\n.class {}"
+    },
+    {
+     "code": "\r\n.class {}"
+    },
+    {
+     "code": "/* stylelint-disable */"
+    },
+    {
+     "code": "/* stylelint-disable no-empty-source */"
+    }
+   ],
+   "reject": [
+    {
+     "code": "",
+     "description": "empty source",
+     "warnings": [
+      {
+       "message": "Empty source (no-empty-source)",
+       "line": 1,
+       "column": 1,
+       "endLine": 1,
+       "endColumn": 2
+      }
+     ]
+    },
+    {
+     "code": "   ",
+     "description": "source with spaces",
+     "warnings": [
+      {
+       "message": "Empty source (no-empty-source)",
+       "line": 1,
+       "column": 1,
+       "endLine": 1,
+       "endColumn": 5
+      }
+     ]
+    },
+    {
+     "code": "\t",
+     "description": "source with tab",
+     "warnings": [
+      {
+       "message": "Empty source (no-empty-source)",
+       "line": 1,
+       "column": 1,
+       "endLine": 1,
+       "endColumn": 3
+      }
+     ]
+    },
+    {
+     "code": "\n",
+     "description": "source with newline",
+     "warnings": [
+      {
+       "message": "Empty source (no-empty-source)",
+       "line": 1,
+       "column": 1,
+       "endLine": 2,
+       "endColumn": 2
+      }
+     ]
+    },
+    {
+     "code": "\r\n",
+     "description": "source with newline",
+     "warnings": [
+      {
+       "message": "Empty source (no-empty-source)",
+       "line": 1,
+       "column": 1,
+       "endLine": 2,
+       "endColumn": 2
+      }
+     ]
+    },
+    {
+     "code": "\n\n\n",
+     "description": "source with multiple newline",
+     "warnings": [
+      {
+       "message": "Empty source (no-empty-source)",
+       "line": 1,
+       "column": 1,
+       "endLine": 4,
+       "endColumn": 2
+      }
+     ]
+    },
+    {
+     "code": "\r\n\r\n\r\n",
+     "description": "source with multiple newline",
+     "warnings": [
+      {
+       "message": "Empty source (no-empty-source)",
+       "line": 1,
+       "column": 1,
+       "endLine": 4,
+       "endColumn": 2
+      }
+     ]
+    },
+    {
+     "code": "  \n  ",
+     "description": "source with spaces and newline",
+     "warnings": [
+      {
+       "message": "Empty source (no-empty-source)",
+       "line": 1,
+       "column": 1,
+       "endLine": 2,
+       "endColumn": 4
+      }
+     ]
+    },
+    {
+     "code": "  \r\n  ",
+     "description": "source with spaces and newline",
+     "warnings": [
+      {
+       "message": "Empty source (no-empty-source)",
+       "line": 1,
+       "column": 1,
+       "endLine": 2,
+       "endColumn": 4
+      }
+     ]
+    },
+    {
+     "code": "/* stylelint-disable foo */",
+     "description": "unrelated configuration comment",
+     "warnings": [
+      {
+       "message": "Empty source (no-empty-source)",
+       "line": 1,
+       "column": 1,
+       "endLine": 1,
+       "endColumn": 29
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

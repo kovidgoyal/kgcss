@@ -1,0 +1,411 @@
+{
+ "rule": "property-no-unknown",
+ "source": "stylelint 18.1.0: lib/rules/property-no-unknown/__tests__/index.mjs",
+ "groups": [
+  {
+   "config": [
+    true
+   ],
+   "compute_edit_info": false,
+   "accept": [
+    {
+     "code": ".foo { color: green; }"
+    },
+    {
+     "code": ".foo { COLoR: green; }"
+    },
+    {
+     "code": ".foo { fill: black; }"
+    },
+    {
+     "code": ".foo { corner-shape: bevel; }"
+    },
+    {
+     "code": ".foo { -webkit-align-self: center; }"
+    },
+    {
+     "code": ".foo { align-self: center; }"
+    },
+    {
+     "code": ".foo { --bg-color: white; }",
+     "description": "ignore standard CSS variables"
+    },
+    {
+     "code": ".foo { -moz-align-self: center; }",
+     "description": "ignore vendor prefixes"
+    },
+    {
+     "code": ".foo { *width: 100px; }",
+     "description": "ignore CSS hacks"
+    },
+    {
+     "code": ".foo { --custom-property-set: { colr: blue; } }",
+     "description": "ignore custom property sets"
+    },
+    {
+     "code": "@font-face { foo: 0; }",
+     "description": "ignore descriptors"
+    },
+    {
+     "code": "@position-try --foo { @supports (bar: 0) { bar: 0 } }",
+     "description": "ignore descriptors within nested at-rules"
+    },
+    {
+     "code": "@foo { bar: 0; }",
+     "description": "ignore all declarations within custom at-rules as may be descriptors"
+    }
+   ],
+   "reject": [
+    {
+     "code": ".foo { colr: blue; }",
+     "warnings": [
+      {
+       "message": "Unknown property \"colr\" (property-no-unknown)",
+       "line": 1,
+       "column": 8,
+       "endLine": 1,
+       "endColumn": 12
+      }
+     ]
+    },
+    {
+     "code": ".foo { COLR: blue; }",
+     "warnings": [
+      {
+       "message": "Unknown property \"COLR\" (property-no-unknown)",
+       "line": 1,
+       "column": 8,
+       "endLine": 1,
+       "endColumn": 12
+      }
+     ]
+    },
+    {
+     "code": ".foo {\n  colr: blue;\n}",
+     "warnings": [
+      {
+       "message": "Unknown property \"colr\" (property-no-unknown)",
+       "line": 2,
+       "column": 3,
+       "endLine": 2,
+       "endColumn": 7
+      }
+     ]
+    },
+    {
+     "code": ".foo { wdth: 100px; }",
+     "warnings": [
+      {
+       "message": "Unknown property \"wdth\" (property-no-unknown)",
+       "line": 1,
+       "column": 8,
+       "endLine": 1,
+       "endColumn": 12
+      }
+     ]
+    },
+    {
+     "code": ".foo { *wdth: 100px; }",
+     "warnings": [
+      {
+       "message": "Unknown property \"wdth\" (property-no-unknown)",
+       "line": 1,
+       "column": 9,
+       "endLine": 1,
+       "endColumn": 13
+      }
+     ]
+    },
+    {
+     "code": ":export { my-property: red; }",
+     "warnings": [
+      {
+       "message": "Unknown property \"my-property\" (property-no-unknown)",
+       "line": 1,
+       "column": 11,
+       "endLine": 1,
+       "endColumn": 22
+      }
+     ]
+    },
+    {
+     "code": "@-moz-document url-prefix() { .foo { colr: blue; } }",
+     "warnings": [
+      {
+       "message": "Unknown property \"colr\" (property-no-unknown)",
+       "line": 1,
+       "column": 38,
+       "endLine": 1,
+       "endColumn": 42
+      }
+     ]
+    },
+    {
+     "code": "@foo { .foo { bar: 0; } }",
+     "warnings": [
+      {
+       "message": "Unknown property \"bar\" (property-no-unknown)",
+       "line": 1,
+       "column": 15,
+       "endLine": 1,
+       "endColumn": 18
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "config": [
+    true,
+    {
+     "ignoreProperties": [
+      "-moz-overflow-scrolling",
+      "/^my-/"
+     ],
+     "checkPrefixed": true
+    }
+   ],
+   "compute_edit_info": false,
+   "accept": [
+    {
+     "code": ".foo { -webkit-overflow-scrolling: auto; }"
+    },
+    {
+     "code": ".foo { -moz-overflow-scrolling: auto; }"
+    },
+    {
+     "code": ".foo { my-property: 1; }"
+    },
+    {
+     "code": ".foo { my-other-property: 1; }"
+    }
+   ],
+   "reject": [
+    {
+     "code": ".foo { overflow-scrolling: auto; }",
+     "warnings": [
+      {
+       "message": "Unknown property \"overflow-scrolling\" (property-no-unknown)",
+       "line": 1,
+       "column": 8
+      }
+     ]
+    },
+    {
+     "code": ".foo { not-my-property: 1; }",
+     "warnings": [
+      {
+       "message": "Unknown property \"not-my-property\" (property-no-unknown)",
+       "line": 1,
+       "column": 8
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "config": [
+    true,
+    {
+     "ignoreProperties": [
+      {
+       "$regexp": [
+        "^my-",
+        ""
+       ]
+      }
+     ],
+     "checkPrefixed": true
+    }
+   ],
+   "compute_edit_info": false,
+   "accept": [
+    {
+     "code": ".foo { my-property: 1; }"
+    }
+   ],
+   "reject": [
+    {
+     "code": ".foo { not-my-property: 1; }",
+     "warnings": [
+      {
+       "message": "Unknown property \"not-my-property\" (property-no-unknown)",
+       "line": 1,
+       "column": 8
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "config": [
+    true,
+    {
+     "checkPrefixed": true
+    }
+   ],
+   "compute_edit_info": false,
+   "accept": [
+    {
+     "code": "a { -webkit-overflow-scrolling: auto; }"
+    },
+    {
+     "code": "a { -moz-box-flex: 0; }"
+    },
+    {
+     "code": "a { -khtml-opacity: 0.5; }"
+    },
+    {
+     "code": "a { -moz-align-self: center; }"
+    },
+    {
+     "code": "@view-transition { navigation: auto }"
+    }
+   ],
+   "reject": [
+    {
+     "code": ".foo { -moz-overflow-scrolling: auto; }",
+     "warnings": [
+      {
+       "message": "Unknown property \"-moz-overflow-scrolling\" (property-no-unknown)",
+       "line": 1,
+       "column": 8
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "config": [
+    true,
+    {
+     "ignoreSelectors": [
+      ":export",
+      ":import"
+     ]
+    }
+   ],
+   "compute_edit_info": false,
+   "accept": [
+    {
+     "code": ":export { my-property: 1; }"
+    }
+   ],
+   "reject": [
+    {
+     "code": ":not-export { my-property: 1; }",
+     "warnings": [
+      {
+       "message": "Unknown property \"my-property\" (property-no-unknown)",
+       "line": 1,
+       "column": 15
+      }
+     ]
+    },
+    {
+     "code": ":import(\"path/to/file.css\") { my-property: 1; }",
+     "warnings": [
+      {
+       "message": "Unknown property \"my-property\" (property-no-unknown)",
+       "line": 1,
+       "column": 31
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "config": [
+    true,
+    {
+     "ignoreSelectors": [
+      "/:export/",
+      {
+       "$regexp": [
+        "^:import",
+        ""
+       ]
+      }
+     ]
+    }
+   ],
+   "compute_edit_info": false,
+   "accept": [
+    {
+     "code": ":export { my-property: 1; }"
+    },
+    {
+     "code": ":import(\"path/to/file.css\") { my-property: 1; }"
+    }
+   ],
+   "reject": [
+    {
+     "code": ":exprat { my-property: 1; }",
+     "warnings": [
+      {
+       "message": "Unknown property \"my-property\" (property-no-unknown)",
+       "line": 1,
+       "column": 11
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "config": [
+    true,
+    {
+     "ignoreAtRules": [
+      "supports",
+      {
+       "$regexp": [
+        "^lay",
+        ""
+       ]
+      }
+     ]
+    }
+   ],
+   "compute_edit_info": false,
+   "accept": [
+    {
+     "code": "@supports (display: grid) { my-property: 1; }"
+    },
+    {
+     "code": "@layer { foo: 1; }"
+    },
+    {
+     "code": "@supports (display:grid) { @media (min-width: 10px) { foo: 1; } }"
+    },
+    {
+     "code": "@supports (display:grid) { @media (min-width: 10px) { a { foo: 1; } } }"
+    },
+    {
+     "code": "@layer { a { foo: 1; } }"
+    }
+   ],
+   "reject": [
+    {
+     "code": "@media screen { a { foo: 1; } }",
+     "warnings": [
+      {
+       "message": "Unknown property \"foo\" (property-no-unknown)",
+       "line": 1,
+       "column": 21
+      }
+     ]
+    },
+    {
+     "code": "a { foo: 1; }",
+     "warnings": [
+      {
+       "message": "Unknown property \"foo\" (property-no-unknown)",
+       "line": 1,
+       "column": 5
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

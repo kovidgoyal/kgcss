@@ -1,0 +1,102 @@
+{
+ "rule": "color-no-invalid-hex",
+ "source": "stylelint 18.1.0: lib/rules/color-no-invalid-hex/__tests__/index.mjs",
+ "groups": [
+  {
+   "config": [
+    true
+   ],
+   "compute_edit_info": false,
+   "accept": [
+    {
+     "code": "a { color: pink; }"
+    },
+    {
+     "code": "a { color: #000; }"
+    },
+    {
+     "code": "a { something: #000, #fff, #ababab; }"
+    },
+    {
+     "code": "a { color: #0000ffcc; }",
+     "description": "eight digits"
+    },
+    {
+     "code": "a { color:#00fc; }",
+     "description": "four digits"
+    },
+    {
+     "code": "a { padding: 000; }"
+    },
+    {
+     "code": "a::before { content: \"#ababa\"; }"
+    },
+    {
+     "code": "a { background-image: svg-load('x.svg', fill=url(#a)); }",
+     "description": "svg-load url with fill"
+    },
+    {
+     "code": "a { background-image: url(#a); }",
+     "description": "url standalone hash"
+    },
+    {
+     "code": "a { background-image: url(x.svg#a); }",
+     "description": "url with hash"
+    },
+    {
+     "code": "@font-face {\nfont-family: dashicons;\nsrc: url(data:application/font-woff;charset=utf-8;base64, ABCDEF==) format(\"woff\"),\nurl(../fonts/dashicons.ttf) format(\"truetype\"),\nurl(../fonts/dashicons.svg#dashicons) format(\"svg\");\nfont-weight: normal;\nfont-style: normal;\n}"
+    }
+   ],
+   "reject": [
+    {
+     "code": "a { color: #ababa; }",
+     "warnings": [
+      {
+       "message": "Invalid hex color \"#ababa\" (color-no-invalid-hex)",
+       "line": 1,
+       "column": 12,
+       "endLine": 1,
+       "endColumn": 18
+      }
+     ]
+    },
+    {
+     "code": "a { something: #00, #fff, #ababab; }",
+     "warnings": [
+      {
+       "message": "Invalid hex color \"#00\" (color-no-invalid-hex)",
+       "line": 1,
+       "column": 16,
+       "endLine": 1,
+       "endColumn": 19
+      }
+     ]
+    },
+    {
+     "code": "a { something: #000, #fff1az, #ababab; }",
+     "warnings": [
+      {
+       "message": "Invalid hex color \"#fff1az\" (color-no-invalid-hex)",
+       "line": 1,
+       "column": 22,
+       "endLine": 1,
+       "endColumn": 29
+      }
+     ]
+    },
+    {
+     "code": "a { something:#000,#fff,#12345aa; }",
+     "warnings": [
+      {
+       "message": "Invalid hex color \"#12345aa\" (color-no-invalid-hex)",
+       "line": 1,
+       "column": 25,
+       "endLine": 1,
+       "endColumn": 33
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

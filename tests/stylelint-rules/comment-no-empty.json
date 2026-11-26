@@ -1,0 +1,85 @@
+{
+ "rule": "comment-no-empty",
+ "source": "stylelint 18.1.0: lib/rules/comment-no-empty/__tests__/index.mjs",
+ "groups": [
+  {
+   "config": [
+    true
+   ],
+   "compute_edit_info": false,
+   "accept": [
+    {
+     "code": "/* comment */"
+    },
+    {
+     "code": "/*\n multi-line comment\n */\n"
+    },
+    {
+     "code": "a { color: red; /* comment */ }"
+    }
+   ],
+   "reject": [
+    {
+     "code": "/**/",
+     "warnings": [
+      {
+       "message": "Empty comment (comment-no-empty)",
+       "line": 1,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": " /* */",
+     "warnings": [
+      {
+       "message": "Empty comment (comment-no-empty)",
+       "line": 1,
+       "column": 2
+      }
+     ]
+    },
+    {
+     "code": "\n/*\n*/",
+     "warnings": [
+      {
+       "message": "Empty comment (comment-no-empty)",
+       "line": 2,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": "\n /*\r\n*/",
+     "warnings": [
+      {
+       "message": "Empty comment (comment-no-empty)",
+       "line": 2,
+       "column": 2
+      }
+     ]
+    },
+    {
+     "code": "/*\t\t*/",
+     "warnings": [
+      {
+       "message": "Empty comment (comment-no-empty)",
+       "line": 1,
+       "column": 1
+      }
+     ]
+    },
+    {
+     "code": "a {/*\r\n*/\n color: red;}",
+     "warnings": [
+      {
+       "message": "Empty comment (comment-no-empty)",
+       "line": 1,
+       "column": 4
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

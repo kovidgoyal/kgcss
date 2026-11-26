@@ -1,0 +1,198 @@
+{
+ "rule": "string-no-newline",
+ "source": "stylelint 18.1.0: lib/rules/string-no-newline/__tests__/index.mjs",
+ "groups": [
+  {
+   "config": [
+    true
+   ],
+   "compute_edit_info": false,
+   "accept": [
+    {
+     "code": "a::before { content: 'one'; }",
+     "description": "without newline"
+    },
+    {
+     "code": "a::before { content: 'one\\\ntwo'; }",
+     "description": "with escaped slash-slash-n newline"
+    },
+    {
+     "code": "a::before { content: 'one\\Atwo'; }",
+     "description": "with escaped slash-A newline"
+    },
+    {
+     "code": "a[href^='one\\\r\ntwo'] { display: block; }",
+     "description": "attribute CRLF"
+    },
+    {
+     "code": "a::before {\n\tcontent: 'one\t\t\t\t\ttwo';\n}",
+     "description": "with escaped slash at end of real line"
+    },
+    {
+     "code": "p[href^=\"https://\"]:before {\n\ttop: 0;\n}",
+     "description": "attribute containing double-slash"
+    }
+   ],
+   "reject": [
+    {
+     "code": "a::before { content: 'one\ntwo'; }",
+     "description": "content LF",
+     "warnings": [
+      {
+       "message": "Newline in string (string-no-newline)",
+       "line": 1,
+       "column": 22,
+       "endLine": 1,
+       "endColumn": 26
+      }
+     ]
+    },
+    {
+     "code": "a::before { content: 'one\r\ntwo'; }",
+     "description": "content CRLF",
+     "warnings": [
+      {
+       "message": "Newline in string (string-no-newline)",
+       "line": 1,
+       "column": 22,
+       "endLine": 1,
+       "endColumn": 26
+      }
+     ]
+    },
+    {
+     "code": "a[href^='one\r\ntwo'] { display: block; }",
+     "description": "attribute CRLF",
+     "warnings": [
+      {
+       "message": "Newline in string (string-no-newline)",
+       "line": 1,
+       "column": 9,
+       "endLine": 1,
+       "endColumn": 13
+      }
+     ]
+    },
+    {
+     "code": "@import 'foo\n.css';",
+     "description": "atRule LF",
+     "warnings": [
+      {
+       "message": "Newline in string (string-no-newline)",
+       "line": 1,
+       "column": 9,
+       "endLine": 1,
+       "endColumn": 13
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "config": [
+    true,
+    {
+     "ignore": [
+      "at-rule-preludes"
+     ]
+    }
+   ],
+   "compute_edit_info": false,
+   "accept": [
+    {
+     "code": "@import 'foo\n.css';",
+     "description": "atRule LF"
+    },
+    {
+     "code": "@import 'foo\r\n.css';",
+     "description": "atRule CRLF"
+    },
+    {
+     "code": "@import 'foo\n.css';",
+     "description": "with newline"
+    }
+   ],
+   "reject": [
+    {
+     "code": "a::before { content: 'foo\nbar'; }",
+     "description": "content LF",
+     "warnings": [
+      {
+       "message": "Newline in string (string-no-newline)",
+       "line": 1,
+       "column": 22,
+       "endLine": 1,
+       "endColumn": 26
+      }
+     ]
+    },
+    {
+     "code": "a[href^='foo\r\nbar'] {}",
+     "description": "attribute CRLF",
+     "warnings": [
+      {
+       "message": "Newline in string (string-no-newline)",
+       "line": 1,
+       "column": 9,
+       "endLine": 1,
+       "endColumn": 13
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "config": [
+    true,
+    {
+     "ignore": [
+      "declaration-values"
+     ]
+    }
+   ],
+   "compute_edit_info": false,
+   "accept": [
+    {
+     "code": "a::before { content: 'foo\nbar'; }",
+     "description": "content LF"
+    },
+    {
+     "code": "a::before { content: 'foo\r\nbar'; }",
+     "description": "content CRLF"
+    },
+    {
+     "code": "a::before {\n\tcontent: 'foo\n\tbar';\n}",
+     "description": "with newline"
+    }
+   ],
+   "reject": [
+    {
+     "code": "a[href^='foo\r\nbar'] {}",
+     "description": "attribute CRLF",
+     "warnings": [
+      {
+       "message": "Newline in string (string-no-newline)",
+       "line": 1,
+       "column": 9,
+       "endLine": 1,
+       "endColumn": 13
+      }
+     ]
+    },
+    {
+     "code": "@import 'foo\n.css';",
+     "description": "atRule LF",
+     "warnings": [
+      {
+       "message": "Newline in string (string-no-newline)",
+       "line": 1,
+       "column": 9,
+       "endLine": 1,
+       "endColumn": 13
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

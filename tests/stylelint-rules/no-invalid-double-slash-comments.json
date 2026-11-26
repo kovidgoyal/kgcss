@@ -1,0 +1,130 @@
+{
+ "rule": "no-invalid-double-slash-comments",
+ "source": "stylelint 18.1.0: lib/rules/no-invalid-double-slash-comments/__tests__/index.mjs",
+ "groups": [
+  {
+   "config": [
+    true
+   ],
+   "compute_edit_info": false,
+   "accept": [
+    {
+     "code": "a { /* color: pink; */ }",
+     "description": "regular comment around declaration"
+    },
+    {
+     "code": "/* a { color: pink; } */",
+     "description": "regular comment around rule"
+    },
+    {
+     "code": "a { background: url(//foo.com/bar.png) }",
+     "description": "url with double slash"
+    },
+    {
+     "code": "/* stylelint-disable-next-line no-invalid-double-slash-comments */\n.a, // Comment 1\n/* stylelint-disable-next-line no-invalid-double-slash-comments */\n.b, // Comment 2\n.c {\n\tcolor: red;\n}",
+     "description": "configuration commands interleaved with double slash comments"
+    }
+   ],
+   "reject": [
+    {
+     "code": "// Invalid comment {}\na {}",
+     "description": "line before",
+     "warnings": [
+      {
+       "message": "Invalid double-slash CSS comment (no-invalid-double-slash-comments)",
+       "line": 1,
+       "column": 1,
+       "endLine": 1,
+       "endColumn": 22
+      }
+     ]
+    },
+    {
+     "code": "a {\n//color: pink;\n}",
+     "description": "before declaration",
+     "warnings": [
+      {
+       "message": "Invalid double-slash CSS comment (no-invalid-double-slash-comments)",
+       "line": 2,
+       "column": 1,
+       "endLine": 2,
+       "endColumn": 15
+      }
+     ]
+    },
+    {
+     "code": "//a { color: pink; }",
+     "description": "before rule",
+     "warnings": [
+      {
+       "message": "Invalid double-slash CSS comment (no-invalid-double-slash-comments)",
+       "line": 1,
+       "column": 1,
+       "endLine": 1,
+       "endColumn": 21
+      }
+     ]
+    },
+    {
+     "code": "a, //div { color: pink; }",
+     "description": "between rules",
+     "warnings": [
+      {
+       "message": "Invalid double-slash CSS comment (no-invalid-double-slash-comments)",
+       "line": 1,
+       "column": 4,
+       "endLine": 1,
+       "endColumn": 26
+      }
+     ]
+    },
+    {
+     "code": "a, //div {\ncolor: pink; }",
+     "description": "between rules + new line",
+     "warnings": [
+      {
+       "message": "Invalid double-slash CSS comment (no-invalid-double-slash-comments)",
+       "line": 1,
+       "column": 4,
+       "endLine": 1,
+       "endColumn": 11
+      }
+     ]
+    },
+    {
+     "code": "//@media { }",
+     "description": "before media rule",
+     "warnings": [
+      {
+       "message": "Invalid double-slash CSS comment (no-invalid-double-slash-comments)",
+       "line": 1,
+       "column": 1,
+       "endLine": 1,
+       "endColumn": 13
+      }
+     ]
+    },
+    {
+     "code": ".a, // Comment 1\n/* foo */\n.b, // Comment 2\n.c {\n\tcolor: red;\n}",
+     "description": "regular comments interleaved with double slash comments",
+     "warnings": [
+      {
+       "message": "Invalid double-slash CSS comment (no-invalid-double-slash-comments)",
+       "line": 1,
+       "column": 5,
+       "endLine": 1,
+       "endColumn": 17
+      },
+      {
+       "message": "Invalid double-slash CSS comment (no-invalid-double-slash-comments)",
+       "line": 3,
+       "column": 5,
+       "endLine": 3,
+       "endColumn": 17
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}
