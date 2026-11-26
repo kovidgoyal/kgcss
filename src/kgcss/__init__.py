@@ -4,7 +4,8 @@
 
 The top level exports the public API: the CSS object model (kgcss.cssom),
 selector matching (Select), colors, media queries, the font helpers, the
-value grammar and shorthands. The layers it is built on are available as
+value grammar and shorthands, and linting with the rules of stylelint
+(kgcss.linter). The layers it is built on are available as
 submodules: kgcss.tokenizer (tokens) and kgcss.syntax (component values and
 the generic CSS Syntax parse tree). See README.md for a short tour.
 """
@@ -70,6 +71,17 @@ from kgcss.decode import decode_stylesheet, lookup_encoding
 from kgcss.escaping import serialize_identifier, serialize_string
 from kgcss.fonts import FontDict, parse_font, parse_font_family, serialize_font, serialize_font_family
 from kgcss.grammar import CSS_WIDE_KEYWORDS, is_color, matches
+from kgcss.linter import (
+    LINT_RULES,
+    LintProblem,
+    LintResult,
+    LintRule,
+    LintRuleInfo,
+    SyntaxProblem,
+    SyntaxProblemKind,
+    TextEdit,
+    lint,
+)
 from kgcss.matching import ElementTreeLike, Select
 from kgcss.media import MediaFeature, MediaQuery, media_matches, parse_media_queries
 from kgcss.selectors import INAPPROPRIATE_PSEUDO_CLASSES, rename_classes, rename_ids
@@ -87,6 +99,7 @@ __all__ = [
     'CSS_WIDE_KEYWORDS',
     'INAPPROPRIATE_PSEUDO_CLASSES',
     'INITIAL_VALUES',
+    'LINT_RULES',
     'RGBA',
     'CSSSyntaxError',
     'CharsetRule',
@@ -109,6 +122,10 @@ __all__ = [
     'InvalidValueError',
     'LayerBlockRule',
     'LayerStatementRule',
+    'LintProblem',
+    'LintResult',
+    'LintRule',
+    'LintRuleInfo',
     'MarginRule',
     'MediaFeature',
     'MediaList',
@@ -139,6 +156,9 @@ __all__ = [
     'SupportsDeclaration',
     'SupportsFunction',
     'SupportsRule',
+    'SyntaxProblem',
+    'SyntaxProblemKind',
+    'TextEdit',
     'UnknownAtRule',
     '__version__',
     'condense_shorthands',
@@ -147,6 +167,7 @@ __all__ = [
     'invalid_selectors',
     'is_color',
     'iter_urls',
+    'lint',
     'longhands',
     'lookup_encoding',
     'matches',

@@ -248,6 +248,25 @@ Value grammar and shorthands
    The initial value of each longhand of the shorthands, as CSS defines them,
    with ``font-family: serif``, which CSS leaves to the user agent.
 
+Linting
+-------
+
+.. autofunction:: kgcss.lint
+.. autoclass:: kgcss.LintResult
+.. autoclass:: kgcss.LintProblem
+.. autoclass:: kgcss.TextEdit
+.. autoclass:: kgcss.SyntaxProblem
+.. autoclass:: kgcss.SyntaxProblemKind
+   :members:
+   :undoc-members:
+.. autoclass:: kgcss.LintRule
+   :members:
+   :undoc-members:
+.. autoclass:: kgcss.LintRuleInfo
+.. data:: kgcss.LINT_RULES
+
+   The :class:`LintRuleInfo` of every rule, in the order of :class:`LintRule`.
+
 The css_parser-style facade
 ---------------------------
 

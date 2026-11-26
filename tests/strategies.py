@@ -79,3 +79,15 @@ structured_css = st.lists(
 ).map(lambda parts: ''.join(a + b for a, b in parts))
 
 css_text = st.one_of(random_css, structured_css)
+
+# For the linter: what its rules look at (semicolons, blocks, at-rules) and disable comments
+LINT_FRAGMENTS = (
+    'a{}', 'a{ }', 'a{;}', 'a{b:c}', 'a{b:c;;}', 'a{b:c;}', ';', ';;', ' ; ', '\n', ' ', '{}', '}', '{',
+    '@foo;', '@foo{}', '@foo x;', '@media x{}', '@media x{a{}}', '@-moz-x{}', '@FONT-FACE{}', '@charset "x";',
+    '@unknown x{a{b:c;;};}', '/**/', '/* x */', '/* ; */', '"a;b"', 'url(;)', 'a{/* c */}', 'a/**/{}', 'a{b:/**/c;;}',
+    '/* stylelint-disable */', '/* stylelint-enable */', '/* stylelint-disable block-no-empty */',
+    '/* stylelint-disable-line */', '/* stylelint-disable-next-line block-no-empty, at-rule-no-unknown */',
+    '/* stylelint-enable block-no-empty */', '/* stylelint-disable @stylistic/no-extra-semicolons -- why */',
+    'a{/* stylelint-disable-line */}', 'a /* stylelint-disable-line */ {}',
+)  # fmt: skip
+lint_css = st.lists(st.sampled_from(LINT_FRAGMENTS), max_size=12).map(''.join)

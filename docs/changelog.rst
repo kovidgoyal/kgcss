@@ -1,6 +1,17 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+- :func:`kgcss.lint` lints stylesheets with rules that behave as stylelint's
+  rules of the same names do, parsing them with a port of the PostCSS parser.
+  Problems are data (:class:`kgcss.LintProblem`) with their rule, the values
+  in their message and their position, fixes are edits of the text
+  (:class:`kgcss.TextEdit`), and what PostCSS cannot parse is a
+  :class:`kgcss.SyntaxProblem`. The first rules are ``at-rule-no-unknown``,
+  ``block-no-empty``, ``no-empty-source`` and ``no-extra-semicolons``.
+
 1.2.2
 -----
 

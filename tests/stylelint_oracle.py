@@ -44,6 +44,17 @@ class StylelintWarning(TypedDict):
     fix: NotRequired[EditInfo]
 
 
+class ParseError(TypedDict):
+    reason: str
+    offset: int  # in UTF-16 code units
+    end: int | None
+
+
+class ParseResult(TypedDict):
+    tree: NotRequired[dict[str, object]]  # the PostCSS tree, as tests/stylelint_oracle.mjs dumps it
+    error: NotRequired[ParseError]
+
+
 class LintResult(TypedDict):
     warnings: list[StylelintWarning]
     parseErrors: list[str]
@@ -85,18 +96,25 @@ class Stylelint:
         self, code: str, rules: Mapping[str, Config], *, fix: bool = False, compute_edit_info: bool = False
     ) -> LintResult:
         """Lint code with the rules, configured as in a stylelint config."""
+        return self.request({'code': code, 'rules': rules, 'fix': fix, 'computeEditInfo': compute_edit_info})
+
+    def parse(self, code: str, *, safe: bool = False) -> ParseResult:
+        """Parse code with PostCSS, or with postcss-safe-parser."""
+        return self.request({'parse': code, 'safe': safe})
+
+    def request[T](self, request: Mapping[str, object]) -> T:
         stdin, stdout = self.process.stdin, self.process.stdout
         assert stdin is not None
         assert stdout is not None
-        request = {'code': code, 'rules': rules, 'fix': fix, 'computeEditInfo': compute_edit_info}
+        code = request.get('code', request.get('parse'))
         stdin.write(json.dumps(request) + '\n')  # ASCII, so lone surrogates are escaped
         stdin.flush()
         line = stdout.readline()
         if not line:
             raise RuntimeError(f'The stylelint oracle exited with code {self.process.wait()}')
         response = json.loads(line)
-        if 'error' in response:
-            raise RuntimeError(f'stylelint failed on {code!r}: {response["error"]}')
+        if 'failure' in response:
+            raise RuntimeError(f'stylelint failed on {code!r}: {response["failure"]}')
         return response
 
     def close(self) -> None:
@@ -114,3 +132,14 @@ class Stylelint:
         self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
     ) -> None:
         self.close()
+
+
+def utf16_offsets(text: str) -> list[int]:
+    """For each UTF-16 offset into text (and its end), the code point offset (Python index)."""
+    ans = []
+    for i, c in enumerate(text):
+        ans.append(i)
+        if ord(c) > 0xFFFF:
+            ans.append(i)  # the low surrogate is in the same code point
+    ans.append(len(text))
+    return ans
