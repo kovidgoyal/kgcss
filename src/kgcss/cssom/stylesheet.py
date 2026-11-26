@@ -2,7 +2,7 @@
 
 """The Stylesheet class, parse_stylesheet() and parse_rule()."""
 
-from collections.abc import Iterator, MutableMapping
+from collections.abc import Iterator, MutableMapping, Sequence
 from typing import TYPE_CHECKING
 
 from kgcss.cssom.rules import (
@@ -218,6 +218,25 @@ class Stylesheet:
             if parent is None:
                 return tuple(reversed(path))
             current = parent
+
+    def rule_at_browser_index_path(self, path: Sequence[int]) -> Rule:
+        """The rule at a path of indices in the browser CSSOM, the inverse of browser_index_path(): what
+        calibre's live CSS gives, resolved to a rule whose line and column the editor can jump to.
+        Raises IndexError if there is no such rule."""
+        if not path:
+            raise IndexError('An empty path has no rule')
+        rules: Sequence[Rule] | None = self.rules
+        rule: Rule | None = None
+        for index in path:
+            if rules is None:
+                raise IndexError(f'No rule at {tuple(path)}: {rule!r} has no child rules')
+            in_browser = [r for r in rules if r.type not in (RuleType.COMMENT, RuleType.CHARSET)]
+            if not 0 <= index < len(in_browser):
+                raise IndexError(f'No rule at {tuple(path)}')
+            rule = in_browser[index]
+            rules = rule.child_rules()
+        assert rule is not None
+        return rule
 
     @property
     def css_text(self) -> str:

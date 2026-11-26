@@ -424,3 +424,17 @@ def test_encoding_from_charset() -> None:
     assert kgcss.parse_stylesheet('@charset "latin1"; a{}').encoding == 'latin1'
     assert kgcss.parse_stylesheet('a{}').encoding is None
     assert kgcss.parse_stylesheet(b'a{}').encoding == 'utf-8'
+
+
+def test_rule_at_browser_index_path() -> None:
+    sheet = kgcss.parse_stylesheet(
+        '@charset "utf-8"; /* c */ @namespace x url(y); a{} @media x { /* c */ b{} @supports (c:d) { e{} } }'
+    )
+    assert sheet.rule_at_browser_index_path((0,)).type is kgcss.RuleType.NAMESPACE
+    assert sheet.rule_at_browser_index_path((2, 0)).selector_text == 'b'  # type: ignore[attr-defined]
+    e = sheet.rule_at_browser_index_path((2, 1, 0))
+    assert e.selector_text == 'e'
+    assert e.line == 1
+    for bad in ((), (9,), (1, 0), (2, 5), (-1,)):
+        with pytest.raises(IndexError):
+            sheet.rule_at_browser_index_path(bad)

@@ -65,6 +65,7 @@ def test_cssom_invariants(css: str) -> None:
                 assert child.parent_rule is rule
         if rule.type not in NOT_IN_BROWSER:
             assert follow_browser_path(sheet, sheet.browser_index_path(rule)) is rule
+            assert sheet.rule_at_browser_index_path(sheet.browser_index_path(rule)) is rule
     for rule in sheet.rules:
         assert rule.parent_rule is None
 
