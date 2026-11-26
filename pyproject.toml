@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kgcss"
-description = "Fast and comprehensive CSS handling: tokenizing, parsing, a mutable object model, serialization and selector matching, with a C99 backend"
+description = "Fast and comprehensive CSS handling: tokenizing, parsing, a mutable object model, serialization, selector matching, media queries, colors, fonts and shorthands, with a C99 backend"
 readme = "README.md"
 license = "GPL-3.0-only"
 license-files = ["LICENSE"]

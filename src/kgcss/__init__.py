@@ -2,9 +2,11 @@
 
 """kgcss: fast and comprehensive CSS handling with a C99 backend.
 
-The top level API is the CSS object model (kgcss.cssom). The lower layers it
-is built on are available as submodules: kgcss.tokenizer (tokens) and
-kgcss.syntax (component values and the generic CSS Syntax parse tree).
+The top level exports the public API: the CSS object model (kgcss.cssom),
+selector matching (Select), colors, media queries, the font helpers, the
+value grammar and shorthands. The layers it is built on are available as
+submodules: kgcss.tokenizer (tokens) and kgcss.syntax (component values and
+the generic CSS Syntax parse tree). See README.md for a short tour.
 """
 
 from kgcss._version import __version__
