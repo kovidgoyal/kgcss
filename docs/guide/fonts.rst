@@ -32,3 +32,27 @@ value sets. :func:`kgcss.serialize_font` writes one back.
    {'font-family': ['sans-serif']}
 
 ``parse_font(serialize_font(font)) == font`` for what ``parse_font`` returns.
+
+A line height is only read after a ``/``. Other words after the size begin
+the family list, and a CSS-wide keyword or a number there makes the value
+invalid, so ``parse_font`` gives what it read before that point.
+
+.. doctest::
+
+   >>> kgcss.parse_font('12px normal')
+   {'font-size': '12px', 'font-family': ['normal']}
+   >>> kgcss.parse_font('12px inherit')
+   {'font-size': '12px'}
+
+A value that is just a CSS-wide keyword is not a list of family names and not
+a font, but neither function can tell ``inherit`` from ``"inherit"`` once it
+is parsed. Check the text against :data:`kgcss.CSS_WIDE_KEYWORDS` first:
+
+.. doctest::
+
+   >>> kgcss.parse_font_family('inherit'), kgcss.parse_font_family('"inherit"')
+   (['inherit'], ['inherit'])
+   >>> sorted(kgcss.CSS_WIDE_KEYWORDS)
+   ['inherit', 'initial', 'revert', 'revert-layer', 'unset']
+   >>> ' Inherit'.strip().lower() in kgcss.CSS_WIDE_KEYWORDS
+   True

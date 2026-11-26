@@ -18,8 +18,11 @@ import pytest
 from hypothesis import assume, given
 from hypothesis import strategies as st
 
+import kgcss
 import kgcss.fonts
 from kgcss import FontDict, parse_font, parse_font_family, serialize_font, serialize_font_family
+from kgcss.syntax import Token, parse_component_value_list
+from kgcss.tokenizer import TokenType
 
 CALIBRE = Path(__file__).parent.parent / 'bench' / '.cache' / 'calibre'
 GENERIC = frozenset(('serif', 'sans-serif', 'cursive', 'fantasy', 'monospace'))
@@ -111,11 +114,34 @@ def font(**kw: str | list[str]) -> FontDict:
         ('12pt / 1.5 a', font(size='12pt', height='1.5', family=['a'])),
         ('"caption" 12pt', font(family=['caption'])),
         ('', {}),
+        # Unlike tinycss, a line height needs a /: other words after the size are the family, and a CSS-wide keyword
+        # or a number there makes the value invalid, so it gives what was read before
+        ('12px normal', font(size='12px', family=['normal'])),
+        ('12px bold serif', font(size='12px', family=['bold serif'])),
+        ('12px large a', font(size='12px', family=['large a'])),
+        ('12px inherit', font(size='12px')),
+        ('12px Inherit', font(size='12px')),
+        ('12px unset, x', font(size='12px')),
+        ('12px revert-layer', font(size='12px')),
+        ('12px 1.4 a', font(size='12px')),
+        ('12px 14px a', font(size='12px')),
+        ('12px 120% a', font(size='12px')),
+        ('12px, a', font(size='12px', family=['a'])),
+        ('12px /**/ / 2 a', font(size='12px', height='2', family=['a'])),
     ],
 )
 def test_parse_font(css: str, expected: FontDict) -> None:
     assert parse_font(css) == expected
     assert normalized(parse_font(serialize_font(expected))) == normalized(expected)
+
+
+def test_css_wide_keywords() -> None:
+    assert {'inherit', 'initial', 'unset', 'revert', 'revert-layer'} == kgcss.CSS_WIDE_KEYWORDS
+    assert 'CSS_WIDE_KEYWORDS' in kgcss.__all__
+    # parse_font_family() cannot tell a keyword from a quoted name: callers check the text first
+    assert parse_font_family('inherit') == parse_font_family('"inherit"') == ['inherit']
+    assert ' Inherit '.strip().lower() in kgcss.CSS_WIDE_KEYWORDS
+    assert '"inherit"'.strip().lower() not in kgcss.CSS_WIDE_KEYWORDS
 
 
 def test_serialize_font_quotes_keywords() -> None:
@@ -245,16 +271,37 @@ if (CALIBRE / 'tinycss').exists():
         sys.path.remove(str(CALIBRE))
 
 
+def follows_size_without_slash(text: str, font: FontDict) -> bool:
+    """Whether something other than a / follows the size, where kgcss differs from tinycss on purpose"""
+    if (size := font.get('font-size')) is None or 'line-height' in font:
+        return False
+    items = [
+        x for x in parse_component_value_list(text)
+        if not (isinstance(x, Token) and x.type in (TokenType.WHITESPACE, TokenType.COMMENT))
+    ]  # fmt: skip
+    for i, item in enumerate(items):
+        if isinstance(item, Token) and item.source_text == size:
+            following = items[i + 1 : i + 2]
+            return bool(following) and not (isinstance(following[0], Token) and following[0].source_text == '/')
+    return False
+
+
 @pytest.mark.skipif(tinycss_fonts is None, reason='tinycss is not in the benchmark cache')
 @given(font_texts())
 def test_same_as_tinycss(text: str) -> None:
-    # Differences: tinycss reads a string "caption" as the legacy font; WORDS has no upper case keywords
+    # Differences: tinycss reads a string "caption" as the legacy font; WORDS has no upper case keywords; tinycss
+    # reads a line height after the size without a /
     assume('"caption"' not in text)
-    tinycss_parse_font: Callable[[str], object] = tinycss_fonts.parse_font
+    tinycss_parse_font: Callable[[str], dict[str, object]] = tinycss_fonts.parse_font
     try:
         expected = tinycss_parse_font(text)
     except AttributeError:
         # tinycss fails when the value starts with a function, such as calc(1px)
         return
-    assert parse_font(text) == expected, text
+    actual = parse_font(text)
+    if actual != expected and follows_size_without_slash(text, actual):
+        before_size = ('font-style', 'font-variant', 'font-weight', 'font-stretch')
+        assert {k: actual.get(k) for k in before_size} == {k: expected.get(k) for k in before_size}, text
+    else:
+        assert actual == expected, text
     assert parse_font_family(text) == tinycss_fonts.parse_font_family(text), text

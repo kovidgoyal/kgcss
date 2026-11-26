@@ -20,6 +20,7 @@ from collections.abc import Iterable, Sequence
 from typing import Final, TypedDict
 
 from kgcss.escaping import serialize_string
+from kgcss.grammar import CSS_WIDE_KEYWORDS
 from kgcss.syntax import Block, Token, parse_component_value_list
 from kgcss.syntax import Function as SyntaxFunction
 from kgcss.tokenizer import TokenType
@@ -67,11 +68,13 @@ WEIGHT_SIZES: Final = frozenset(range(100, 1000, 100))
 LEGACY_FONTS: Final = frozenset(('caption', 'icon', 'menu', 'message-box', 'small-caption', 'status-bar'))
 GENERIC_FAMILIES: Final = frozenset(('serif', 'sans-serif', 'sansserif', 'cursive', 'fantasy', 'monospace'))
 # Names that mean something else unquoted in font-family: the CSS-wide keywords, and default, which is reserved
-RESERVED_NAMES: Final = frozenset(('inherit', 'initial', 'unset', 'revert', 'revert-layer', 'default'))
+RESERVED_NAMES: Final = CSS_WIDE_KEYWORDS | {'default'}
 # Names that mean something else unquoted in the font shorthand
 FONT_KEYWORDS: Final = GLOBAL_IDENTS | BEFORE_SIZE_IDENTS | SIZE_IDENTS | LEGACY_FONTS
 SIMPLE_NAME: Final = re.compile(r'[a-zA-Z][a-zA-Z0-9_-]*')
 IGNORED: Final = frozenset((TokenType.WHITESPACE, TokenType.COMMENT))
+# Tokens that make a font shorthand invalid right after the size, where there is no /
+AFTER_SIZE_INVALID: Final = frozenset((TokenType.NUMBER, TokenType.DIMENSION, TokenType.PERCENTAGE))
 
 
 def family_names(items: Iterable[Item]) -> list[str]:
@@ -100,7 +103,11 @@ def family_names(items: Iterable[Item]) -> list[str]:
 
 def parse_font_family(text: str) -> list[str]:
     """The names of a font-family value: strings unquoted and unescaped, runs of idents joined with
-    one space, escapes resolved, empty names dropped. Generic names are returned as written."""
+    one space, escapes resolved, empty names dropped. Generic names are returned as written.
+
+    A value that is a CSS-wide keyword is not a list of names, but this gives it as one: both
+    ``inherit`` and ``"inherit"`` give ``['inherit']``. Check for the keywords first with
+    :data:`CSS_WIDE_KEYWORDS`, as in ``text.strip().lower() in CSS_WIDE_KEYWORDS``."""
     return family_names(parse_component_value_list(text))
 
 
@@ -127,8 +134,11 @@ def parse_font(text: str) -> FontDict:
     """The longhands that a value of the font shorthand sets, as in CSS Fonts 3, with only the keys
     that it sets. Keywords are lowercased. The legacy system fonts, such as caption, give
     {'font-family': ['sans-serif']}. Values that do not parse give what could be read before the
-    problem."""
+    problem. A line height is only read after a ``/``: other words after the size are the family,
+    and a CSS-wide keyword or a number there makes the value invalid. A value that is a CSS-wide
+    keyword alone is not a font: check for one first with :data:`CSS_WIDE_KEYWORDS`."""
     style = variant = weight = stretch = size = height = None
+    slash = False
     items: list[Item] = [
         x for x in parse_component_value_list(text) if not (isinstance(x, Token) and x.type in IGNORED)
     ]
@@ -142,6 +152,16 @@ def parse_font(text: str) -> FontDict:
         if not isinstance(tok, Token):
             continue  # functions and blocks are skipped
         t = tok.type
+        if size is not None and not slash:
+            # Unlike tinycss: by the grammar, only / line-height or the family can follow the size
+            if t is TokenType.DELIM and tok.source_text == '/':
+                slash = True
+                continue
+            if t in AFTER_SIZE_INVALID or (t is TokenType.IDENT and keyword(tok) in CSS_WIDE_KEYWORDS):
+                pos = len(items)
+            else:
+                pos -= 1
+            break
         if t is TokenType.STRING:
             pos -= 1
             break

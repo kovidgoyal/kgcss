@@ -1,6 +1,16 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+- :data:`kgcss.CSS_WIDE_KEYWORDS`, the set of CSS-wide keywords, is now
+  exported.
+- :func:`kgcss.parse_font` reads a line height only after a ``/``, as the
+  grammar says. Before, ``12px inherit`` gave ``line-height: inherit``. Now
+  other words after the size are the family list, and a CSS-wide keyword or a
+  number there makes the value invalid.
+
 1.0.0
 -----
 

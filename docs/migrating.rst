@@ -78,7 +78,9 @@ From tinycss
    * - ``media3`` media queries
      - :func:`kgcss.parse_media_queries`
    * - ``fonts3.parse_font_family``, ``serialize_font_family``, ``parse_font``, ``serialize_font``
-     - the same names in ``kgcss``
+     - the same names in ``kgcss``. ``parse_font`` only reads a line height
+       after a ``/``, and :data:`kgcss.CSS_WIDE_KEYWORDS` lets you check for
+       a CSS-wide keyword before parsing
 
 From css_selectors
 ------------------

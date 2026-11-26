@@ -39,11 +39,12 @@ from kgcss.cssom.values import (
     parse_value,
 )
 
-__all__ = ['PROPERTIES', 'is_color', 'matches']
+__all__ = ['CSS_WIDE_KEYWORDS', 'PROPERTIES', 'is_color', 'matches']
 
 type Check = Callable[[Component], bool]
 
 CSS_WIDE_KEYWORDS: Final = frozenset(('inherit', 'initial', 'unset', 'revert', 'revert-layer'))
+"""The CSS-wide keywords, in lower case. Any property can have one of them as its whole value."""
 LENGTH_UNITS: Final = frozenset(
     (
         'em', 'rem', 'ex', 'rex', 'cap', 'rcap', 'ch', 'rch', 'ic', 'ric', 'lh', 'rlh',

@@ -211,6 +211,11 @@ Value grammar and shorthands
 ----------------------------
 
 .. autofunction:: kgcss.matches
+.. data:: kgcss.CSS_WIDE_KEYWORDS
+
+   The CSS-wide keywords, in lower case: ``inherit``, ``initial``, ``unset``,
+   ``revert`` and ``revert-layer``. Any property can have one of them as its
+   whole value.
 .. autofunction:: kgcss.is_color
 .. data:: kgcss.grammar.PROPERTIES
 
