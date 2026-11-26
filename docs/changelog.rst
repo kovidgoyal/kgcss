@@ -1,8 +1,8 @@
 Changelog
 =========
 
-Unreleased
-----------
+1.1.0
+-----
 
 - :data:`kgcss.CSS_WIDE_KEYWORDS`, the set of CSS-wide keywords, is now
   exported.
