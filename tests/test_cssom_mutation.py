@@ -297,8 +297,10 @@ def test_selectors() -> None:
     assert selectors is rule.selectors
     assert [s.text for s in selectors] == ['a', 'b.c']
     assert selectors.text == 'a, b.c'
-    # Callers can attach attributes to selectors (calibre's selector.calibre_used)
+    # Callers can keep data on selectors, or attach attributes (calibre's selector.calibre_used)
     selectors[1].calibre_used = True  # ty: ignore[missing-attribute]
+    assert not selectors[1].data
+    selectors[1].data['used'] = True
     del selectors[0]
     assert rule.selector_text == 'b.c'
     # Appending a selector from another rule appends a copy, with its attributes
@@ -307,6 +309,14 @@ def test_selectors() -> None:
     copied = other.selectors[1]
     assert copied is not selectors[0]
     assert copied.calibre_used  # ty: ignore[missing-attribute]
+    assert copied.data == {'used': True}
+    assert copied.data is not selectors[0].data
+    copied.data['used'] = False
+    assert selectors[0].data['used'] is True
+    # Selectors hash by identity, so they can be the keys of a caller's dict
+    used = {selectors[0]: True}
+    assert copied not in used
+    assert selectors[0] in used
     selectors.append(Selector('e > f'))
     selectors.sort(reverse=True)
     assert rule.selector_text == 'e > f, b.c'

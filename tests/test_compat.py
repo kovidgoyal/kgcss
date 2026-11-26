@@ -185,6 +185,63 @@ def test_views_are_live() -> None:
         wrap('a')  # ty: ignore[no-matching-overload]
 
 
+def test_wrap_types_rules_by_class() -> None:
+    sheet = kgcss.parse_stylesheet(
+        '@charset "utf-8"; @import "x.css"; @namespace svg url(http://www.w3.org/2000/svg); a {} @media print {}'
+        ' @page { @top-left {} } @font-face {} @supports (a: b) {} @unknown; /* c */'
+    )
+    rules = sheet.rules
+    charset, imp, ns, style, media, page, font_face, supports, unknown, comment = rules
+    assert isinstance(charset, kgcss.CharsetRule)
+    assert isinstance(imp, kgcss.ImportRule)
+    assert isinstance(ns, kgcss.NamespaceRule)
+    assert isinstance(style, kgcss.StyleRule)
+    assert isinstance(media, kgcss.MediaRule)
+    assert isinstance(page, kgcss.PageRule)
+    assert isinstance(font_face, kgcss.FontFaceRule)
+    assert isinstance(supports, kgcss.RuleContainer)
+    assert isinstance(unknown, kgcss.UnknownAtRule)
+    assert isinstance(comment, kgcss.Comment)
+    margin = page.rules[0]
+    assert isinstance(margin, kgcss.MarginRule)
+    # The overloads type the views by class, so that no isinstance() is needed: these
+    # annotations are checked by ty, the asserts at run time
+    views: tuple[
+        kgcss.compat.CSSCharsetRule,
+        kgcss.compat.CSSImportRule,
+        kgcss.compat.CSSNamespaceRule,
+        kgcss.compat.CSSStyleRule,
+        kgcss.compat.CSSMediaRule,
+        kgcss.compat.CSSPageRule,
+        kgcss.compat.CSSFontFaceRule,
+        kgcss.compat.CSSGroupingRule,
+        kgcss.compat.CSSUnknownRule,
+        kgcss.compat.CSSComment,
+        kgcss.compat.CSSMarginRule,
+    ] = (
+        wrap(charset),
+        wrap(imp),
+        wrap(ns),
+        wrap(style),
+        wrap(media),
+        wrap(page),
+        wrap(font_face),
+        wrap(supports),
+        wrap(unknown),
+        wrap(comment),
+        wrap(margin),
+    )
+    expected = (
+        'CSSCharsetRule', 'CSSImportRule', 'CSSNamespaceRule', 'CSSStyleRule', 'CSSMediaRule', 'CSSPageRule',
+        'CSSFontFaceRule', 'CSSGroupingRule', 'CSSUnknownRule', 'CSSComment', 'CSSMarginRule',
+    )  # fmt: skip
+    assert [type(v).__name__ for v in views] == list(expected)
+    unwrapped: kgcss.StyleRule = unwrap(views[3])
+    assert unwrapped is style
+    assert views[3].selectorText == 'a'
+    assert views[4].media.mediaText == 'print'
+
+
 def test_sheet_api() -> None:
     sheet = parseString(b'@charset "latin1"; a { content: "\xe9" }')
     assert sheet.encoding == 'windows-1252'  # the WHATWG encoding for the label latin1

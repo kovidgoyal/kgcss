@@ -39,6 +39,7 @@ Rules
    :undoc-members:
 .. autoclass:: kgcss.Rule
 .. autoclass:: kgcss.RuleList
+.. autoclass:: kgcss.RuleContainer
 .. autoclass:: kgcss.StyleRule
 .. autoclass:: kgcss.GroupingRule
 .. autoclass:: kgcss.MediaRule

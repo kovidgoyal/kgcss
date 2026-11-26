@@ -415,11 +415,22 @@ def delete_from(rules: RuleList, rule_or_index: Rule | int) -> None:
 
 
 class RuleContainer(Rule):
-    """Base of rules that contain rules."""
+    """Base of rules that contain rules: style rules (which can have nested rules), @page and the grouping
+    rules. The parent_rule of a rule in a list of rules is one of these, or None at the top level of a
+    sheet, so this removes such a rule from whatever contains it::
+
+        parent = rule.parent_rule or rule.parent_style_sheet
+        if isinstance(parent, RuleContainer | Stylesheet):
+            parent.delete_rule(rule)
+
+    (A comment in a declaration block has the rule of the block as its parent_rule, but it is not
+    one of that rule's child_rules(): remove it from the block.)
+    """
 
     __slots__ = ()
 
     def child_rules(self) -> RuleList:
+        """The rules this rule contains."""
         raise NotImplementedError
 
     def insert_rule(self, rule: Rule | str, index: int | None = None) -> Rule:

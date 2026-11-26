@@ -72,23 +72,26 @@ def validate_selector_list(text: str, nested: bool) -> list[str]:
 class Selector:
     """One selector of a selector list.
 
-    Callers can attach their own attributes (for example calibre's
-    selector.calibre_used), which are kept by copy(). The fixed fields are
-    slots and __dict__ is one too, so it is only created when a caller sets
-    an attribute: there can be tens of thousands of selectors.
+    Callers can keep their own data in the dict data (for example
+    selector.data['used'] = True), which copy() copies. Selectors compare and
+    hash by identity, so they can also be the keys of a dict of the caller's.
+    Attributes of the caller's own can be set too (they are kept by copy()),
+    but type checkers reject them. data and __dict__ are only created when
+    they are first used: there can be tens of thousands of selectors.
 
     The text is parsed when the tree (parsed), specificity or pseudo_element
     are first needed. A selector of a parsed stylesheet that is not valid
     raises SelectorSyntaxError then; text that is assigned is checked at once.
     """
 
-    __slots__ = ('__dict__', '_compiled', '_owner', '_text', '_tree')
+    __slots__ = ('__dict__', '_compiled', '_data', '_owner', '_text', '_tree')
 
     def __init__(self, text: str) -> None:
         parts = validate_selector_list(text, True)
         if len(parts) != 1:
             raise SelectorSyntaxError(f'Not a single selector: {text!r}', text, 0)
         self._text = parts[0]
+        self._data: dict[str, object] | None = None
         self._owner: SelectorList | None = None
         self._compiled: tuple[bool, CompiledSelector] | None = None
         self._tree: tuple[CompiledSelector, ComplexSelector] | None = None
@@ -97,6 +100,7 @@ class Selector:
     def _from_normalized(cls, text: str, compiled: CompiledSelector | None = None, nested: bool = True) -> Selector:
         s = cls.__new__(cls)
         s._text = text
+        s._data = None
         s._owner = None
         s._compiled = None if compiled is None else (nested, compiled)
         s._tree = None
@@ -105,6 +109,15 @@ class Selector:
     @property
     def text(self) -> str:
         return self._text
+
+    @property
+    def data(self) -> dict[str, object]:
+        """A dict for the caller's own data about this selector, created when first used. copy() copies it
+        (a shallow copy). kgcss never reads or writes it."""
+        data = self._data
+        if data is None:
+            self._data = data = {}
+        return data
 
     @text.setter
     def text(self, value: str) -> None:
@@ -251,9 +264,11 @@ class Selector:
         return self.parsed.walk()
 
     def copy(self) -> Selector:
-        """An unattached copy, with any attributes attached by callers."""
+        """An unattached copy, with a copy of data and any attributes attached by callers."""
         s = Selector._from_normalized(self._text)
         s._compiled, s._tree = self._compiled, self._tree
+        if self._data:
+            s._data = self._data.copy()
         if self.__dict__:
             s.__dict__.update(self.__dict__)
         return s

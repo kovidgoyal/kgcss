@@ -1,6 +1,21 @@
 Changelog
 =========
 
+Unreleased
+----------
+
+- :func:`kgcss.compat.wrap` is typed by the class of a rule:
+  ``wrap(style_rule)`` is a ``CSSStyleRule``, ``wrap(media_rule)`` a
+  ``CSSMediaRule``, and :func:`kgcss.compat.unwrap` gives the class back.
+- :class:`kgcss.RuleContainer`, the base of every rule that holds rules (with
+  ``insert_rule()`` and ``delete_rule()``), is exported.
+- :attr:`kgcss.Selector.data` is a dict for a caller's own data about a
+  selector, which type checkers accept, unlike attributes of the caller's
+  own. :meth:`kgcss.Selector.copy` copies it.
+- ``string_value`` of a value component (:class:`kgcss.Component`) is the
+  keyword of an ``Ident`` or the unquoted text of a ``String``, and ``None``
+  for anything else, so it can be read without checking the class.
+
 1.2.0
 -----
 

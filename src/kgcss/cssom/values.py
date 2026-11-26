@@ -24,16 +24,30 @@ from kgcss.tokenizer import TokenType
 
 @dataclass(frozen=True, slots=True)
 class Component:
-    """Base of all value components. css_text is the exact source text."""
+    """Base of all value components. css_text is the exact source text.
+
+    Each subclass has its own typed value. string_value is the value of an
+    Ident or a String (the keyword, or the unquoted string) and None for any
+    other component, so that code can read it without checking the class.
+    """
 
     css_text: str
     type: ClassVar[str] = ''
+
+    @property
+    def string_value(self) -> str | None:
+        """The keyword of an Ident or the unquoted, unescaped text of a String, else None."""
+        return None
 
 
 @dataclass(frozen=True, slots=True)
 class Ident(Component):
     value: str
     type: ClassVar[str] = 'ident'
+
+    @property
+    def string_value(self) -> str:
+        return self.value
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +56,10 @@ class String(Component):
 
     value: str
     type: ClassVar[str] = 'string'
+
+    @property
+    def string_value(self) -> str:
+        return self.value
 
 
 @dataclass(frozen=True, slots=True)

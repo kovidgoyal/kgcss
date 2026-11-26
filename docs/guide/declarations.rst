@@ -97,6 +97,16 @@ The component classes are in :mod:`kgcss.cssom.values`:
 :class:`~kgcss.cssom.values.UnicodeRange` and a few more. Integers stay
 ``int``, so ``700`` is not ``700.0``.
 
+``value`` is typed differently by each class, so it is not an attribute of
+:class:`kgcss.Component`. To read a keyword or a string without checking the
+class, use ``string_value``: the keyword of an ``Ident``, the unquoted text of a
+``String`` and ``None`` for anything else:
+
+.. doctest::
+
+   >>> [c.string_value for c in kgcss.parse_value('bold "My Font" 12px')]
+   ['bold', 'My Font', None]
+
 To change a value, assign ``prop.value``. :meth:`kgcss.Property.remove_component`
 removes one component with its separator:
 

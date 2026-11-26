@@ -79,6 +79,31 @@ def test_component_types() -> None:
     assert other.token_type is TokenType.AT_KEYWORD
 
 
+@pytest.mark.parametrize(
+    ('text', 'expected'),
+    [
+        ('bold', 'bold'),
+        ('"My \\46 ont"', 'My Font'),
+        ("'a'", 'a'),
+        ('12px', None),
+        ('700', None),
+        ('50%', None),
+        ('#fff', None),
+        ('url(x.png)', None),
+        ('rgb(1 2 3)', None),
+        ('[a]', None),
+        ('+', None),
+        ('@x', None),
+    ],
+)
+def test_string_value(text: str, expected: str | None) -> None:
+    component = parse_value(text)[0]
+    assert component.string_value == expected
+    if expected is not None:
+        assert isinstance(component, Ident | String)
+        assert component.string_value == component.value
+
+
 def test_functions_and_blocks() -> None:
     # requirements V3 and V4: urls inside functions, function names and arguments
     v = parse_value('image-set(url(a.png) 1x, url("b.png") 2x) local(My\\ Font) calc(1px + (2 * 3)) [a b]')
