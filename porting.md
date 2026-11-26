@@ -456,13 +456,28 @@ documented as returning or accepting css_parser sheets
 (`polish/container.py:78,763-783`), and `manual/plugin_examples/editor_demo`
 uses `rulesOfType`, `getPropertyValue`, `setProperty`,
 `getCssText(separator=' ')` and `serialize(sheet, 'text/css',
-pretty_print=True)`. kgcss deliberately has no camelCase facade (D1 of plan
-02). **Ask the maintainer before starting phase 5 (§8)** which of these to
-do:
-- document the break: update `manual/polish.rst`, the editor demo plugin,
-  and the changelog; or
-- add a thin facade (in calibre, or as `kgcss.compat`) with the handful of
-  camelCase names above.
+pretty_print=True)`.
+
+kgcss has a facade for this: **`kgcss.compat`**, live css_parser-style views
+of kgcss objects (`CSSStyleSheet`, `CSSRule` and its constants,
+`CSSStyleDeclaration`, `Property`, `PropertyValue`, `parseString`,
+`parseStyle`, `serialize`, `getUrls`, `replaceUrls`, ...). calibre keeps
+kgcss objects internally and gives plugins views:
+
+- `Container.parsed(name)` for a stylesheet returns
+  `kgcss.compat.wrap(sheet)` to plugins, or offers both (for example a
+  `parsed_kgcss()` for calibre's own code). A view changes the sheet it
+  wraps, so `container.dirty(name)` works as before.
+- `Container.parse_css(text, is_declaration=...)` returns
+  `kgcss.compat.parseString(text)` or `parseStyle(text)`.
+- Code that receives a view from a plugin calls `kgcss.compat.unwrap(view)`.
+- The editor demo plugin runs unchanged on the facade (kgcss tests it in
+  `tests/test_compat.py`). The facade's `serialize()` returns bytes, as
+  calibre's `serialize()` does for CSS.
+
+Decide with the maintainer which calibre functions return views and which
+return kgcss objects, and document it in the manual's plugin section
+(`manual/polish.rst`).
 
 ### 7.2 `css_selectors` for recipes and plugins
 

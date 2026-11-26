@@ -471,7 +471,9 @@ class SerializeOptions:
 ## 8. Milestones
 
 Status: milestones 1 to 8 are done. The optional `kgcss.compat` facade
-(D1) was not built.
+(D1) was added after the other plans: live css_parser-style views of kgcss
+objects, with `wrap()` and `unwrap()`, tested against css_parser itself and
+with calibre's editor demo plugin (`tests/test_compat.py`).
 
 Notes from milestone 8:
 - **Benchmarks.** `bench/bench_parse.py run --suite cssom` has four

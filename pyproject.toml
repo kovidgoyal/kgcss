@@ -6,13 +6,13 @@ build-backend = "setuptools.build_meta"
 name = "kgcss"
 description = "Fast and comprehensive CSS handling: tokenizing, parsing, a mutable object model, serialization, selector matching, media queries, colors, fonts and shorthands, with a C99 backend"
 readme = "README.md"
-license = "GPL-3.0-only"
+license = "BSD-3-Clause"
 license-files = ["LICENSE"]
 authors = [{ name = "Kovid Goyal", email = "kovid@kovidgoyal.net" }]
 requires-python = ">=3.14"
 dynamic = ["version"]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Programming Language :: C",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",

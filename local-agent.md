@@ -18,6 +18,7 @@ section before you implement a feature.
 | `src/kgcss/fonts.py` | The font helpers that replace tinycss.fonts3 (plan 05) |
 | `src/kgcss/grammar.py` | `matches()` and `is_color()`: value grammar for the longhands of the shorthands (plan 05) |
 | `src/kgcss/shorthands.py` | Shorthand expansion and condensation (plan 05) |
+| `src/kgcss/compat.py` | The css_parser-style facade: live camelCase views of kgcss objects, `wrap()` and `unwrap()` |
 | `src/kgcss/_kgcss.pyi` | Type stubs for the C extension. **Must** match `csrc/` exactly |
 | `csrc/` | C99 sources of the `kgcss._kgcss` extension module |
 | `csrc/kgcss.h` | Shared header: included first by every `.c` file, module state, helpers |
