@@ -30,7 +30,8 @@ from kgcss.escaping import serialize_string
 from kgcss.syntax import Block, ComponentValueList, Function, Token, parse_component_value_list
 from kgcss.tokenizer import TokenType
 
-type URLMapper = Callable[[str], str]
+# Returns the new URL, or None to leave the URL as it is
+type URLMapper = Callable[[str], str | None]
 IMAGE_SET = frozenset(('image-set', '-webkit-image-set'))
 IGNORED = frozenset((TokenType.WHITESPACE, TokenType.COMMENT))
 
@@ -131,7 +132,7 @@ def splice(text: str, spans: Iterable[URLSpan], fn: URLMapper) -> str:
     pos = 0
     for span in spans:
         new = fn(span.url)
-        if new == span.url:
+        if new is None or new == span.url:
             continue
         parts.append(text[pos : span.start])
         parts.append(span.replacement(new))
@@ -146,8 +147,8 @@ def replace_urls_in_text(css: str, fn: URLMapper, *, style_attribute: bool = Fal
     """Rewrite the URLs in CSS text, leaving everything else exactly as it was.
 
     fn is called with each URL, unquoted and unescaped, and returns its
-    replacement; quotes are added if the new URL needs them. With
-    style_attribute the text is a declaration list (a style="" attribute)
+    replacement, or None to leave it as it is; quotes are added if the new
+    URL needs them. With style_attribute the text is a declaration list (a style="" attribute)
     rather than a stylesheet. Returns css itself if nothing changed.
     """
     if not might_have_urls(css):
@@ -229,7 +230,8 @@ def replace_urls(obj: Stylesheet | Rule | DeclarationBlock, fn: URLMapper, *, ig
     """Replace every URL in a sheet, rule or declaration block with fn(url).
 
     fn is called with each URL, unquoted and unescaped, and returns its
-    replacement; quotes are added if the new URL needs them. Only the
+    replacement, or None to leave it as it is; quotes are added if the new
+    URL needs them. Only the
     properties and attributes that contain a changed URL are modified, so in
     preserve serialization the other rules and declarations keep their exact
     text. To change nothing but the URLs in a text, use
@@ -246,7 +248,7 @@ def replace_urls(obj: Stylesheet | Rule | DeclarationBlock, fn: URLMapper, *, ig
                     prop._replace_value(new)
                     changed = True
         elif isinstance(item, ImportRule):
-            if not ignore_imports and (href := fn(item.href)) != item.href:
+            if not ignore_imports and (href := fn(item.href)) is not None and href != item.href:
                 item.href = href
                 changed = True
         elif isinstance(item, UnknownAtRule):

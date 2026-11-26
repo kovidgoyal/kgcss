@@ -912,10 +912,10 @@ def getUrls(sheet: CSSStyleSheet) -> Iterator[str]:
 
 def replaceUrls(
     sheetOrStyle: CSSStyleSheet | CSSStyleDeclaration,
-    replacer: Callable[[str], str],
+    replacer: Callable[[str], str | None],
     ignoreImportRules: bool = False,
 ) -> None:
-    """Replace every URL with replacer(url)."""
+    """Replace every URL with replacer(url). A URL for which it returns None is left as it is."""
     replace_urls(sheetOrStyle._obj, replacer, ignore_imports=ignoreImportRules)
 
 

@@ -329,6 +329,13 @@ def test_condensation_details() -> None:
     assert condensed(css) == css
     # Repeated declarations: the effective one counts, and all go
     assert condensed(f'margin-top: 5px; {edges}') == 'margin: 1px'
+    # Values are compared normalized, as they are written, so the shorthand is the shortest
+    assert condensed('padding-top: 0; padding-right: 0pt; padding-bottom: 0; padding-left: 0pt') == 'padding: 0'
+    css = 'margin-top: 0.67em; margin-right: 0; margin-bottom: .67em; margin-left: 0px'
+    assert condensed(css) == 'margin: 0.67em 0'
+    css = '; '.join(f'border-{e}-width: {w}' for e, w in zip(EDGES, ('0', '0px', '0', '0em'), strict=True))
+    css += '; ' + '; '.join(f'border-{e}-{p}: {v}' for e in EDGES for p, v in (('style', 'solid'), ('color', 'red')))
+    assert condensed(css) == 'border: red solid 0'
 
 
 def test_doctests() -> None:
@@ -338,8 +345,9 @@ def test_doctests() -> None:
 # Condensing never changes what each longhand is
 
 VALUES = {
-    'margin': ('0', '1px', '2px', 'auto', 'inherit', '-1em'),
-    'border-width': ('1px', 'thin', 'inherit', '0'),
+    # Values that are equal once normalized too (0 and 0px, .5em and 0.5em), which are condensed as equal
+    'margin': ('0', '1px', '2px', 'auto', 'inherit', '-1em', '0px', '.5em', '0.5em', '0pt'),
+    'border-width': ('1px', 'thin', 'inherit', '0', '0em', '1.0px'),
     'border-style': ('solid', 'none', 'dotted', 'inherit'),
     'border-color': ('red', '#abc', 'currentcolor', 'inherit'),
 }
@@ -355,8 +363,8 @@ def value_kind(name: str) -> str:
 
 
 def effective(block: DeclarationBlock) -> dict[str, tuple[str, bool]]:
-    """What each longhand ends up as: (value, important), with shorthands expanded, in cascade order, and
-    invalid declarations ignored."""
+    """What each longhand ends up as: (normalized value, important), with shorthands expanded, in cascade
+    order, and invalid declarations ignored."""
     ans: dict[str, tuple[str, bool]] = {}
     for item in block.items:
         if not isinstance(item, kgcss.Property):
@@ -371,7 +379,7 @@ def effective(block: DeclarationBlock) -> dict[str, tuple[str, bool]]:
         for k, v in expanded.items():
             if k in ans and ans[k][1] and not important:
                 continue
-            ans[k] = (v, important)
+            ans[k] = (kgcss.Property(k, v).value_to_css(), important)
     return ans
 
 

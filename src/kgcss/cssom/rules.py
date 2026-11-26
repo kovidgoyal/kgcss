@@ -5,20 +5,21 @@
 import threading
 from collections.abc import Callable, Iterable, Iterator, MutableSequence, Sequence
 from enum import Enum, unique
-from typing import TYPE_CHECKING, ClassVar, Self, final, overload
+from typing import ClassVar, Literal, Self, cast, final, overload
 
 from kgcss.cssom.declarations import DeclarationBlock, block_from_nodes, parse_declarations
 from kgcss.cssom.exceptions import CSSSyntaxError, SelectorSyntaxError
-from kgcss.cssom.selector_list import Selector, SelectorList, validate_selector_list
-from kgcss.cssom.state import SheetState, SourceLike
+from kgcss.cssom.state import SheetState, SourceLike, SupportsRichComparison
+from kgcss.media import MediaFeature, MediaQuery
 from kgcss.selectors import compile_selectors
+from kgcss.supports import (
+    SupportsCondition,
+    SupportsDeclaration,
+    SupportsFunction,
+    import_condition,
+    parse_supports_condition,
+)
 from kgcss.syntax import AtRule, Declaration, QualifiedRule, Token
-
-if TYPE_CHECKING:
-    from _typeshed import SupportsRichComparison
-
-    from kgcss.cssom.stylesheet import Stylesheet
-    from kgcss.media import MediaFeature, MediaQuery
 
 CSS_WHITESPACE = ' \t\n\r\f'
 # Rules built by the API rather than parsed have no sheet state, and so no sheet lock: this one guards the
@@ -300,9 +301,50 @@ class RuleList(MutableSequence[Rule]):
         self._items.sort(key=key, reverse=reverse)
         self._changed()
 
-    def of_type(self, *types: RuleType) -> list[Rule]:
-        """The rules in this list (not recursive) of any of the given types."""
-        return [r for r in self._items if r.type in types]
+    # One type gives a list of its class, for type checkers
+    @overload
+    def of_type(self, rule_type: Literal[RuleType.STYLE], /) -> list[StyleRule]: ...
+    @overload
+    def of_type(self, rule_type: Literal[RuleType.IMPORT], /) -> list[ImportRule]: ...
+    @overload
+    def of_type(self, rule_type: Literal[RuleType.MEDIA], /) -> list[MediaRule]: ...
+    @overload
+    def of_type(self, rule_type: Literal[RuleType.FONT_FACE], /) -> list[FontFaceRule]: ...
+    @overload
+    def of_type(self, rule_type: Literal[RuleType.PAGE], /) -> list[PageRule]: ...
+    @overload
+    def of_type(self, rule_type: Literal[RuleType.MARGIN], /) -> list[MarginRule]: ...
+    @overload
+    def of_type(self, rule_type: Literal[RuleType.CHARSET], /) -> list[CharsetRule]: ...
+    @overload
+    def of_type(self, rule_type: Literal[RuleType.NAMESPACE], /) -> list[NamespaceRule]: ...
+    @overload
+    def of_type(self, rule_type: Literal[RuleType.SUPPORTS], /) -> list[SupportsRule]: ...
+    @overload
+    def of_type(self, rule_type: Literal[RuleType.CONTAINER], /) -> list[ContainerRule]: ...
+    @overload
+    def of_type(self, rule_type: Literal[RuleType.LAYER_BLOCK], /) -> list[LayerBlockRule]: ...
+    @overload
+    def of_type(self, rule_type: Literal[RuleType.LAYER_STATEMENT], /) -> list[LayerStatementRule]: ...
+    @overload
+    def of_type(self, rule_type: Literal[RuleType.SCOPE], /) -> list[ScopeRule]: ...
+    @overload
+    def of_type(self, rule_type: Literal[RuleType.STARTING_STYLE], /) -> list[StartingStyleRule]: ...
+    @overload
+    def of_type(self, rule_type: Literal[RuleType.DOCUMENT], /) -> list[DocumentRule]: ...
+    @overload
+    def of_type(self, rule_type: Literal[RuleType.NESTED_DECLARATIONS], /) -> list[NestedDeclarationsRule]: ...
+    @overload
+    def of_type(self, rule_type: Literal[RuleType.COMMENT], /) -> list[Comment]: ...
+    @overload
+    def of_type(self, rule_type: Literal[RuleType.UNKNOWN], /) -> list[UnknownAtRule]: ...
+    @overload
+    def of_type(self, *types: RuleType) -> list[Rule]: ...
+    def of_type[R: Rule](self, *types: RuleType) -> list[R]:
+        """The rules in this list (not recursive) of any of the given types. With one type, type checkers
+        know the class of the rules: of_type(RuleType.STYLE) is a list[StyleRule]."""
+        # R is the class of the rules of the overload that was chosen
+        return cast('list[R]', [r for r in self._items if r.type in types])
 
     def __repr__(self) -> str:
         return f'<RuleList of {len(self._items)} rules>'
@@ -746,6 +788,23 @@ class SupportsRule(GroupingRule):
     def condition_text(self, value: str) -> None:
         self.prelude_text = value
 
+    @property
+    def condition(self) -> SupportsCondition:
+        """The parsed condition (kgcss.supports), cached by text. A condition that does not parse is
+        kept, with valid=False. Reading it does not change condition_text."""
+        return parse_supports_condition(self.prelude_text)
+
+    def matches(
+        self,
+        *,
+        declaration: Callable[[SupportsDeclaration], bool],
+        function: Callable[[SupportsFunction], bool] | None = None,
+    ) -> bool:
+        """Whether the condition is true, with the callbacks of kgcss.supports.supports_matches():
+        declaration(d) says whether a declaration is supported, function(f) whether selector(),
+        font-tech(), font-format() or at-rule() is. A condition that does not parse is false."""
+        return self.condition.matches(declaration=declaration, function=function)
+
 
 @final
 class ContainerRule(GroupingRule):
@@ -919,6 +978,22 @@ class ImportRule(Rule):
                     self._loaded = loaded
         return loaded[1]
 
+    @property
+    def supports_condition(self) -> SupportsCondition | None:
+        """The parsed condition of supports() (kgcss.supports), None if there is none. Like the condition
+        of @supports, but it can also be a bare declaration: supports(display: grid)."""
+        return None if self._supports is None else import_condition(self._supports)
+
+    def supports_matches(
+        self,
+        *,
+        declaration: Callable[[SupportsDeclaration], bool],
+        function: Callable[[SupportsFunction], bool] | None = None,
+    ) -> bool:
+        """Whether the condition of supports() is true, as for SupportsRule.matches(). True if there is none."""
+        c = self.supports_condition
+        return c is None or c.matches(declaration=declaration, function=function)
+
     def _adopt_contents(self) -> None:
         self.media._owner = self
         self._loaded = None
@@ -1076,7 +1151,10 @@ class UnknownAtRule(Rule):
         return f' @{self.name}'
 
 
-# At the end, since build imports this module. Used through the module object, so
-# it works whichever of the two modules is imported first.
+# At the end, since these modules import this one. build and imports are used through the module object, so
+# that works whichever module is imported first. The names imported from selector_list and stylesheet are only
+# used in methods and annotations, which are evaluated lazily.
 import kgcss.cssom.build as _build  # noqa: E402
 import kgcss.cssom.imports as _imports  # noqa: E402
+from kgcss.cssom.selector_list import Selector, SelectorList, validate_selector_list  # noqa: E402
+from kgcss.cssom.stylesheet import Stylesheet  # noqa: E402

@@ -70,7 +70,7 @@ def test_media3_general_enclosed() -> None:
     assert not q.matches(media_type=lambda t: True, feature=lambda f: True)
 
 
-# calibre's stylizer.media_ok(), on media_matches()
+# calibre's stylizer.media_ok(), on media_matches(), as in porting.md §5.3
 ALLOWED_MEDIA_TYPES = frozenset({'screen', 'all', 'aural', 'amzn-kf8'})
 IGNORED_MEDIA_FEATURES = frozenset(
     [
@@ -119,7 +119,7 @@ def media_ok(raw: str | None) -> bool:
     return media_matches(
         raw,
         media_type=ALLOWED_MEDIA_TYPES.__contains__,
-        feature=lambda f: False if f.name in IGNORED_MEDIA_FEATURES else None,
+        feature=lambda f: f.name not in IGNORED_MEDIA_FEATURES,
     )
 
 
@@ -141,8 +141,11 @@ def media_ok(raw: str | None) -> bool:
         ('print', False),
         ('not print', True),
         ('screen and (width >= 600px)', False),  # a range is a width feature
-        ('screen and (hover)', False),  # unknown is false
-        ('not screen and (hover)', False),  # and not unknown is unknown, so false
+        # Features that are not ignored match, as in calibre
+        ('screen and (hover)', True),
+        ('not screen and (hover)', False),
+        ('screen and (orientation: portrait)', True),
+        ('(prefers-color-scheme: dark)', True),
         ('screen and not (color)', True),
         ('screen and (foo bar)', False),
         ('&, screen', True),

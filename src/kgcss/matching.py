@@ -10,15 +10,19 @@ from kgcss.cssom.exceptions import ExpressionError
 from kgcss.cssom.selector_list import Selector, SelectorList
 from kgcss.selectors import compile_selectors
 
-__all__ = ['Select']
+__all__ = ['ElementTreeLike', 'Select']
 
 type SelectorArg = str | Selector | SelectorList | Iterable[Selector]
 
 
-class _Tree[E](Protocol):
-    """An ElementTree: lxml's _ElementTree or xml.etree's ElementTree, whose root is an E."""
+class ElementTreeLike[E](Protocol):
+    """An ElementTree whose root is an E: lxml's _ElementTree or xml.etree's ElementTree. One of the
+    two kinds of root that Select accepts, the other being an element. Subclasses of Select that take
+    both kinds can use it in their signatures."""
 
-    def getroot(self) -> E | None: ...
+    def getroot(self) -> E | None:
+        """The root element."""
+        ...
 
 
 class Select[E]:
@@ -53,14 +57,18 @@ class Select[E]:
 
     @overload
     def __init__(
-        self, root: _Tree[E], ignore_inappropriate_pseudo_classes: bool = False, *, quirks_mode: bool = False
+        self, root: ElementTreeLike[E], ignore_inappropriate_pseudo_classes: bool = False, *, quirks_mode: bool = False
     ) -> None: ...
     @overload
     def __init__(
         self, root: E, ignore_inappropriate_pseudo_classes: bool = False, *, quirks_mode: bool = False
     ) -> None: ...
     def __init__(
-        self, root: E | _Tree[E], ignore_inappropriate_pseudo_classes: bool = False, *, quirks_mode: bool = False
+        self,
+        root: E | ElementTreeLike[E],
+        ignore_inappropriate_pseudo_classes: bool = False,
+        *,
+        quirks_mode: bool = False,
     ) -> None:
         # Elements are duck typed: the C Snapshot only needs the ElementTree API
         elem: Any = root

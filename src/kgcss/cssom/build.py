@@ -4,7 +4,7 @@
 
 from collections.abc import Iterable, Sequence
 from enum import Enum, auto
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 from kgcss.cssom.rules import (
     CSS_WHITESPACE,
@@ -48,9 +48,6 @@ from kgcss.syntax import (
     parse_block_contents,
 )
 from kgcss.tokenizer import TokenStream, TokenType
-
-if TYPE_CHECKING:
-    from kgcss.cssom.stylesheet import Stylesheet
 
 
 class Context(Enum):
@@ -387,3 +384,8 @@ def parse_rule_text(text: str, context: Context, log: ErrorHandler | None = None
         message = state.errors[-1].message if state.errors else 'Invalid rule'
         raise CSSSyntaxError(f'{message}: {text!r}')
     return rule
+
+
+# Names used only in annotations. Imported at the end, after this module is complete, because of
+# import cycles, so that annotations can be evaluated at run time (inspect.signature(), help())
+from kgcss.cssom.stylesheet import Stylesheet  # noqa: E402

@@ -4,15 +4,10 @@
 
 import posixpath
 from collections.abc import Callable
-from typing import TYPE_CHECKING
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from kgcss.syntax import AtRule, QualifiedRule, parse_block_contents
 from kgcss.tokenizer import ParseError
-
-if TYPE_CHECKING:
-    from kgcss.cssom.rules import GroupingRule, ImportRule, Rule
-    from kgcss.cssom.stylesheet import Stylesheet
 
 # Called with the URL of an imported sheet, resolved against the importing sheet's href.
 # Returns (encoding, text), where text is str or bytes, or None (or a None text) if the
@@ -253,3 +248,9 @@ def parse_wrapper(text: str) -> GroupingRule:
     rule = parse_rule_text(text + ' {}', Context.TOP)
     assert isinstance(rule, GroupingRule)
     return rule
+
+
+# Names used only in annotations. Imported at the end, after this module is complete, because of
+# import cycles, so that annotations can be evaluated at run time (inspect.signature(), help())
+from kgcss.cssom.rules import GroupingRule, ImportRule, Rule  # noqa: E402
+from kgcss.cssom.stylesheet import Stylesheet  # noqa: E402

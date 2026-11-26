@@ -221,16 +221,18 @@ def combinable(values: Sequence[str]) -> bool:
     return not any(is_css_wide(v) for v in values) or (len(set(values)) == 1)
 
 
-def replace_group(block: DeclarationBlock, props: Sequence[Property], name: str, value: str) -> bool:
+def replace_group(
+    block: DeclarationBlock, props: Sequence[Property], values: Sequence[str], name: str, value: str
+) -> bool:
     """Put the shorthand where the first of the longhands was, and remove them all. Only if the shorthand
-    means exactly the longhands: an invalid longhand would make the whole shorthand invalid, and lose the
-    others with it."""
-    expected = {p.name: p.value for p in props}
+    means exactly the longhands, whose normalized values are values: an invalid longhand would make the
+    whole shorthand invalid, and lose the others with it."""
+    expected = {p.name: v for p, v in zip(props, values, strict=True)}
     expanded = expanded_with_defaults(name, value)
     if name == 'border':
         if expanded is None or any(
-            expanded_with_defaults(p.name, p.value) != {k: v for k, v in expanded.items() if k.startswith(p.name + '-')}
-            for p in props
+            expanded_with_defaults(p.name, v) != {k: x for k, x in expanded.items() if k.startswith(p.name + '-')}
+            for p, v in zip(props, values, strict=True)
         ):
             return False
     elif expanded != expected:
@@ -253,8 +255,10 @@ def expanded_with_defaults(name: str, value: str) -> dict[str, str] | None:
 
 def condensable(
     view: Mapping[str, Property], names: Sequence[str], overlapping: Sequence[str]
-) -> list[Property] | None:
-    """The effective declarations of names, if they can be merged. view is the block's effective declarations."""
+) -> tuple[list[Property], list[str]] | None:
+    """The effective declarations of names and their normalized values, if they can be merged. view is the
+    block's effective declarations. Values are compared normalized, as they are written: 0 and 0px are the
+    same."""
     props = [view.get(n) for n in names]
     if any(p is None or p.important for p in props):
         return None
@@ -262,7 +266,8 @@ def condensable(
         # Another shorthand also sets these: merging could change which declaration wins
         return None
     ans = [p for p in props if p is not None]
-    return ans if combinable([p.value for p in ans]) else None
+    values = [p.value_to_css() for p in ans]
+    return (ans, values) if combinable(values) else None
 
 
 def condense_shorthands(block: DeclarationBlock) -> None:
@@ -275,22 +280,22 @@ def condense_shorthands(block: DeclarationBlock) -> None:
     if not any(n.startswith(('margin-', 'padding-', 'border-')) for n in view):
         return
 
-    def merge(props: Sequence[Property], name: str, value: str) -> None:
+    def merge(group: tuple[list[Property], list[str]], name: str, value: str) -> None:
         nonlocal view
-        if replace_group(block, props, name, value):
+        if replace_group(block, *group, name, value):
             view = {p.name: p for p in block}
 
     for prefix in ('margin', 'padding'):
-        if (props := condensable(view, LONGHANDS[prefix], (prefix,))) is not None:
-            merge(props, prefix, edge_shorthand([p.value for p in props]))
+        if (group := condensable(view, LONGHANDS[prefix], (prefix,))) is not None:
+            merge(group, prefix, edge_shorthand(group[1]))
     border_shorthands = ('border', 'border-width', 'border-style', 'border-color')
     for e in EDGES:
         names = LONGHANDS[f'border-{e}']
-        if (props := condensable(view, names, (*border_shorthands, f'border-{e}'))) is not None:
-            values = [p.value for p in props]
+        if (group := condensable(view, names, (*border_shorthands, f'border-{e}'))) is not None:
+            values = group[1]
             # calibre writes color, style, width
-            merge(props, f'border-{e}', values[0] if is_css_wide(values[0]) else ' '.join(reversed(values)))
+            merge(group, f'border-{e}', values[0] if is_css_wide(values[0]) else ' '.join(reversed(values)))
     edges = [f'border-{e}' for e in EDGES]
     overlapping = (*border_shorthands, *LONGHANDS['border'])
-    if (props := condensable(view, edges, overlapping)) is not None and len({p.value for p in props}) == 1:
-        merge(props, 'border', props[0].value)
+    if (group := condensable(view, edges, overlapping)) is not None and len(set(group[1])) == 1:
+        merge(group, 'border', group[1][0])

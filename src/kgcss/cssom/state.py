@@ -7,7 +7,7 @@ import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from types import TracebackType
-from typing import Protocol
+from typing import Protocol, Self
 
 from kgcss.tokenizer import ParseError, TokenStream
 
@@ -17,6 +17,13 @@ type ErrorHandler = Callable[[ParseError], None] | logging.Logger
 # Tokenizer errors are reported once for the whole sheet, so only these are
 # reported when blocks are parsed later.
 SYNTAX_ERROR_KINDS = frozenset(('invalid-rule', 'invalid-declaration'))
+
+
+class SupportsRichComparison(Protocol):
+    """A sort key: a value that can be compared with others of its kind. Like typeshed's protocol of the
+    same name, which only exists for type checkers, so it cannot be used in annotations evaluated at run time."""
+
+    def __lt__(self, other: Self, /) -> bool: ...
 
 
 class SourceLike(Protocol):

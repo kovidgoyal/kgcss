@@ -173,7 +173,7 @@ def test_views_are_live() -> None:
     assert supports.atkeyword == '@supports'  # ty: ignore[missing-attribute]
     assert supports.cssRules[0].selectorText == 'b'  # ty: ignore[missing-attribute]
     supports.insertRule('e { f: g }')  # ty: ignore[missing-attribute]
-    assert [r.selector_text for r in sheet.iter_rules(kgcss.RuleType.STYLE)] == ['p', 'b', 'e']  # ty: ignore[missing-attribute]
+    assert [r.selector_text for r in sheet.iter_rules(kgcss.RuleType.STYLE)] == ['p', 'b', 'e']
     # wrap() works on rules, blocks and properties too
     block = sheet.rules[0].style  # ty: ignore[missing-attribute]
     assert unwrap(wrap(block)) is block

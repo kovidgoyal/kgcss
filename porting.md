@@ -82,7 +82,7 @@ libraries.
 | `CSSComment('/* x */')` | `parse_rule('/* x */')`, or `Comment(' x ')`: the constructor takes the text **without** `/*` and `*/` |
 | `Property(name, value)` that raised `xml.dom.SyntaxErr` | `Property(name, value, validate=True)`, which raises `InvalidValueError` (a `ValueError`) |
 | `sheet.cssRules`, `rule.cssRules` | `sheet.rules`, `rule.rules` (also `for rule in sheet`) |
-| `cssRules.rulesOfType(CSSRule.STYLE_RULE)` | `sheet.rules.of_type(RuleType.STYLE)` (top level), or `sheet.iter_rules(RuleType.STYLE)` (all levels) |
+| `cssRules.rulesOfType(CSSRule.STYLE_RULE)` | `sheet.rules.of_type(RuleType.STYLE)` (top level), or `sheet.iter_rules(RuleType.STYLE)` (all levels); for one type, type checkers know the class (`StyleRule`), so no `isinstance()` is needed |
 | `CSSRule.STYLE_RULE`, `rule.type`, `'STYLE_RULE'` by name | `RuleType.STYLE`, `rule.type`, `RuleType['STYLE']` |
 | `sheet.insertRule(r, i)`, `sheet.add(r)` | `sheet.insert_rule(r, i)`, `sheet.add(r)`: both return the inserted rule, a **copy** if `r` belonged to another sheet |
 | `sheet.deleteRule(i_or_rule)` | `sheet.delete_rule(i_or_rule)` |
@@ -219,7 +219,9 @@ lists them.
 last wins) and a full view, `items`, with every declaration and comment in
 order. `Property` objects are hashable by identity. `PropertyValue` is an
 immutable sequence of components without separators; `.items` includes them.
-Assigning `prop.value` reparses.
+Assigning `prop.value` reparses. `prop.value` is the text as written
+(`.50em 0px`); `prop.value_to_css()` is the value normalized as css_parser
+gave it (`0.5em 0`).
 
 ### 4.5 URLs
 
@@ -228,7 +230,8 @@ including `@page`, margin rules and `@font-face`, grouping rules, unknown
 at-rules (at token level), and `url()` inside functions at any depth
 (`image-set()`, `cross-fade()`), including `data:` URLs (U1-U3).
 `replace_urls` returns `True` only if something changed, which replaces
-`replace_func.replaced` (`container.py:557-559`).
+`replace_func.replaced` (`container.py:557-559`). A replacement function can
+return `None` to leave a URL as it is, so calibre's mappers need no wrapper.
 
 ### 4.6 Serialization
 
@@ -296,16 +299,26 @@ def media_ok(raw: str | None) -> bool:
     return media_matches(
         raw,
         media_type=ALLOWED_MEDIA_TYPES.__contains__,
-        feature=lambda f: False if f.name in IGNORED_MEDIA_FEATURES else None,
+        feature=lambda f: f.name not in IGNORED_MEDIA_FEATURES,
     )
 ```
 
 The feature callback returns `True`, `False` or `None` for unknown; kgcss
-does the Level 4 logic (`or`, `not`, nesting, unknown). This exact function
+does the Level 4 logic (`or`, `not`, nesting, unknown). Return `True`, not
+`None`, for the features that are not ignored: calibre matched them, and
+with `None` a query such as `screen and (orientation: portrait)`, `(hover)`
+or `(prefers-color-scheme: dark)` would be unknown, and so stop matching. This exact function
 is tested in kgcss (`tests/test_media.py`), with calibre's `test_media_ok`.
 `cascade.media_allowed` (`cascade.py:82-85`) can call
 `rule.media.matches(...)` directly. Media types are now case-insensitive
 (M3 quirk fixed), and `MediaList` is falsy when empty (M4).
+
+`@supports` conditions are evaluated the same way, with a callback that says
+which declarations are supported: `SupportsRule.matches(declaration=...)`,
+`ImportRule.supports_matches(declaration=...)` or `supports_matches(text,
+declaration=...)`. The stylizer ignores rules inside `@supports`, as it did
+with css_parser, which could not read them. To apply them in conversion,
+skip only the `@supports` rules that do not match.
 
 ---
 
@@ -515,13 +528,17 @@ from kgcss import Select as _Select
 from kgcss import parse_selectors as parse
 
 class Select(_Select):
-    def __init__(self, root, ignore_inappropriate_pseudo_classes=False, **kw):
+    def __init__(self, root, default_lang=None, ignore_inappropriate_pseudo_classes=False,
+                 dispatch_map=None, trace=False):
         # css_selectors matched ids and classes case-insensitively
         super().__init__(root, ignore_inappropriate_pseudo_classes, quirks_mode=True)
 ```
 
-`default_lang`, `dispatch_map` and `trace` are accepted and ignored by
-swallowing `**kw`; say so in the docstring.
+Keep the signature of css_selectors' `Select`, so that positional arguments
+such as `Select(root, None, True)` keep their meaning. `default_lang`,
+`dispatch_map` and `trace` are accepted and ignored; say so in the
+docstring. A typed shim that takes an ElementTree as well as an element
+repeats kgcss's overloads with `kgcss.ElementTreeLike[E]`.
 
 ### 7.3 Duck typing on sheets
 
@@ -545,8 +562,11 @@ Port in this order. Each phase ends with its tests passing and a commit.
 2. **Selectors.** Every `Select` caller (§6.3, with `quirks_mode=True`), the
    `css_selectors` shim (§7.2), `live_css.py:560` (specificity),
    `html_transform_rules.py:140-144` (the cached parse as a validator).
-   While sheets are still css_parser sheets, pass `rule.selectorText`; phase
-   3 switches to the `Selector` objects.
+   Callers whose selector text comes from css_parser sheets cannot move
+   before their sheets do: css_parser decodes escapes in `selectorText`
+   (`#\31 x` becomes the invalid `#1x`), which css_selectors matched and
+   kgcss rejects. Port them with their sheets: the stylizer and split in
+   phase 3, polish in phase 4, jump to class in phase 5.
 3. **Conversion pipeline.** `oeb/base.py` (parsing, `serialize()`,
    `css_text()`, `rewrite_links` with `replace_urls_in_text` for U4),
    `oeb/stylizer.py`, `oeb/normalize_css.py` (§6.9), `flatcss.py`,
@@ -554,11 +574,12 @@ Port in this order. Each phase ends with its tests passing and a commit.
    `embed_fonts.py`, `html_input.py`, `reader.py`, `page_margin.py`,
    `epub_output.py`, `pdf_output.py`, the output plugins that read
    `item.data` (`mobi/writer8`, `lit/writer.py`, `docx`, `htmlz`, `odt`,
-   `fb2_input.py` with its `namespaces['h'] = XHTML_NS`), and
-   `srv/render_book.py:553`. Port `oeb/base.py` and the readers of
-   `item.data` together.
+   `fb2_input.py` with its `namespaces['h'] = XHTML_NS`),
+   `srv/render_book.py:553`, and `polish/container.py`'s `opf_to_azw3()`,
+   which overrides `Manifest.Item._parse_css()` to build an `OEBBook`. Port
+   `oeb/base.py` and the readers of `item.data` together.
 4. **Polish.** `polish/utils.py` (no fetcher, §5.1; delete
-   `setup_css_parser_serialization`), `container.py`, `css.py` (use
+   `setup_css_parser_serialization`), the rest of `container.py`, `css.py` (use
    `iter_rules`, `rename_classes`, `rename_ids`, `class_names()`), `cascade.py`
    (delete `iterrules`/`iterdeclaration` in favour of kgcss), `fonts.py`,
    `kepubify.py`, `replace.py` (`remove_url_values` for U5), `report.py`,
@@ -573,8 +594,11 @@ Port in this order. Each phase ends with its tests passing and a commit.
    `diff/view.py` (indent per call), `editor/widget.py:690-699`, sort CSS
    (`editor/text.py:546-569`), the Reports tab (`report.py:345-377`, rule
    lines plus `style.sourceline - 1`). Settle §7.1 first.
-6. **Devices and the rest.** `kobo/driver.py` (§6.10, §6.11),
-   `metadata/sources/amazon.py`, the store plugins, recipes.
+6. **Devices and the rest.** `kobo/driver.py` (§6.10, §6.11), recipes.
+   Not the store plugins and metadata sources (`metadata/sources/amazon.py`):
+   they are downloaded and updated at run time and run on older calibre
+   versions, so they must keep importing `css_selectors` (the shim of §7.2),
+   not `kgcss`.
 7. **Removal.** Delete `src/tinycss`, the `calibre_extensions.tokenizer`
    extension and its check in `test_build.py`, `src/css_selectors` except
    the shim, css_parser from the dependencies, and the old test

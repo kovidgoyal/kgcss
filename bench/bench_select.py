@@ -83,7 +83,7 @@ def sheet_selectors(name: str, limit: int | None = None) -> tuple[str, ...]:
     import kgcss
 
     sheet = kgcss.parse_stylesheet((CORPUS / name).read_text(encoding='utf-8'))
-    texts = [s.text for r in sheet.iter_rules(kgcss.RuleType.STYLE) for s in r.selectors]  # ty: ignore[missing-attribute]
+    texts = [s.text for r in sheet.iter_rules(kgcss.RuleType.STYLE) for s in r.selectors]
     return tuple(texts[:limit])
 
 

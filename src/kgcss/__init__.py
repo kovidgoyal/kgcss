@@ -69,10 +69,17 @@ from kgcss.decode import decode_stylesheet, lookup_encoding
 from kgcss.escaping import serialize_identifier, serialize_string
 from kgcss.fonts import FontDict, parse_font, parse_font_family, serialize_font, serialize_font_family
 from kgcss.grammar import CSS_WIDE_KEYWORDS, is_color, matches
-from kgcss.matching import Select
+from kgcss.matching import ElementTreeLike, Select
 from kgcss.media import MediaFeature, MediaQuery, media_matches, parse_media_queries
 from kgcss.selectors import INAPPROPRIATE_PSEUDO_CLASSES, rename_classes, rename_ids
 from kgcss.shorthands import INITIAL_VALUES, condense_shorthands, expand_shorthand, longhands
+from kgcss.supports import (
+    SupportsCondition,
+    SupportsDeclaration,
+    SupportsFunction,
+    parse_supports_condition,
+    supports_matches,
+)
 from kgcss.tokenizer import ParseError
 
 __all__ = [
@@ -90,6 +97,7 @@ __all__ = [
     'DeclarationBlock',
     'DeclarationList',
     'DocumentRule',
+    'ElementTreeLike',
     'ErrorHandler',
     'ExpressionError',
     'FontDict',
@@ -125,6 +133,9 @@ __all__ = [
     'StartingStyleRule',
     'StyleRule',
     'Stylesheet',
+    'SupportsCondition',
+    'SupportsDeclaration',
+    'SupportsFunction',
     'SupportsRule',
     'UnknownAtRule',
     '__version__',
@@ -147,6 +158,7 @@ __all__ = [
     'parse_selectors',
     'parse_style',
     'parse_stylesheet',
+    'parse_supports_condition',
     'parse_value',
     'remove_url_values',
     'rename_classes',
@@ -159,4 +171,5 @@ __all__ = [
     'serialize_font_family',
     'serialize_identifier',
     'serialize_string',
+    'supports_matches',
 ]

@@ -3,7 +3,7 @@
 """Declaration blocks and properties."""
 
 from collections.abc import Iterable, Iterator, MutableSequence
-from typing import TYPE_CHECKING, cast, overload
+from typing import cast, overload
 from weakref import ReferenceType, ref
 
 from kgcss._kgcss import PropertyData, build_properties
@@ -21,10 +21,6 @@ from kgcss.syntax import (
     parse_one_declaration,
 )
 from kgcss.tokenizer import ParseError, TokenType, tokenize
-
-if TYPE_CHECKING:
-    from kgcss.cssom.rules import Comment, Rule
-    from kgcss.cssom.serializer import SerializeOptions
 
 CSS_WHITESPACE = ' \t\n\r\f'
 CLOSERS = frozenset((TokenType.RIGHT_CURLY, TokenType.RIGHT_PAREN, TokenType.RIGHT_SQUARE))
@@ -256,6 +252,20 @@ class Property(PropertyData):
         self._value_from_node = False
         self._parsed = None
         self._changed()
+
+    def value_to_css(self, options: SerializeOptions | None = None) -> str:
+        """The value alone, serialized as in a stylesheet: normalized with the default options ('.50em 0px'
+        is '0.5em 0'). value is the text as written. With style='preserve', an unmodified value is written
+        as it is in the source."""
+        from kgcss.cssom.serializer import DEFAULT_OPTIONS, property_value_text
+
+        options = options or DEFAULT_OPTIONS
+        if options.style == 'preserve' and not self._dirty and self._node is not None and self._value_from_node:
+            from kgcss.cssom.serializer import values_complete
+
+            if values_complete(self._node.value):
+                return self.value
+        return property_value_text(self, options)
 
     def __repr__(self) -> str:
         imp = ' !important' if self._priority else ''
@@ -608,3 +618,9 @@ def parse_style(text: str, *, log: ErrorHandler | None = None) -> DeclarationBlo
     block, errors = parse_declarations(text, None, state)
     block.errors = errors
     return block
+
+
+# Names used only in annotations. Imported at the end, after this module is complete, because of
+# import cycles, so that annotations can be evaluated at run time (inspect.signature(), help())
+from kgcss.cssom.rules import Comment, Rule  # noqa: E402
+from kgcss.cssom.serializer import SerializeOptions  # noqa: E402

@@ -3,16 +3,31 @@
 """The Stylesheet class, parse_stylesheet() and parse_rule()."""
 
 from collections.abc import Iterator, MutableMapping, Sequence
-from typing import TYPE_CHECKING
+from typing import Literal, overload
 
 from kgcss.cssom.rules import (
     CharsetRule,
+    Comment,
+    ContainerRule,
+    DocumentRule,
+    FontFaceRule,
+    ImportRule,
+    LayerBlockRule,
+    LayerStatementRule,
     LazyBlockRule,
+    MarginRule,
+    MediaRule,
     NamespaceRule,
     NestedDeclarationsRule,
+    PageRule,
     Rule,
     RuleList,
     RuleType,
+    ScopeRule,
+    StartingStyleRule,
+    StyleRule,
+    SupportsRule,
+    UnknownAtRule,
     delete_from,
     insert_into,
     set_sheet,
@@ -21,12 +36,6 @@ from kgcss.cssom.state import ErrorHandler, SheetState, Source
 from kgcss.decode import Buffer
 from kgcss.syntax import parse_stylesheet as parse_syntax_tree
 from kgcss.tokenizer import ParseError
-
-if TYPE_CHECKING:
-    from kgcss.cssom.declarations import DeclarationBlock
-    from kgcss.cssom.imports import ImportFetcher
-    from kgcss.cssom.rules import ImportRule
-    from kgcss.cssom.serializer import SerializeOptions
 
 
 class NamespaceMap(MutableMapping[str, str]):
@@ -155,6 +164,86 @@ class Stylesheet:
                         index = i + 1
         return insert_into(rules, rule, index, Context.TOP)
 
+    # One type gives rules of its class, for type checkers
+    @overload
+    def iter_rules(
+        self, rule_type: Literal[RuleType.STYLE], /, *, recursive: bool = True, follow_imports: bool = False
+    ) -> Iterator[StyleRule]: ...
+    @overload
+    def iter_rules(
+        self, rule_type: Literal[RuleType.IMPORT], /, *, recursive: bool = True, follow_imports: bool = False
+    ) -> Iterator[ImportRule]: ...
+    @overload
+    def iter_rules(
+        self, rule_type: Literal[RuleType.MEDIA], /, *, recursive: bool = True, follow_imports: bool = False
+    ) -> Iterator[MediaRule]: ...
+    @overload
+    def iter_rules(
+        self, rule_type: Literal[RuleType.FONT_FACE], /, *, recursive: bool = True, follow_imports: bool = False
+    ) -> Iterator[FontFaceRule]: ...
+    @overload
+    def iter_rules(
+        self, rule_type: Literal[RuleType.PAGE], /, *, recursive: bool = True, follow_imports: bool = False
+    ) -> Iterator[PageRule]: ...
+    @overload
+    def iter_rules(
+        self, rule_type: Literal[RuleType.MARGIN], /, *, recursive: bool = True, follow_imports: bool = False
+    ) -> Iterator[MarginRule]: ...
+    @overload
+    def iter_rules(
+        self, rule_type: Literal[RuleType.CHARSET], /, *, recursive: bool = True, follow_imports: bool = False
+    ) -> Iterator[CharsetRule]: ...
+    @overload
+    def iter_rules(
+        self, rule_type: Literal[RuleType.NAMESPACE], /, *, recursive: bool = True, follow_imports: bool = False
+    ) -> Iterator[NamespaceRule]: ...
+    @overload
+    def iter_rules(
+        self, rule_type: Literal[RuleType.SUPPORTS], /, *, recursive: bool = True, follow_imports: bool = False
+    ) -> Iterator[SupportsRule]: ...
+    @overload
+    def iter_rules(
+        self, rule_type: Literal[RuleType.CONTAINER], /, *, recursive: bool = True, follow_imports: bool = False
+    ) -> Iterator[ContainerRule]: ...
+    @overload
+    def iter_rules(
+        self, rule_type: Literal[RuleType.LAYER_BLOCK], /, *, recursive: bool = True, follow_imports: bool = False
+    ) -> Iterator[LayerBlockRule]: ...
+    @overload
+    def iter_rules(
+        self, rule_type: Literal[RuleType.LAYER_STATEMENT], /, *, recursive: bool = True, follow_imports: bool = False
+    ) -> Iterator[LayerStatementRule]: ...
+    @overload
+    def iter_rules(
+        self, rule_type: Literal[RuleType.SCOPE], /, *, recursive: bool = True, follow_imports: bool = False
+    ) -> Iterator[ScopeRule]: ...
+    @overload
+    def iter_rules(
+        self, rule_type: Literal[RuleType.STARTING_STYLE], /, *, recursive: bool = True, follow_imports: bool = False
+    ) -> Iterator[StartingStyleRule]: ...
+    @overload
+    def iter_rules(
+        self, rule_type: Literal[RuleType.DOCUMENT], /, *, recursive: bool = True, follow_imports: bool = False
+    ) -> Iterator[DocumentRule]: ...
+    @overload
+    def iter_rules(
+        self,
+        rule_type: Literal[RuleType.NESTED_DECLARATIONS],
+        /,
+        *,
+        recursive: bool = True,
+        follow_imports: bool = False,
+    ) -> Iterator[NestedDeclarationsRule]: ...
+    @overload
+    def iter_rules(
+        self, rule_type: Literal[RuleType.COMMENT], /, *, recursive: bool = True, follow_imports: bool = False
+    ) -> Iterator[Comment]: ...
+    @overload
+    def iter_rules(
+        self, rule_type: Literal[RuleType.UNKNOWN], /, *, recursive: bool = True, follow_imports: bool = False
+    ) -> Iterator[UnknownAtRule]: ...
+    @overload
+    def iter_rules(self, *types: RuleType, recursive: bool = True, follow_imports: bool = False) -> Iterator[Rule]: ...
     def iter_rules(self, *types: RuleType, recursive: bool = True, follow_imports: bool = False) -> Iterator[Rule]:
         """All rules in document order, optionally only of the given types.
 
@@ -164,8 +253,6 @@ class Stylesheet:
         sheets follow their @import rule, loading them if needed; their
         parent_style_sheet is the imported sheet.
         """
-        from kgcss.cssom.rules import ImportRule
-
         stack: list[Iterator[Rule]] = [iter(self.rules)]
         while stack:
             rule = next(stack[-1], None)
@@ -356,3 +443,10 @@ def parse_rule(text: str, *, log: ErrorHandler | None = None) -> Rule:
     from kgcss.cssom.build import Context, parse_rule_text
 
     return parse_rule_text(text, Context.TOP, log)
+
+
+# Names used only in annotations. Imported at the end, after this module is complete, because of
+# import cycles, so that annotations can be evaluated at run time (inspect.signature(), help())
+from kgcss.cssom.declarations import DeclarationBlock  # noqa: E402
+from kgcss.cssom.imports import ImportFetcher  # noqa: E402
+from kgcss.cssom.serializer import SerializeOptions  # noqa: E402

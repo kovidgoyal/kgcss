@@ -108,6 +108,20 @@ def test_replace_urls_in_text() -> None:
     assert replace_urls_in_text('a { b: url(x) }', lambda u: 'a b"c') == 'a { b: url("a b\\"c") }'
 
 
+def test_url_mapper_returning_none_keeps_the_url() -> None:
+    def fn(url: str) -> str | None:
+        return None if url.endswith('.png') else 'new-' + url
+
+    sheet = parse_stylesheet(SHEET)
+    assert replace_urls(sheet, fn)
+    assert list(iter_urls(sheet)) == [u if u.endswith('.png') else 'new-' + u for u in ALL]
+    sheet = parse_stylesheet(SHEET)
+    assert not replace_urls(sheet, lambda u: None)
+    assert serialize(sheet, PRESERVE) == SHEET
+    assert replace_urls_in_text(SHEET, lambda u: None) is SHEET
+    assert replace_urls_in_text('a { b: url(x.png) url(y.otf) }', fn) == 'a { b: url(x.png) url(new-y.otf) }'
+
+
 @pytest.mark.parametrize(
     ('css', 'expected'),
     [

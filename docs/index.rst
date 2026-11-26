@@ -55,6 +55,7 @@ It works on regular and free-threaded (no-GIL) Python 3.14 and later.
    guide/urls
    guide/selectors
    guide/media
+   guide/supports
    guide/colors
    guide/fonts
    guide/shorthands

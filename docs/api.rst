@@ -3,9 +3,9 @@ API reference
 
 Everything on this page under a heading other than :ref:`api-lower-layers`
 is exported by the ``kgcss`` package itself (``from kgcss import ...``), except
-the value classes, the selector tree and the media query model, which live in
-the submodules named in their headings, and the facade, which is
-:mod:`kgcss.compat`.
+the value classes, the selector tree and the condition trees of media queries
+and ``@supports``, which live in the submodules named in their headings, and
+the facade, which is :mod:`kgcss.compat`.
 
 Parsing
 -------
@@ -139,6 +139,7 @@ Matching
 --------
 
 .. autoclass:: kgcss.Select
+.. autoclass:: kgcss.ElementTreeLike
 
 The selector tree (``kgcss.selectors``)
 ---------------------------------------
@@ -196,6 +197,22 @@ The condition tree (``kgcss.media``):
 .. autoclass:: kgcss.media.MediaOr
 .. autoclass:: kgcss.media.GeneralEnclosed
 .. autoclass:: kgcss.media.Ratio
+
+@supports conditions
+--------------------
+
+.. autofunction:: kgcss.parse_supports_condition
+.. autofunction:: kgcss.supports_matches
+.. autoclass:: kgcss.SupportsCondition
+.. autoclass:: kgcss.SupportsDeclaration
+.. autoclass:: kgcss.SupportsFunction
+
+The condition tree (``kgcss.supports``), which also uses
+:class:`kgcss.media.GeneralEnclosed`:
+
+.. autoclass:: kgcss.supports.SupportsNot
+.. autoclass:: kgcss.supports.SupportsAnd
+.. autoclass:: kgcss.supports.SupportsOr
 
 Fonts
 -----

@@ -48,7 +48,7 @@ def corpus_texts() -> tuple[tuple[str, ...], tuple[str, ...]]:
     for path in sorted(CORPUS.glob('*.css')):
         sheet = kgcss.parse_stylesheet(path.read_text(encoding='utf-8'))
         for rule in sheet.iter_rules(kgcss.RuleType.STYLE):
-            for prop in rule.style:  # ty: ignore[missing-attribute]
+            for prop in rule.style:
                 if prop.name.endswith('color'):
                     values.append(prop.value)
                 components.extend(c.css_text for c in prop.parsed_value.items if isinstance(c, (Ident, Hash, Function)))

@@ -4,6 +4,8 @@
 
 import codecs
 import logging
+from collections.abc import Callable, Iterator
+from typing import assert_type, get_args, get_overloads, get_type_hints
 
 import pytest
 
@@ -40,6 +42,12 @@ from kgcss import (
 )
 
 PRESERVE = SerializeOptions(style='preserve')
+# A sheet with a rule of every type
+ALL_RULE_TYPES = """@charset "utf-8"; @layer x, y; @import "a.css"; @namespace svg "u";
+/* comment */ a { b { c: d } e: f } @media print { g {} } @font-face { font-family: x }
+@page { @top-left { content: "x" } } @supports (display: grid) { h {} } @container (width > 1px) { i {} }
+@layer z { j {} } @scope (k) { l {} } @starting-style { m {} } @-moz-document url-prefix() { n {} }
+@keyframes o { from { color: red } }"""
 
 
 def types(rules: RuleList | Stylesheet) -> list[str]:
@@ -305,6 +313,30 @@ def test_iter_rules() -> None:
     assert types(RuleList(sheet.iter_rules(recursive=False))) == ['STYLE', 'MEDIA', 'COMMENT', 'STYLE']
     assert types(RuleList(sheet.iter_rules(RuleType.MEDIA, RuleType.SUPPORTS))) == ['MEDIA', 'SUPPORTS']
     assert sheet.rules.of_type(RuleType.STYLE) == [sheet.rules[0], sheet.rules[3]]
+    # assert_type is checked by ty: one type gives rules of its class
+    assert_type(sheet.rules.of_type(RuleType.STYLE), list[StyleRule])
+    assert_type(sheet.rules.of_type(RuleType.MEDIA, RuleType.STYLE), list[Rule])
+    assert_type(sheet.iter_rules(RuleType.MEDIA), Iterator[MediaRule])
+    assert_type(sheet.iter_rules(RuleType.IMPORT, follow_imports=True), Iterator[ImportRule])
+    assert_type(sheet.iter_rules(), Iterator[Rule])
+    assert [r.selector_text for r in sheet.iter_rules(RuleType.STYLE)] == ['a', 'b', 'c', 'd', 'f']
+
+
+@pytest.mark.parametrize('method', [RuleList.of_type, Stylesheet.iter_rules])
+def test_rule_type_overloads(method: Callable[..., object]) -> None:
+    # Every rule type has an overload, which names the class of its rules
+    classes: dict[RuleType, type] = {}
+    for overload in get_overloads(method):
+        hints = get_type_hints(overload)
+        if 'rule_type' in hints:
+            (rule_type,) = get_args(hints['rule_type'])
+            (cls,) = get_args(hints['return'])
+            classes[rule_type] = cls
+    assert set(classes) == set(RuleType)
+    sheet = parse_stylesheet(ALL_RULE_TYPES)
+    assert {r.type for r in sheet.iter_rules()} == set(RuleType)
+    for rule in sheet.iter_rules():
+        assert type(rule) is classes[rule.type]
 
 
 def test_browser_index_path() -> None:

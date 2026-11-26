@@ -12,7 +12,8 @@ including ``@font-face``, ``@page`` and its margin boxes, rules nested in
 and unescaped, ``data:`` URLs included.
 
 :func:`kgcss.replace_urls` calls a function for each URL and puts its result in
-place, quoting it when it needs quotes. It returns whether anything changed,
+place, quoting it when it needs quotes. A URL for which the function returns
+``None`` is left as it is. It returns whether anything changed,
 and marks only what changed as modified, so a ``preserve`` serialization
 changes only those bytes.
 

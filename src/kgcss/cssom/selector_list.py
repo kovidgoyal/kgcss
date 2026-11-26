@@ -8,10 +8,12 @@ specificity or pseudo-element is first needed.
 """
 
 from collections.abc import Callable, Iterable, Iterator, MutableSequence
-from typing import TYPE_CHECKING, overload
+from typing import overload
 
+from kgcss._kgcss import CompiledSelector
 from kgcss.cssom.exceptions import SelectorSyntaxError
 from kgcss.cssom.serializer import normalize_selector
+from kgcss.cssom.state import SupportsRichComparison
 from kgcss.selectors import (
     ComplexSelector,
     NameMap,
@@ -25,13 +27,6 @@ from kgcss.selectors import (
 )
 from kgcss.syntax import Block, Function, parse_component_value_list
 from kgcss.tokenizer import TokenType
-
-if TYPE_CHECKING:
-    from _typeshed import SupportsRichComparison
-
-    from kgcss._kgcss import CompiledSelector
-    from kgcss.cssom.rules import StyleRule
-    from kgcss.cssom.stylesheet import Stylesheet
 
 CSS_WHITESPACE = ' \t\n\r\f'
 INVALID_IN_SELECTORS = frozenset((
@@ -400,3 +395,9 @@ def invalid_selectors(sheet: Stylesheet) -> list[tuple[StyleRule, Selector, Sele
             except SelectorSyntaxError as e:
                 ans.append((rule, selector, e))
     return ans
+
+
+# Names used only in annotations. Imported at the end, after this module is complete, because of
+# import cycles, so that annotations can be evaluated at run time (inspect.signature(), help())
+from kgcss.cssom.rules import StyleRule  # noqa: E402
+from kgcss.cssom.stylesheet import Stylesheet  # noqa: E402

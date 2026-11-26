@@ -16,7 +16,7 @@ calibre normalizations (S3). Escapes are always kept as written.
 import codecs
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Final, Literal
+from typing import Final, Literal
 
 from kgcss._kgcss import write_declarations as c_write_declarations
 from kgcss._kgcss import write_values as c_write_values
@@ -25,11 +25,6 @@ from kgcss.decode import PYTHON_CODECS, lookup_encoding
 from kgcss.escaping import serialize_identifier, serialize_string
 from kgcss.syntax import Block, ComponentValueList, Declaration, Function, Token, parse_component_value_list
 from kgcss.tokenizer import TokenType
-
-if TYPE_CHECKING:
-    from kgcss.cssom.declarations import DeclarationBlock, Property
-    from kgcss.cssom.rules import Rule
-    from kgcss.cssom.stylesheet import Stylesheet
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -869,3 +864,10 @@ def encode_text(text: str, charset: str | None) -> bytes:
     encoding = lookup_encoding(charset) if charset else None
     codec = python_codec(encoding) if encoding else 'utf-8'
     return text.encode(codec, 'kgcss-css-escape')
+
+
+# Names used only in annotations. Imported at the end, after this module is complete, because of
+# import cycles, so that annotations can be evaluated at run time (inspect.signature(), help())
+from kgcss.cssom.declarations import DeclarationBlock, Property  # noqa: E402
+from kgcss.cssom.rules import Rule  # noqa: E402
+from kgcss.cssom.stylesheet import Stylesheet  # noqa: E402

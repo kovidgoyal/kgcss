@@ -10,7 +10,7 @@ matcher in selector_oracle.py, and with css_selectors itself.
 
 from collections.abc import Iterator
 from pathlib import Path
-from typing import assert_type
+from typing import assert_type, overload
 
 import pytest
 from hypothesis import given
@@ -21,6 +21,7 @@ pytest.importorskip('lxml')
 from lxml import etree, html
 
 from kgcss import (
+    ElementTreeLike,
     ExpressionError,
     Select,
     SelectorSyntaxError,
@@ -810,3 +811,22 @@ def test_select_is_generic_over_the_element_type() -> None:
         assert_type(list(et_select('b', root=et_root)), list[ET.Element])
         assert et_select.root is et_root
         assert et_select.matches(et_root[0], 'a > b')
+
+
+def test_subclass_with_element_tree_like() -> None:
+    # A subclass that takes both kinds of root, as calibre's css_selectors shim does, repeats the overloads
+    import xml.etree.ElementTree as ET
+
+    class Compat[E](Select[E]):
+        @overload
+        def __init__(self, root: ElementTreeLike[E], default_lang: str | None = None) -> None: ...
+        @overload
+        def __init__(self, root: E, default_lang: str | None = None) -> None: ...
+        def __init__(self, root: E | ElementTreeLike[E], default_lang: str | None = None) -> None:
+            super().__init__(root, quirks_mode=True)
+            self.default_lang = default_lang
+
+    et_root = ET.fromstring('<a><b id="X"/></a>')
+    for compat in (Compat(et_root), Compat(ET.ElementTree(et_root), 'en')):
+        assert_type(compat, Compat[ET.Element])
+        assert [e.tag for e in compat('#x')] == ['b']

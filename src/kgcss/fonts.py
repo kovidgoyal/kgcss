@@ -38,6 +38,8 @@ from kgcss.tokenizer import TokenType
 
 __all__ = ['FontDict', 'parse_font', 'parse_font_family', 'serialize_font', 'serialize_font_family']
 
+# Not closed (PEP 728), which would let type checkers merge it into a dict[str, str | list[str]]: TypedDict
+# only takes closed= from Python 3.15, and ty does not use it for assignability yet
 FontDict = TypedDict(
     'FontDict',
     {
