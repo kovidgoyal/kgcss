@@ -111,7 +111,7 @@ def observe(css: Any, CSSRule: Any) -> list[object]:  # noqa: ANN401
 
 # What differs, by observation index, and why: the facade follows kgcss
 DIFFERENCES: dict[int, str] = {
-    15: 'single-line text quotes strings with single quotes, so that it is safe in style="" (requirements §18)',
+    15: 'single-line text quotes strings with single quotes, so that it is safe in style=""',
 }
 
 

@@ -38,7 +38,7 @@ class Select[E]:
     Select is in use, as it works on a snapshot of the tree taken here.
 
     Matching is HTML-style: tag names, attribute names and namespaces as in
-    the requirements (9.2). Tag and attribute names are ASCII
+    calibre needs. Tag and attribute names are ASCII
     case-insensitive and namespaces are ignored. Attribute values are
     case-sensitive, unless the selector has the i flag. IDs and classes are
     case-sensitive, as in standards mode HTML, or ASCII case-insensitive with

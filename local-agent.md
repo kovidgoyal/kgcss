@@ -1,8 +1,11 @@
 # Instructions for coding agents working on kgcss
 
 kgcss is a fast and comprehensive CSS library for Python. Performance-critical
-parts are written in C99. The scope is in `requirements.md`. Read the relevant
-section before you implement a feature.
+parts are written in C99. It replaces what calibre used css_parser, tinycss,
+css_selectors and (in Check Book) stylelint for: parsing, the object model,
+serialization, URL rewriting, selector matching, media queries, colors,
+fonts, shorthands and linting. calibre is the main user, so its needs decide
+behaviour where CSS leaves room.
 
 ## Layout
 
@@ -44,6 +47,18 @@ section before you implement a feature.
 | `tests/css-parsing-tests/` | Vendored CC0 conformance suite. Do not edit; record differences in the runners |
 | `tests/` | pytest test suite |
 | `setup.py` | Builds the extension only; all metadata lives in `pyproject.toml` |
+| `src/kgcss/linter/` | The linter, `kgcss.lint()`: stylelint's rules on ports of the JavaScript libraries they use. See "The linter" below |
+| `src/kgcss/linter/__init__.py` | The public API (`lint()`, `LintRule`, `LintProblem`, `TextEdit`, `SyntaxProblem`, `LINT_RULES`) and the registry of rules |
+| `src/kgcss/linter/_engine.py` | Running the rules: parsing, positions as stylelint computes them (`rangeBy`), options, disable comments, edits and the fix passes |
+| `src/kgcss/linter/_rules/` | One module per rule, named after it, with `check(root, ctx)`, and `OPTIONS`/`OPTION_VALUES` for the secondary options it supports. Imported when first used |
+| `src/kgcss/linter/_postcss.py` | Port of PostCSS 8.5 (tokenizer, parser, `toString()`) and postcss-safe-parser 7 |
+| `src/kgcss/linter/_value_parser.py` | Port of postcss-value-parser 4.2 |
+| `src/kgcss/linter/_selector_parser.py`, `_selector_tools.py` | Ports of postcss-selector-parser 7.2 and of @csstools/selector-specificity and selector-resolve-nested |
+| `src/kgcss/linter/_csstools.py`, `_media_query.py` | @csstools/css-tokenizer tokens (made from kgcss's C tokenizer), and ports of @csstools/css-parser-algorithms and media-query-list-parser |
+| `src/kgcss/linter/_utils.py`, `_selector_helpers.py`, `_fonts.py`, `_disables.py` | Ports of the helpers in stylelint's `lib/utils` that rules share, and of its disable comments |
+| `src/kgcss/_css_data.py` | **Generated** by `tools/generate_css_data.py` from the pinned stylelint and css-tree: the names the rules know. Do not edit by hand |
+| `tests/stylelint-rules/` | **Generated** by `tools/extract_stylelint_tests.py`: the test cases of stylelint's own rules (MIT). Do not edit; record differences in the runners |
+| `bench/stylelint/` | `package.json` and lock file pinning stylelint 18.1.0 and @stylistic/stylelint-plugin 6.0.1, the oracle of the linter tests |
 | `docs/*.rst`, `docs/guide/` | The user documentation (Sphinx, built by Read the Docs from `.readthedocs.yaml`). Update it with any change to the public API: the guide's examples are doctests, run by `sphinx-build -b doctest`, and the API reference lists members explicitly in `docs/api.rst` |
 
 ## Workflow
@@ -86,9 +101,9 @@ Before you report work as done, all of the following must pass:
   `__all__`.
 - Prefer immutable data, `__slots__`, and `typing.Final` constants.
 - Do not use module-level mutable state such as caches, global loggers or
-  global settings. Pass options and loggers/callbacks per call
-  (requirements.md §13, L1). Any cache must be thread safe, because the
-  library must work without the GIL.
+  global settings. Pass options and loggers/callbacks per call: calibre
+  creates parsers with different settings in the same process. Any cache
+  must be thread safe, because the library must work without the GIL.
 - Hot paths (tokenizing, color parsing, serialization of large sheets,
   selector matching) belong in C. Python is for the object model and API
   surface.
@@ -114,7 +129,7 @@ Before you report work as done, all of the following must pass:
 - Py_ssize_t is for lengths and indices. Work with `PyUnicode_KIND` /
   `PyUnicode_DATA` / `PyUnicode_READ` directly instead of converting to
   UTF-8, so that source offsets stay in code points and match Python string
-  indices (requirements.md T2, T7).
+  indices: callers slice the source with token offsets to rewrite it.
 - Parsers must never read past the end of input, and must handle any input,
   including invalid UTF-16 surrogates, NUL and huge inputs, without crashing.
 - Do not use `strtod()` or other locale-dependent functions: calibre's GUI
@@ -208,6 +223,76 @@ the C version must give exactly the same results:
   property refers to refers back to it. Keep it that way, or track them
   again.
 
+## The linter
+
+`kgcss.lint()` runs stylelint's rules, and must report what stylelint 18.1.0
+reports (with @stylistic/stylelint-plugin 6.0.1 for `no-extra-semicolons`):
+the same problems, messages, lines and columns, and the same fixed text. So
+the linter is a port: of each rule, and of the JavaScript libraries the
+rules use (see the layout above). The ports are faithful, quirks included,
+and each names what it ports. Read the JavaScript before you change a port
+or add a rule: stylelint is installed in `bench/.cache/stylelint` by
+`uv run --group bench python bench/bench_parse.py prepare` (needs npm).
+
+- Keep JavaScript semantics where Python differs: JavaScript's `\s` and
+  `trim()` whitespace (`JS_WHITESPACE` in `_postcss.py`), its ASCII-only `\w`,
+  `\d` and `\b`, `x || y` (0 and '' are false), `charCodeAt()` past the end
+  (NaN), `lastIndexOf()` with a negative index, `Array.forEach()` over a list
+  that the callback changes, and `localeCompare()` sorts (any total order is
+  fine where the order only serves comparisons). Write non-ASCII characters
+  in source as `\u` escapes.
+- Positions are offsets into the text (Python indexes, so code points) and
+  stylelint's lines and columns. stylelint counts columns in UTF-16 code
+  units; kgcss in code points. The tests convert.
+- A rule is a module in `_rules/` with `check(root, ctx)`, registered in
+  `LintRule`, `_DESCRIPTIONS` (and `_FIXABLE`, `_STYLISTIC`) in
+  `linter/__init__.py`. Report with `ctx.report()` as stylelint's `report()`
+  is called (`index`/`end_index`, `word`, or `start`/`end`). Messages are
+  stylelint's without the " (rule-name)" suffix, and `args` are its
+  `messageArgs` as strings. Support the secondary options the extracted test
+  cases use, under stylelint's names, listed in `OPTIONS` and, for keyword
+  lists, `OPTION_VALUES`; anything else raises ValueError.
+- Fixes are `TextEdit`s of the original text, computed as stylelint computes
+  its edit info: print the changed node and narrow the difference
+  (`narrow_edit()`, `removal_edit()`). Where fixes depend on each other,
+  give later problems the edit of all the fixes (see
+  `function_calc_no_unspaced_operator.py`). `lint(fix=True)` applies the
+  edits that do not overlap and lints again, until nothing changes.
+- Rule modules, and `_css_data.py`, are imported when first used:
+  `tests/test_linter.py` checks that `import kgcss` loads none of them.
+- `ctx.cache` lives for one `lint()` call and is shared by its rules. Use it
+  for results that depend only on their key, as stylelint caches them
+  (parsed selectors, resolved nesting, normalized selectors). Never add
+  module-level caches.
+- Where stylelint crashes on some input, skip that part rather than raise:
+  `lint()` must not raise for any text.
+
+Tests (run them with `HYPOTHESIS_PROFILE=thorough` after any change here):
+
+- `tests/test_linter_stylelint_cases.py` runs stylelint's own test cases
+  (`tests/stylelint-rules`) for every rule and supported config. Record a
+  deliberate difference in `KNOWN_DIFFERENCES` (or `IGNORED_MESSAGES`) with
+  the reason, never by changing the expected values.
+- `tests/test_linter_vs_stylelint.py` compares `lint()` with stylelint,
+  warnings and fixed text, on random sheets (`lint_css` and `css_text` in
+  `tests/strategies.py`). Add fragments to `LINT_FRAGMENTS` for new rules and
+  check that every rule fires on them. The `assume()`s and comments there
+  list the differences that are known and deliberate.
+- The ports are compared with the originals on random input:
+  `test_linter_postcss.py` (trees, raws, errors, `toString()`),
+  `test_linter_value_parser.py`, `test_linter_selector_parser.py` and
+  `test_linter_csstools.py`. The oracles are `tests/stylelint_oracle.py` and
+  `tests/csstools_oracle.py` (Node processes); the tests skip themselves when
+  stylelint is not installed, so install it.
+- `tests/test_stylelint_fixtures.py` checks the extracted test cases against
+  stylelint itself, and `tests/test_css_data.py` that `_css_data.py` is up to
+  date.
+- To move to a new stylelint: change the versions in
+  `bench/stylelint/package.json` (then `npm install` there for the lock file)
+  and in `tools/extract_stylelint_tests.py`, run `prepare`, regenerate
+  `tests/stylelint-rules` and `_css_data.py` (see the docstrings of the two
+  tools), and fix what the tests find.
+
 ## Tests
 
 - Use pytest with plain `assert`s. Use `pytest.mark.parametrize` for tables
@@ -225,9 +310,10 @@ the C version must give exactly the same results:
   about: generate a few thousand examples and count them by kind, as
   the property tests of `tests/test_colors.py` and `tests/test_shorthands.py` were checked.
 - Warnings are errors (`filterwarnings = error`).
-- When you port behaviour from the calibre tests listed in requirements.md
-  §16, keep the original inputs and expected outputs. If a quirk from §18 is
-  being fixed, comment why the expected value differs.
+- When you port behaviour from calibre's tests (of css_parser, tinycss,
+  css_selectors and the code using them), keep the original inputs and
+  expected outputs. Where a quirk of those libraries is fixed instead,
+  comment why the expected value differs.
 
 ## Performance
 
@@ -259,6 +345,9 @@ the C version must give exactly the same results:
 - `bench/bench_media.py` measures `parse_media_queries` (with and without
   its cache) and `media_matches` against tinycss's media3 parser.
 - `bench/bench_fonts.py` measures the font helpers against tinycss.fonts3.
+- `bench/bench_lint.py` measures `kgcss.lint` (and fixing) against stylelint
+  in Node, which `prepare` installs if npm is there. `bench_parse.py` has a
+  `lint` workload for `ab_compare.py`.
 - Garbage collection is a large part of the cost of creating many Python
   objects, as every collection walks the tracked objects. In hot paths,
   avoid allocating container objects you do not keep. Note that

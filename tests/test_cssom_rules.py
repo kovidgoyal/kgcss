@@ -213,7 +213,7 @@ def test_specific_grouping_attributes() -> None:
 def test_media_list() -> None:
     assert list(MediaList('')) == []
     assert not MediaList('  ')
-    # Invalid media text is kept exactly as written (requirements M2)
+    # Invalid media text is kept exactly as written
     ml = MediaList('(min-width:10px) and screen')
     assert ml.media_text == '(min-width:10px) and screen'
     assert list(ml) == ['(min-width:10px) and screen']
@@ -302,7 +302,7 @@ def test_unknown_at_rules() -> None:
     assert (foo.name, foo.prelude_text, foo.block_text) == ('-webkit-foo', 'bar', None)
     assert isinstance(x, UnknownAtRule)
     assert x.name == 'x'
-    # Unknown at-rules are kept exactly (requirements P6)
+    # Unknown at-rules are kept exactly
     assert serialize(keyframes, PRESERVE) == '@Keyframes  k  { from { a: url(b.png) } }'
 
 
@@ -475,7 +475,7 @@ def test_parsing_is_linear() -> None:
 
 
 def test_iter_declaration_blocks() -> None:
-    # requirements 3.4: every declaration block, at any depth
+    # Every declaration block, at any depth
     css = (
         'a{b:c; d{e:f} g:h} @media x { i{j:k} } @page { l:m; @top-left { n:o } } @font-face { src: url(x) } '
         '@supports (a:b) { p{q:r} } @keyframes k { from { s:t } } @import "i.css";'
@@ -493,7 +493,7 @@ def test_iter_declaration_blocks() -> None:
 
 
 def test_encoding_from_charset() -> None:
-    # requirements 3.1, S4: for text, the encoding is what @charset says; for bytes, what decoded them
+    # For text, the encoding is what @charset says; for bytes, what decoded them
     assert kgcss.parse_stylesheet('@charset "latin1"; a{}').encoding == 'latin1'
     assert kgcss.parse_stylesheet('a{}').encoding is None
     assert kgcss.parse_stylesheet(b'a{}').encoding == 'utf-8'

@@ -298,7 +298,7 @@ def test_positions() -> None:
 
 
 def test_offsets_are_python_indices() -> None:
-    # Selector rewriting (requirements T7) slices the source with token offsets
+    # Selector rewriting slices the source with token offsets
     sel = 'é日\U0001f600 #old-id > [id="old-id"]'
     stream = tokenize(sel)
     out = []

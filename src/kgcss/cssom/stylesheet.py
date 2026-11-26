@@ -309,8 +309,8 @@ class Stylesheet:
                 stack.append(iter(imported.rules))
 
     def iter_declaration_blocks(self, *, follow_imports: bool = False) -> Iterator[DeclarationBlock]:
-        """The declaration block of every rule that has one, in document order, at any depth (requirements
-        3.4): style rules and those nested in them, the declarations nested among their rules, @font-face,
+        """The declaration block of every rule that has one, in document order, at any depth:
+        style rules and those nested in them, the declarations nested among their rules, @font-face,
         and @page with its margin rules, inside grouping rules too. With follow_imports=True the blocks of
         imported sheets are included, as for iter_rules()."""
         for rule in self.iter_rules(follow_imports=follow_imports):

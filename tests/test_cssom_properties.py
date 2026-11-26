@@ -170,7 +170,7 @@ def check_value_tree(value: PropertyValue) -> None:
         v = stack.pop()
         assert len(v) == len([i for i in v.items if not isinstance(i, Separator)])
         for item in v.items:
-            # Every component's text appears verbatim in its parent's text (requirements V6)
+            # Every component's text appears verbatim in its parent's text
             assert item.css_text in v.css_text
             if isinstance(item, Function):
                 stack.append(item.arguments)

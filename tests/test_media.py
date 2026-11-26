@@ -70,7 +70,7 @@ def test_media3_general_enclosed() -> None:
     assert not q.matches(media_type=lambda t: True, feature=lambda f: True)
 
 
-# calibre's stylizer.media_ok(), on media_matches(), as in porting.md §5.3
+# calibre's stylizer.media_ok(), on media_matches()
 ALLOWED_MEDIA_TYPES = frozenset({'screen', 'all', 'aural', 'amzn-kf8'})
 IGNORED_MEDIA_FEATURES = frozenset(
     [

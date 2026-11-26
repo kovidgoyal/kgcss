@@ -134,7 +134,7 @@ def test_insert_rule() -> None:
 
 
 def test_insert_rule_copies_rules_from_elsewhere() -> None:
-    # requirements 3.1: Kobo inserts the same rules into many sheets
+    # Kobo inserts the same rules into many sheets
     extra = parse_stylesheet('a { b: c }')
     rule = extra.rules[0]
     one, two = parse_stylesheet(''), parse_stylesheet('')
@@ -187,7 +187,7 @@ def test_delete_rule() -> None:
 
 
 def test_add() -> None:
-    # requirements 3.1: add() puts @charset, @import and @namespace in a valid position
+    # add() puts @charset, @import and @namespace in a valid position
     sheet = parse_stylesheet('/* c */ @import "a"; @namespace "n"; p {}')
     sheet.add('@import "b"')
     sheet.add('@namespace x "m"')

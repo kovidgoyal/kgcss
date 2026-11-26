@@ -32,7 +32,7 @@ def decls(css: str) -> str:
     return parse_style(css).css_text
 
 
-# Expectations pinned by calibre's own tests (requirements §16)
+# Expectations pinned by calibre's own tests
 
 
 def test_kepubify_round_trip() -> None:
@@ -94,7 +94,7 @@ def test_selector_text() -> None:
     ],
 )
 def test_selector_normalization(selector: str, expected: str) -> None:
-    # requirements 3.3: whitespace normalized, escapes (bug fix), case and comments kept
+    # Whitespace normalized, escapes (bug fix), case and comments kept
     assert StyleRule(selector).selector_text == expected
 
 
@@ -165,7 +165,7 @@ def test_declarations() -> None:
 
 
 def test_single_line() -> None:
-    # requirements 4.1: safe inside a double-quoted HTML attribute
+    # Safe inside a double-quoted HTML attribute
     block = parse_style('a: b; /* c */ content: "x \\"y\\" \'z\'"; d: url("a b") !important; e: \\"f')
     text = block.to_css(single_line=True)
     assert text == "a: b; content: 'x \\22 y\\22  \\'z\\''; d: url('a b') !important; e: \\22 f"
@@ -388,7 +388,7 @@ def test_found_by_property_tests(css: str) -> None:
 def test_dropped_comments_in_selectors() -> None:
     from kgcss.cssom.serializer import normalize_selector
 
-    # Comments in selectors are part of the selector text (requirements 3.3), keep_comments=False
+    # Comments in selectors are part of the selector text, keep_comments=False
     # applies to comment rules and to comments in declarations
     no_comments = SerializeOptions(keep_comments=False)
     sheet = parse_stylesheet('/* x */ a/**/.b {c: d /* y */}')

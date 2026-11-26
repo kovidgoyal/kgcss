@@ -150,7 +150,7 @@ def test_declarations() -> None:
     for css in ('a: b !importantx', 'a: b important', 'a: b !important !', 'a: b !İmportant'):
         assert not decl(css).important, css
     assert decl('a: !important').value.text == ''
-    # Unknown priorities stay in the value (requirements P15)
+    # Unknown priorities stay in the value
     d = decl('zoom: 1 !ie')
     assert (d.value.text, d.important) == ('1 !ie', False)
     for css, kind in [

@@ -13,7 +13,7 @@
  *    kg_next_sibling() and nothing here recurses.
  *  - Comments are not tokens in the spec. They are skipped wherever the spec
  *    skips whitespace, kept inside preludes and values, and emitted as
- *    COMMENT tokens between rules and declarations (requirements P7).
+ *    COMMENT tokens between rules and declarations.
  *  - In nested mode (block contents) a <}-token> ends every consumer exactly
  *    as EOF does, so nested parsing just truncates its range at the first
  *    top level }. Inside a {} block there never is one, since it would have

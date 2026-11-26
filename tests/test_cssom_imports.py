@@ -1,6 +1,6 @@
 # License: BSD-3-Clause Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
-"""The object model: @import (requirements P10, P11, L1, L2)."""
+"""The object model: @import."""
 
 import logging
 from collections.abc import Mapping
