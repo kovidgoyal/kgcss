@@ -9,8 +9,10 @@ the release to appear on PyPI. Set GITHUB_TOKEN to raise the GitHub API rate lim
 """
 
 import ast
+import base64
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -55,6 +57,23 @@ def red(text: str) -> str:
 
 def green(text: str) -> str:
     return '\033[92;1m' + text + '\033[39;22m'
+
+
+def notify(title: str, body: str = '') -> None:
+    """Ring the terminal bell and show a desktop notification with OSC 99, if stdout is a terminal."""
+    if not sys.stdout.isatty():
+        return
+
+    def b64(text: str) -> str:
+        return base64.b64encode(re.sub(r'\033\[[0-9;]*m', '', text).encode()).decode()
+
+    ident = f'i={NAME}-publish:e=1'
+    if body:
+        osc = f'\033]99;{ident}:d=0;{b64(title)}\033\\\033]99;{ident}:p=body;{b64(body)}\033\\'
+    else:
+        osc = f'\033]99;{ident};{b64(title)}\033\\'
+    sys.stdout.write('\a' + osc)
+    sys.stdout.flush()
 
 
 def run(*cmd: str) -> None:
@@ -173,10 +192,7 @@ def wait_for_pypi() -> None:
     print(green(f'{NAME} {VERSION} is published: https://pypi.org/project/{NAME}/{VERSION}/'))
 
 
-def main() -> None:
-    check_repo()
-    if input(f'Publish {NAME} version {red(VERSION)} [y/n]? ') != 'y':
-        raise SystemExit(1)
+def publish() -> None:
     run('git', 'push', 'origin', BRANCH)
     run('git', 'tag', '-s', TAG, '-m', f'version-{VERSION}')
     run('git', 'push', 'origin', TAG)
@@ -187,6 +203,22 @@ def main() -> None:
     except KeyboardInterrupt:
         print(f'\nStopped waiting, the release workflow continues at:\n{ACTIONS_URL}', file=sys.stderr)
         raise SystemExit(1) from None
+
+
+def main() -> None:
+    check_repo()
+    if input(f'Publish {NAME} version {red(VERSION)} [y/n]? ') != 'y':
+        raise SystemExit(1)
+    try:
+        publish()
+    except SystemExit as e:
+        if not isinstance(e.__context__, KeyboardInterrupt):
+            notify(f'Publishing {NAME} {VERSION} failed', e.code if isinstance(e.code, str) else f'Exit code: {e.code}')
+        raise
+    except Exception as e:
+        notify(f'Publishing {NAME} {VERSION} failed', f'{type(e).__name__}: {e}')
+        raise
+    notify(f'{NAME} {VERSION} published', f'https://pypi.org/project/{NAME}/{VERSION}/')
 
 
 if __name__ == '__main__':
