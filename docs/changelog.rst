@@ -1,6 +1,15 @@
 Changelog
 =========
 
+1.1.1
+-----
+
+- :class:`kgcss.Select` is generic over the type of the elements, so type
+  checkers know what it returns: a ``Select`` made from an lxml tree is a
+  ``Select[lxml.etree._Element]``, one made from an ``xml.etree`` tree a
+  ``Select[xml.etree.ElementTree.Element]``. Annotations that name
+  ``Select`` may need the element type added, as ``Select[...]``.
+
 1.1.0
 -----
 
