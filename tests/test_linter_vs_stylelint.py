@@ -26,6 +26,7 @@ from .test_linter_stylelint_cases import IGNORED_MESSAGES
 
 require_oracle()
 
+RE_ESCAPED_ASTRAL_HEX: Final = re.compile(r'\\0*[1-9a-fA-F][0-9a-fA-F]{4,5}')
 CONFIG: Final = {info.stylelint_name: True for info in LINT_RULES.values()}
 # stylelint reports disable comments that make no sense as a CssSyntaxError, and lints nothing; kgcss ignores them
 BAD_DISABLE: Final = re.compile(
@@ -100,4 +101,7 @@ def test_examples(oracle: Stylelint, css: str) -> None:
 def test_random(oracle: Stylelint, css: str) -> None:
     assume(not RE_SURROGATE_PAIR.search(css))  # a high and a low surrogate are one character in JavaScript
     assume(not RE_ESCAPED_ASTRAL.search(css))  # see test_linter_postcss: JavaScript splits such a character
+    # A CSS escape of a character outside the BMP (\\1f600): stylelint adds the JavaScript length of the
+    # unescaped name (2 UTF-16 code units) to a position in the text, where kgcss adds its length (1)
+    assume(not RE_ESCAPED_ASTRAL_HEX.search(css))
     check(oracle, css)

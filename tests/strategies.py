@@ -103,5 +103,21 @@ LINT_FRAGMENTS = (
     '//a{}', 'a{//b:c}', 'a, // b {}', '/**/', '/* */', '/*\n*/',
     'a{content:"x\ny"}', "a[b='c\nd']{}", '@import "a\nb";', 'a{b:foo(1) bar(x) -webkit-baz() --f() calc(1px)}',
     'a{width:c\\61 lc(1px)}', 'a{b:[x(y)] (z(w))}',
+    # selectors
+    'a:hover{color:red}', 'a:hovr{color:red}', 'a::befor{color:red}', 'a:before{color:red}', 'a::-moz-x{color:red}',
+    'foo{color:red}', 'my-elem{color:red}', 'svg|circle{color:red}', 'foreignObject{color:red}',
+    'li:nth-child(2n of p){color:red}',
+    ':root{color:red}', '#id .c{color:red}', '.c{color:red}', '.c, .c{color:red}', 'a b{color:red}', 'b{color:red}',
+    'a:not(.x){color:red}', '&:hover{color:red}', '.p{.c{color:red}}', '.p{& .c{color:red}}', '@media x{.c{color:red}}',
+    '::-webkit-scrollbar:horizontal{color:red}', '@page :first{color:red}', '@page :foo{color:red}',
+    '@keyframes k{from{color:red}FROM{color:blue}0%{a:b}}', 'a\u00a0b{color:red}', 'a{color:\u2003red}',
+    'a{width:calc(1px+2px)}', 'a{width:calc(1px -2px)}', 'a{width:calc(1px  +  2px)}', 'a{width:calc(1px+(2px-3px))}',
+    'a{width:calc(1px- 2px)}', 'a{width:calc(1px -\n2px)}', 'a{width:10pix}', 'a{width:1x}', 'a{width:1PX}',
+    'a{background:image-set("a.png" 2x)}', 'a{image-resolution:2x}', 'a{b:url(1pix)}',
+    '@media (min-width: 10pix){}', '@media (widht: 1px){}', '@media screen and (max-resolution: 2x){}',
+    '@media (--custom){}', '@media (100px < width < 200px){}', '@media (foo: 1) and (bar){}',
+    '@media not all and (x){}',
+    'a{color:red;color:blue}', 'a{color:red !important;COLOR:blue}', 'a{x:1;color:red;y:2;color:red;}',
+    'a{content:"\u00a0"}', '[title="\u2003"]{color:red}', 'a[x=y i]{color:red}', 'a /* c */ > b{color:red}',
 )  # fmt: skip
 lint_css = st.lists(st.sampled_from(LINT_FRAGMENTS), max_size=12).map(''.join)

@@ -12,7 +12,7 @@ from collections.abc import Iterator
 import pytest
 from hypothesis import assume, given
 
-from kgcss.linter._postcss import Container, CssSyntaxError, Node, Parser, RawValue, SafeParser
+from kgcss.linter._postcss import Container, CssSyntaxError, Node, Parser, RawValue, SafeParser, to_string
 
 from .strategies import css_text
 from .stylelint_oracle import Stylelint, require_oracle, utf16_offsets
@@ -46,6 +46,7 @@ def dump(node: Node) -> dict[str, object]:
                 {'raw': value.raw, 'value': value.value} if isinstance(value, RawValue) else value
             )
     ans['raws'] = raws
+    ans['toString'] = to_string(node)
     if isinstance(node, Container) and node.nodes is not None:
         ans['nodes'] = [dump(child) for child in node.nodes]
     return ans
@@ -68,23 +69,32 @@ def to_code_points(tree: dict[str, object], offsets: list[int]) -> dict[str, obj
 type Outcome = dict[str, object] | tuple[str, int, int | None]
 
 
+def without_bom(css: str) -> str:
+    """What PostCSS's Input parses: the text without a byte order mark (U+FEFF or U+FFFE) at its start."""
+    return css[1:] if css[:1] in ('\ufeff', '\ufffe') else css
+
+
 def parsed(css: str) -> Outcome:
     """Our result in the form of the oracle's, with Python offsets."""
     try:
-        return dump(Parser(css).parse())
+        return dump(Parser(without_bom(css)).parse())
     except CssSyntaxError as err:
         return err.reason, err.offset, err.end
 
 
 def expected_result(oracle: Stylelint, css: str, safe: bool = False) -> Outcome:
-    offsets = utf16_offsets(css)
+    offsets = utf16_offsets(without_bom(css))
     result = oracle.parse(css, safe=safe)
     if 'error' in result:
         e = result['error']
         end = e['end']
         return e['reason'], offsets[e['offset']], None if end is None else offsets[end]
     assert 'tree' in result
-    return to_code_points(result['tree'], offsets)
+    tree = to_code_points(result['tree'], offsets)
+    printed = tree['toString']
+    if without_bom(css) != css and isinstance(printed, str):
+        tree['toString'] = printed.removeprefix('\ufeff')  # PostCSS prints a root with the mark it had
+    return tree
 
 
 def check(oracle: Stylelint, css: str) -> None:
@@ -94,7 +104,7 @@ def check(oracle: Stylelint, css: str) -> None:
         # message of an "Unknown word" error then holds, and where its end is. Python strings cannot split one.
         ours, expected = ours[0].split(' ', 2)[:2], expected[0].split(' ', 2)[:2]
     assert ours == expected
-    assert dump(SafeParser(css).parse()) == expected_result(oracle, css, safe=True)
+    assert dump(SafeParser(without_bom(css)).parse()) == expected_result(oracle, css, safe=True)
 
 
 @pytest.mark.parametrize(

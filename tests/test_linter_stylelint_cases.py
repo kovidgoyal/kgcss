@@ -12,13 +12,13 @@ only that, so only that is compared. Deliberate differences are listed in
 KNOWN_DIFFERENCES and IGNORED_MESSAGES.
 """
 
-import importlib
 import re
 from typing import Final, cast
 
 import pytest
 
 from kgcss.linter import LINT_RULES, lint
+from kgcss.linter._engine import check_options
 
 from .linter_compare import as_stylelint, sort_key
 from .stylelint_fixtures import Case, cases
@@ -67,8 +67,11 @@ def options_of(case: Case) -> dict[str, object] | None:
 def supported(case: Case) -> bool:
     if case.rule not in RULE_BY_NAME or (options := options_of(case)) is None:
         return False
-    module = importlib.import_module(LINT_RULES[RULE_BY_NAME[case.rule]].module)
-    return set(options) <= getattr(module, 'OPTIONS', frozenset())
+    try:
+        check_options({RULE_BY_NAME[case.rule]: options})
+    except ValueError:
+        return False
+    return True
 
 
 CASES: Final = tuple(c for c in cases() if supported(c))

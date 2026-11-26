@@ -34,20 +34,31 @@ class LintRule(StrEnum):
     COMMENT_NO_EMPTY = 'comment-no-empty'
     CUSTOM_PROPERTY_NO_MISSING_VAR_FUNCTION = 'custom-property-no-missing-var-function'
     DECLARATION_BLOCK_NO_DUPLICATE_CUSTOM_PROPERTIES = 'declaration-block-no-duplicate-custom-properties'
+    DECLARATION_BLOCK_NO_DUPLICATE_PROPERTIES = 'declaration-block-no-duplicate-properties'
     DECLARATION_BLOCK_NO_SHORTHAND_PROPERTY_OVERRIDES = 'declaration-block-no-shorthand-property-overrides'
     FONT_FAMILY_NO_DUPLICATE_NAMES = 'font-family-no-duplicate-names'
     FONT_FAMILY_NO_MISSING_GENERIC_FAMILY_KEYWORD = 'font-family-no-missing-generic-family-keyword'
+    FUNCTION_CALC_NO_UNSPACED_OPERATOR = 'function-calc-no-unspaced-operator'
     FUNCTION_LINEAR_GRADIENT_NO_NONSTANDARD_DIRECTION = 'function-linear-gradient-no-nonstandard-direction'
     FUNCTION_NO_UNKNOWN = 'function-no-unknown'
+    KEYFRAME_BLOCK_NO_DUPLICATE_SELECTORS = 'keyframe-block-no-duplicate-selectors'
     KEYFRAME_DECLARATION_NO_IMPORTANT = 'keyframe-declaration-no-important'
+    MEDIA_FEATURE_NAME_NO_UNKNOWN = 'media-feature-name-no-unknown'
     NAMED_GRID_AREAS_NO_INVALID = 'named-grid-areas-no-invalid'
+    NO_DESCENDING_SPECIFICITY = 'no-descending-specificity'
     NO_DUPLICATE_AT_IMPORT_RULES = 'no-duplicate-at-import-rules'
+    NO_DUPLICATE_SELECTORS = 'no-duplicate-selectors'
     NO_EMPTY_SOURCE = 'no-empty-source'
     NO_EXTRA_SEMICOLONS = 'no-extra-semicolons'
     NO_INVALID_DOUBLE_SLASH_COMMENTS = 'no-invalid-double-slash-comments'
     NO_INVALID_POSITION_AT_IMPORT_RULE = 'no-invalid-position-at-import-rule'
+    NO_IRREGULAR_WHITESPACE = 'no-irregular-whitespace'
     PROPERTY_NO_UNKNOWN = 'property-no-unknown'
+    SELECTOR_PSEUDO_CLASS_NO_UNKNOWN = 'selector-pseudo-class-no-unknown'
+    SELECTOR_PSEUDO_ELEMENT_NO_UNKNOWN = 'selector-pseudo-element-no-unknown'
+    SELECTOR_TYPE_NO_UNKNOWN = 'selector-type-no-unknown'
     STRING_NO_NEWLINE = 'string-no-newline'
+    UNIT_NO_UNKNOWN = 'unit-no-unknown'
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,8 +86,27 @@ def _stylelint(rule: LintRule, description: str, fixable: bool = False) -> LintR
 
 # The rules of @stylistic/stylelint-plugin
 _STYLISTIC: Final = frozenset({LintRule.NO_EXTRA_SEMICOLONS})
-_FIXABLE: Final = frozenset({LintRule.NO_EXTRA_SEMICOLONS})
+_FIXABLE: Final = frozenset(
+    {
+        LintRule.DECLARATION_BLOCK_NO_DUPLICATE_PROPERTIES,
+        LintRule.FUNCTION_CALC_NO_UNSPACED_OPERATOR,
+        LintRule.NO_EXTRA_SEMICOLONS,
+    }
+)
 _DESCRIPTIONS: Final = {
+    LintRule.MEDIA_FEATURE_NAME_NO_UNKNOWN: 'Disallow unknown media feature names',
+    LintRule.UNIT_NO_UNKNOWN: 'Disallow unknown units',
+    LintRule.FUNCTION_CALC_NO_UNSPACED_OPERATOR: 'Disallow invalid unspaced operator within calc functions',
+    LintRule.NO_IRREGULAR_WHITESPACE: 'Disallow irregular whitespace',
+    LintRule.NO_DESCENDING_SPECIFICITY: (
+        'Disallow selectors of lower specificity from coming after overriding selectors of higher specificity'
+    ),
+    LintRule.NO_DUPLICATE_SELECTORS: 'Disallow duplicate selectors',
+    LintRule.KEYFRAME_BLOCK_NO_DUPLICATE_SELECTORS: 'Disallow duplicate selectors within keyframe blocks',
+    LintRule.SELECTOR_TYPE_NO_UNKNOWN: 'Disallow unknown type selectors',
+    LintRule.SELECTOR_PSEUDO_ELEMENT_NO_UNKNOWN: 'Disallow unknown pseudo-element selectors',
+    LintRule.SELECTOR_PSEUDO_CLASS_NO_UNKNOWN: 'Disallow unknown pseudo-class selectors',
+    LintRule.DECLARATION_BLOCK_NO_DUPLICATE_PROPERTIES: 'Disallow duplicate properties within declaration blocks',
     LintRule.FUNCTION_NO_UNKNOWN: 'Disallow unknown functions',
     LintRule.STRING_NO_NEWLINE: 'Disallow invalid newlines within strings',
     LintRule.NO_DUPLICATE_AT_IMPORT_RULES: 'Disallow duplicate @import rules',

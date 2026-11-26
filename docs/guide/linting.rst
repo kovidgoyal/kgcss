@@ -25,6 +25,28 @@ translated anew, and its position: ``pos`` and ``end`` index the text, and
 reports, except that columns count code points where stylelint counts UTF-16
 code units. Rules can be turned off with ``disabled``.
 
+Options
+-------
+
+Rules take the secondary options of their stylelint documentation (see
+:attr:`kgcss.LintRuleInfo.url`), under the same names. Where stylelint takes
+a regular expression, a compiled pattern works, or a string such as
+``'/^my-/i'``, as in a stylelint configuration. An option or a value that a
+rule does not support raises :class:`ValueError`.
+
+.. doctest::
+
+   >>> import re
+   >>> css = 'my-element { colr: red; color: blue }'
+   >>> [p.message for p in kgcss.lint(css).problems]
+   ['Unknown type selector "my-element"', 'Unknown property "colr"']
+   >>> options = {
+   ...     kgcss.LintRule.SELECTOR_TYPE_NO_UNKNOWN: {'ignore': ['custom-elements']},
+   ...     kgcss.LintRule.PROPERTY_NO_UNKNOWN: {'ignoreProperties': [re.compile('^col')]},
+   ... }
+   >>> kgcss.lint(css, options=options).problems
+   ()
+
 Fixing
 ------
 

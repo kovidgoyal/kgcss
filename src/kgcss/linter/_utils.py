@@ -8,9 +8,13 @@ expressions are translated with their ASCII-only \\w and \\d.
 
 import re
 from collections.abc import Callable, Iterator
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from kgcss.linter._postcss import JS_WHITESPACE, AtRule, Comment, Container, Declaration, Node, Root, Rule
+
+if TYPE_CHECKING:
+    from kgcss.linter._selector_parser import Node as SelectorNode
+    from kgcss.linter._selector_parser import Root as SelectorRoot
 
 RE_VENDOR_PREFIX: Final = re.compile(r'^-[A-Za-z0-9_]+-')
 RE_JS_WHITESPACE: Final = re.compile(f'[{re.escape(JS_WHITESPACE)}]')
@@ -417,3 +421,53 @@ def char_at(text: str, i: int) -> str:
 def at_rule_param_index(at_rule: AtRule) -> int:
     """atRuleParamIndex(): where the params start, relative to the start of the at-rule."""
     return 1 + len(at_rule.name) + len(at_rule.raws.after_name or '')
+
+
+def parse_selector_or_none(selector: str) -> SelectorRoot | None:
+    """parseSelector(): the parsed selector, or None if it is empty or does not parse.
+
+    stylelint reports a selector that does not parse as a parse error, not as a
+    problem: such selectors are skipped here.
+    """
+    from kgcss.linter._selector_parser import SelectorError, parse_selector
+
+    if not selector:
+        return None
+    try:
+        return parse_selector(selector)
+    except SelectorError:
+        return None
+
+
+RE_KEYFRAMES_NAME: Final = re.compile(r'^(-(o|moz|ms|webkit)-)?keyframes$', re.IGNORECASE)
+
+
+def is_keyframe_rule(rule: Rule) -> bool:
+    """isKeyframeRule(): a rule (from, 50%) in @keyframes."""
+    return isinstance(rule.parent, AtRule) and RE_KEYFRAMES_NAME.match(rule.parent.name) is not None
+
+
+def normalize_pseudo_name(value: str) -> str:
+    """normalizePseudoName()."""
+    return value.lower().lstrip(':')
+
+
+def selector_index(node: SelectorNode) -> int:
+    """The source index of a node of a parsed selector, which the parser always sets."""
+    assert node.source_index is not None
+    return node.source_index
+
+
+def node_end_index(node: Rule | AtRule) -> int:
+    """atRuleAfterIndex() and ruleAfterIndex(): the end offset of the node, less its raws.after and }.
+
+    This is an offset into the text, which stylelint then uses as an index into
+    the node: the position it reports is off by the node's offset, as in stylelint.
+    """
+    end = node.end
+    if not end:
+        from kgcss.linter._postcss import to_string
+
+        return len(to_string(node)) - 1
+    after = len(node.raws.after or '')
+    return end - 1 if not after else end - (after + 1)

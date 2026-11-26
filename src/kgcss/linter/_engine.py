@@ -15,7 +15,7 @@ from typing import Final, NamedTuple, Protocol, cast
 
 from kgcss.linter import LINT_RULES, LintProblem, LintResult, LintRule, SyntaxProblem, SyntaxProblemKind, TextEdit
 from kgcss.linter._disables import disabled_ranges, is_disabled
-from kgcss.linter._postcss import CssSyntaxError, Node, Root, parse
+from kgcss.linter._postcss import CssSyntaxError, Node, Root, parse, to_string
 
 # Fixing one problem can leave or make another that a further pass fixes
 MAX_FIX_PASSES: Final = 10
@@ -66,7 +66,7 @@ class Source:
         """node.rangeBy({index, endIndex} or {word})."""
         start, end = self.node_range(node)
         base = start.offset
-        if word is not None:
+        if word:  # if (opts.word): an empty word is no word
             i = self.css[base : end.offset].find(word)
             if i != -1:
                 start, end = self.position(base + i), self.position(base + i + len(word))
@@ -114,13 +114,17 @@ def matches_pattern(value: str, comparison: object) -> bool:
 class Context:
     """What a rule is given besides the tree: where to report, the text and the rule's options."""
 
-    __slots__ = ('options', 'reports', 'rule', 'source')
+    __slots__ = ('cache', 'options', 'reports', 'rule', 'source')
 
-    def __init__(self, rule: LintRule, source: Source, reports: list[Report], options: Options) -> None:
+    def __init__(
+        self, rule: LintRule, source: Source, reports: list[Report], options: Options, cache: dict[object, object]
+    ) -> None:
         self.rule = rule
         self.source = source
         self.reports = reports
         self.options = options
+        # Shared by the rules of one run, for results that depend only on their key (as stylelint's caches)
+        self.cache = cache
 
     def matches(self, option: str, value: str) -> bool:
         """optionsMatches(): whether value is, or matches, the option or an item of it."""
@@ -174,12 +178,71 @@ def load_rule(rule: LintRule) -> RuleModule:
 
 
 def check_options(options: Mapping[LintRule, Options]) -> None:
-    """Raise ValueError for options a rule does not have."""
+    """Raise ValueError for options a rule does not have, or values it does not know.
+
+    A rule module lists its options in OPTIONS, and the values of options that
+    are lists of keywords (such as ignore) in OPTION_VALUES.
+    """
     for rule, opts in options.items():
-        supported: frozenset[str] = getattr(load_rule(rule), 'OPTIONS', frozenset())
+        module = load_rule(rule)
+        supported: frozenset[str] = getattr(module, 'OPTIONS', frozenset())
         if unknown := set(opts) - supported:
             names = ', '.join(sorted(supported)) or 'none'
             raise ValueError(f'Unsupported options for {rule.value}: {", ".join(sorted(unknown))} (supported: {names})')
+        keywords: Mapping[str, frozenset[str]] = getattr(module, 'OPTION_VALUES', {})
+        for name, allowed in keywords.items():
+            value = opts.get(name, ())
+            values = value if isinstance(value, (list, tuple)) else (value,)
+            if bad := [v for v in values if v not in allowed]:
+                raise ValueError(f'Unsupported values of {name} for {rule.value}: {bad} (supported: {sorted(allowed)})')
+
+
+def narrow_edit(css: str, start: int, end: int, text: str) -> TextEdit:
+    """narrowFixRange(): replace css[start:end] with text, without the prefix and suffix they share."""
+    original = css[start:end]
+    prefix = 0
+    limit = min(len(original), len(text))
+    while prefix < limit and original[prefix] == text[prefix]:
+        prefix += 1
+    suffix = 0
+    while (
+        suffix < len(original) - prefix
+        and suffix < len(text) - prefix
+        and original[len(original) - 1 - suffix] == text[len(text) - 1 - suffix]
+    ):
+        suffix += 1
+    edit_start, edit_end, text_start, text_end = start + prefix, end - suffix, prefix, len(text) - suffix
+    # Try to have a context size of at least 1, as stylelint does
+    if edit_start == edit_end:
+        if edit_start > start:
+            edit_start -= 1
+            text_start -= 1
+        elif edit_end < end:
+            edit_end += 1
+            text_end += 1
+    return TextEdit(edit_start, edit_end, text[text_start:text_end])
+
+
+def removal_edit(css: str, node: Node) -> TextEdit | None:
+    """The edit that removes node from its parent, as PostCSS prints the parent without it."""
+    parent = node.parent
+    if parent is None or parent.nodes is None or parent.start is None or parent.end is None:
+        return None
+    nodes = parent.nodes
+    i = nodes.index(node)
+    # Root.removeChild() gives the next node the raws.before of the first when it removes it
+    following = nodes[1] if isinstance(parent, Root) and i == 0 and len(nodes) > 1 else None
+    before = following.raws.before if following is not None else None
+    del nodes[i]
+    if following is not None:
+        following.raws.before = node.raws.before
+    try:
+        text = to_string(parent)
+    finally:
+        nodes.insert(i, node)
+        if following is not None:
+            following.raws.before = before
+    return narrow_edit(css, parent.start, parent.end, text)
 
 
 def syntax_problem(err: CssSyntaxError, source: Source, shift: int) -> SyntaxProblem:
@@ -198,9 +261,10 @@ def run(text: str, rules: Collection[LintRule], options: Mapping[LintRule, Optio
     source = Source(text[shift:])
     root, err = parse(source.css)
     reports: list[Report] = []
+    cache: dict[object, object] = {}
     for rule in LintRule:  # in a fixed order
         if rule in rules:
-            load_rule(rule).check(root, Context(rule, source, reports, options.get(rule, {})))
+            load_rule(rule).check(root, Context(rule, source, reports, options.get(rule, {}), cache))
     if reports and 'stylelint' in source.css:
 
         def line_of(node: Node, index: int | None, end_index: int | None) -> tuple[int, int]:

@@ -137,7 +137,11 @@ def test_rules() -> None:
         assert info.url.endswith('/' + rule.value)
         assert info.stylelint_name.endswith(rule.value)
         assert callable(importlib.import_module(info.module).check)
-    assert {rule for rule, info in LINT_RULES.items() if info.fixable} == {LintRule.NO_EXTRA_SEMICOLONS}
+    assert {rule for rule, info in LINT_RULES.items() if info.fixable} == {
+        LintRule.DECLARATION_BLOCK_NO_DUPLICATE_PROPERTIES,
+        LintRule.FUNCTION_CALC_NO_UNSPACED_OPERATOR,
+        LintRule.NO_EXTRA_SEMICOLONS,
+    }
 
 
 def test_modules_are_imported_when_used() -> None:

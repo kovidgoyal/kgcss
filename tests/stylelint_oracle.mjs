@@ -53,6 +53,7 @@ function tree(node) {
 	const ans = { type: node.type, start: node.source?.start?.offset ?? null, end: node.source?.end?.offset ?? null };
 	for (const key of NODE_FIELDS) if (node[key] !== undefined) ans[key] = node[key];
 	ans.raws = { ...node.raws };
+	ans.toString = node.toString();
 	if (node.nodes !== undefined) ans.nodes = node.nodes.map(tree);
 	return ans;
 }
