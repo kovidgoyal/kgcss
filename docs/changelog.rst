@@ -1,8 +1,8 @@
 Changelog
 =========
 
-Unreleased
-----------
+1.2.1
+-----
 
 - :func:`kgcss.compat.wrap` is typed by the class of a rule:
   ``wrap(style_rule)`` is a ``CSSStyleRule``, ``wrap(media_rule)`` a
