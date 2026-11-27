@@ -2,31 +2,12 @@
 
 """The C versions of the string predicates of kgcss.linter._utils (csrc/linter.c) against the Python ones."""
 
-from collections.abc import Callable
-
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from kgcss.linter._utils import (
-    has_interpolation,
-    is_standard_syntax_property,
-    is_standard_syntax_selector,
-    is_standard_syntax_value,
-    python_has_interpolation,
-    python_is_standard_syntax_property,
-    python_is_standard_syntax_selector,
-    python_is_standard_syntax_value,
-)
-
+from .linter_c_checks import PREDICATES, check_predicates
 from .strategies import any_char
-
-PAIRS: list[tuple[Callable[[str], bool], Callable[[str], bool]]] = [
-    (has_interpolation, python_has_interpolation),
-    (is_standard_syntax_property, python_is_standard_syntax_property),
-    (is_standard_syntax_selector, python_is_standard_syntax_selector),
-    (is_standard_syntax_value, python_is_standard_syntax_value),
-]
 
 # What the regular expressions look for, and what ends their matches
 PARTS = (
@@ -38,8 +19,7 @@ texts = st.lists(st.one_of(st.sampled_from(PARTS), any_char), max_size=16).map('
 
 
 def check(text: str) -> None:
-    for c, python in PAIRS:
-        assert c(text) == python(text), (python, text)
+    check_predicates(text)
 
 
 @pytest.mark.parametrize(
@@ -111,6 +91,6 @@ def test_random_punctuation(text: str) -> None:
 
 
 def test_bad_arguments() -> None:
-    for c, _ in PAIRS:
+    for c, _ in PREDICATES:
         with pytest.raises(TypeError):
             c(1)  # ty: ignore[invalid-argument-type]

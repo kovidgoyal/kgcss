@@ -723,6 +723,25 @@ class Container(Node):
             self.indexes = None
         return False if result is False else None
 
+    def find_all[T: Node](self, cls: type[T]) -> list[T]:
+        """The descendants of class cls, in the order walk() visits them, and with its depth limit.
+
+        For a callback that only collects nodes, as with walk_pseudos(found.append): this
+        is that, without the bookkeeping walk() has for callbacks that change the tree.
+        """
+        ans: list[T] = []
+        self._find_all(cls, ans, 0)
+        return ans
+
+    def _find_all[T: Node](self, cls: type[T], ans: list[T], depth: int) -> None:
+        if depth > MAX_NESTING_DEPTH:
+            raise SelectorError(f'Cannot walk selector: nesting depth exceeds the maximum of {MAX_NESTING_DEPTH}.')
+        for node in self.nodes:
+            if isinstance(node, cls):
+                ans.append(node)
+            if isinstance(node, Container) and node.nodes:
+                node._find_all(cls, ans, depth + 1)
+
     def _walk_type[T: Node](self, cls: type[T], callback: Callable[[T], object]) -> Literal[False] | None:
         return self.walk(lambda node: callback(node) if isinstance(node, cls) else None)
 

@@ -23,8 +23,6 @@ from kgcss.linter._postcss import (
     CssSyntaxError,
     Declaration,
     Node,
-    Parser,
-    RawValue,
     Root,
     Rule,
     SafeParser,
@@ -34,46 +32,12 @@ from kgcss.linter._postcss import (
     to_string,
 )
 
+from .linter_c_checks import check_postcss
 from .strategies import css_text, lint_css
-
-FIELDS = ('name', 'params', 'selector', 'prop', 'value', 'important', 'text')
-
-type Outcome = dict[str, object] | tuple[str, int, int | None]
-
-
-def dump(node: Node, parent: Container | None) -> dict[str, object]:
-    assert node.parent is parent
-    ans: dict[str, object] = {'class': type(node).__name__, 'start': node.start, 'end': node.end}
-    for key in FIELDS:
-        if hasattr(node, key):
-            ans[key] = getattr(node, key)
-    raws: dict[str, object] = {}
-    for key in node.raws._fields:
-        value = getattr(node.raws, key)
-        raws[key] = (value.raw, value.value) if isinstance(value, RawValue) else value
-    ans['raws'] = raws
-    if isinstance(node, Root):
-        ans['css'] = node.css
-        assert node.descendants is None
-        assert node.by_type == {}
-    if isinstance(node, Container):
-        ans['nodes'] = None if node.nodes is None else [dump(child, node) for child in node.nodes]
-    else:
-        assert not hasattr(node, 'nodes')
-    return ans
-
-
-def outcome(css: str, safe: bool, in_c: bool) -> Outcome:
-    try:
-        root = c_parse(css, safe) if in_c else (SafeParser(css) if safe else Parser(css)).parse()
-    except CssSyntaxError as err:
-        return err.reason, err.offset, err.end
-    return dump(root, None)
 
 
 def check(css: str) -> None:
-    for safe in (False, True):
-        assert outcome(css, safe, True) == outcome(css, safe, False), f'safe={safe}'
+    check_postcss(css)
 
 
 EXAMPLES = (

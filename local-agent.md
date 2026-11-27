@@ -38,6 +38,10 @@ behaviour where CSS leaves room.
 | `csrc/selectors.c` | The selector parser, `CompiledSelector` (a flat array of nodes) and specificity. `selectors.h` has the node layout |
 | `csrc/select.c` | `Snapshot`, the matcher's view of a tree, and matching |
 | `csrc/color.c` | The CSS Color 4 parser, ported from calibre's tinycss, and `RGBA` |
+| `csrc/postcss.c` | The linter's PostCSS parser in C, and `PostcssNode`, the C base of the PostCSS node classes |
+| `csrc/linter.c` | The linter's selector parser, printing and normalizing in C (`SelectorParser`), and string functions of `_selector_parser.py` and `_utils.py` |
+| `csrc/value_parser.c` | `ValueNode` and the linter's postcss-value-parser `parse()` in C |
+| `csrc/records.c` | The small records of the linter (raws, spaces, positions), which the garbage collector does not track |
 | `fuzz/` | libFuzzer harnesses, run with `tools/fuzz.py` |
 | `src/kgcss/decode.py` | Decoding stylesheet bytes: BOM, protocol/`@charset`/environment encodings, WHATWG decoders |
 | `src/kgcss/_encodings.py` | **Generated** by `tools/generate_encodings.py` from WHATWG data. Do not edit by hand. Any new generated file must also be marked `linguist-generated` in `.gitattributes` |
@@ -181,35 +185,54 @@ uv run python tools/sanitize_tests.py -n auto
 This builds into a temporary directory and leaves the normal build alone. It
 runs with `PYTHONMALLOC=malloc`, so ASan also sees Python object
 allocations. For changes to the tokenizer (`csrc/tokenizer*`), the
-selector parser (`csrc/selectors.c`) or the color parser (`csrc/color.c`),
-fuzz for a few minutes too:
+selector parser (`csrc/selectors.c`), the color parser (`csrc/color.c`) or
+the C code of the linter (`csrc/postcss.c`, `csrc/linter.c`,
+`csrc/value_parser.c`, `csrc/records.c`), fuzz for a few minutes too:
 
 ```sh
 uv run python tools/fuzz.py run --seconds 300
 uv run python tools/fuzz.py run --target selectors --seconds 300
 uv run python tools/fuzz.py run --target colors --seconds 300
+uv run python tools/fuzz.py run --target linter --seconds 300
 ```
+
+The `linter` target is differential: it compares every C function of the
+linter with its Python version (`tests/linter_c_checks.py`) and runs
+`lint()`, so it also finds inputs where they differ.
 
 If the fuzzer finds a crash, add the input as a regression test in
 `tests/test_tokenizer.py` before fixing it.
 
 ### C ports of Python code
 
-Some hot CSSOM code exists twice. The Python version is the reference, and
-the C version must give exactly the same results:
+Some hot CSSOM and linter code exists twice. The Python version is the
+reference, and the C version must give exactly the same results:
 
 | Python reference | C version |
 |---|---|
 | `TokenWriter` and `python_write_values()` in `cssom/serializer.py` | `write_values()` in `csrc/writer.c` |
 | `declaration_lines()` in `cssom/serializer.py` | `write_declarations()` in `csrc/writer.c` |
 | `python_find_urls()` in `cssom/urls.py` | `find_urls()` in `csrc/urls.c` |
+| `Parser` and `SafeParser` in `linter/_postcss.py` (`python_parse()`) | `postcss_parse()` in `csrc/postcss.c` (`c_parse()`, `parse()`) |
+| `_Parser` in `linter/_selector_parser.py` (`python_parse_selector()`) | `SelectorParser.parse()` in `csrc/linter.c` (`parse_selector()`) |
+| `Node.to_string()` in `linter/_selector_parser.py` | `SelectorParser.to_string()` (`str()` of a node) |
+| `python_normalize_selector()` in `linter/_selector_helpers.py` | `SelectorParser.normalize()` (`normalize_selector()`) |
+| `python_unesc()`, `python_cssesc()` and `python_tokenize()` in `linter/_selector_parser.py` | `selector_unesc()`, `selector_cssesc()` and `selector_tokenize()` in `csrc/linter.c` |
+| `python_has_interpolation()` and `python_is_standard_syntax_*()` in `linter/_utils.py` | `lint_has_interpolation()` and `lint_is_standard_syntax_*()` in `csrc/linter.c` |
+| `python_parse()` in `linter/_value_parser.py` | `value_parse()` in `csrc/value_parser.c` |
 
-- Change both together. `tests/test_writer.py` compares them on random input
-  and must pass, also with `HYPOTHESIS_PROFILE=thorough`. When a comparison
-  fails, check which side is wrong: the Python version has had bugs too.
+- Change both together. `tests/test_writer.py` compares the CSSOM ones on
+  random input, and `tests/test_linter_*_c.py` the linter ones, with the
+  checks of `tests/linter_c_checks.py`; they must pass, also with
+  `HYPOTHESIS_PROFILE=thorough`. When a comparison fails, check which side
+  is wrong: the Python version has had bugs too.
 - The C versions return `NotImplemented` for rare cases that they leave to
   Python, for example a comment dropped from a selector, where deciding on a
-  separator needs the tokenizer.
+  separator needs the tokenizer. The C selector parser does so for comments,
+  namespaces, strings, named combinators and every error, and has the
+  Python code make the `Attribute` nodes; printing and normalizing leave
+  unusual nodes to Python. `SelectorParser` fills the slots of the Python
+  node classes directly, as their `__init__` would: keep the two in step.
 - The C matcher (`csrc/select.c`) has a reference too, used only by the
   tests: the naive matcher in `tests/selector_oracle.py`. Change both when
   the rules of matching change, and keep the oracle obviously right rather
@@ -222,6 +245,13 @@ the C version must give exactly the same results:
   reference cycle: `Property.parent` is a weak reference, and nothing else a
   property refers to refers back to it. Keep it that way, or track them
   again.
+- The records of `csrc/records.c` (PostCSS's `Raws` and `RawValue`, and the
+  `Position`, `Source`, `Spaces`, `RawSpaces`, `PartSpaces` and `Raws` of
+  selector nodes) are not tracked by the garbage collector either: a field
+  can only hold None, an exact str, int or bool, or a record of a type
+  defined before its own, so they cannot form cycles. Linting a large sheet
+  makes millions of them; as Python objects, collecting them cost more than
+  linting.
 
 ## The linter
 

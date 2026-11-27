@@ -11,6 +11,7 @@ from hypothesis import strategies as st
 from kgcss._kgcss import value_parse
 from kgcss.linter._value_parser import ValueNode, parse, python_parse, stringify
 
+from .linter_c_checks import check_value, dump_value
 from .strategies import FRAGMENTS
 
 VALUE_FRAGMENTS = (
@@ -25,22 +26,8 @@ values = st.lists(st.one_of(st.sampled_from(VALUE_FRAGMENTS), st.characters(excl
 )
 
 
-def dump(node: ValueNode) -> tuple[object, ...]:
-    return (
-        node.type,
-        node.value,
-        node.before,
-        node.after,
-        node.quote,
-        node.unclosed,
-        node.source_index,
-        node.source_end_index,
-        None if node.nodes is None else [dump(n) for n in node.nodes],
-    )
-
-
 def check(value: str) -> None:
-    assert [dump(n) for n in parse(value)] == [dump(n) for n in python_parse(value)]
+    check_value(value)
 
 
 @pytest.mark.parametrize(
@@ -126,7 +113,7 @@ def test_threads() -> None:
     from .test_threads import STRESS
 
     value = 'calc(1px + 2*3) url( x ) "s" a/b, f(g(h)) /* c */ u+0-7f' * 20
-    expected = [dump(n) for n in python_parse(value)]
+    expected = [dump_value(n) for n in python_parse(value)]
     n = 4
     barrier = threading.Barrier(n)
     errors: list[BaseException] = []
@@ -135,7 +122,7 @@ def test_threads() -> None:
         try:
             barrier.wait()
             for _ in range(50 * STRESS):
-                assert [dump(n) for n in parse(value)] == expected
+                assert [dump_value(n) for n in parse(value)] == expected
         except BaseException as e:
             errors.append(e)
 

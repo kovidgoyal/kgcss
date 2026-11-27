@@ -35,10 +35,7 @@ RE_LEADING_COLONS: Final = re.compile(r'^:*')
 
 def pseudos_of(selector: str, cache: dict[object, object]) -> list[Pseudo]:
     parsed = parse_selector_or_none(selector, cache)
-    found: list[Pseudo] = []
-    if parsed is not None:
-        parsed.walk_pseudos(found.append)
-    return found
+    return [] if parsed is None else parsed.find_all(Pseudo)
 
 
 def has_nested_webkit_scrollbar_ancestor(node: Node, cache: dict[object, object]) -> bool:

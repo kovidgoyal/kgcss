@@ -16,10 +16,14 @@ from kgcss._kgcss import SelectorParser, selector_cssesc, selector_tokenize, sel
 from kgcss.linter._selector_helpers import python_normalize_selector
 from kgcss.linter._selector_parser import (
     C_PARSER,
+    ClassName,
     Container,
     Node,
+    Pseudo,
     Root,
+    Selector,
     SelectorError,
+    Tag,
     cssesc,
     python_cssesc,
     python_parse_selector,
@@ -29,6 +33,7 @@ from kgcss.linter._selector_parser import (
     unesc,
 )
 
+from .linter_c_checks import all_selector_nodes, check_print_and_normalize, check_selector_parse, dump_selector
 from .strategies import any_char
 
 # Characters that matter to escapes and selectors, and any others
@@ -186,41 +191,12 @@ def test_threads() -> None:
 # The selector parser
 
 
-def dump_value(value: object) -> object:
-    """A record as its type name and fields, anything else as it is."""
-    fields: tuple[str, ...] | None = getattr(type(value), '_fields', None)
-    if fields is not None and type(value).__module__ == 'kgcss':
-        return (type(value).__name__, *(dump_value(getattr(value, f)) for f in fields))
-    return value
-
-
 def dump_node(node: Node, parent: Container | None) -> dict[str, object]:
-    assert node.parent is parent
-    ans: dict[str, object] = {'class': type(node).__name__}
-    for cls in type(node).__mro__:
-        for name in getattr(cls, '__slots__', ()):
-            if name in ('parent', 'nodes'):
-                continue
-            ans[name] = dump_value(getattr(node, name))
-    if isinstance(node, Container):
-        ans['nodes'] = [dump_node(child, node) for child in node.nodes]
-    return ans
+    return dump_selector(node, parent)
 
 
 def check_parse(text: str) -> bool:
-    """Compare the trees: return whether the C parser parsed text."""
-    ans = C_PARSER.parse(text)
-    try:
-        expected = python_parse_selector(text)
-    except SelectorError:
-        assert ans is NotImplemented
-        return False
-    if ans is NotImplemented:
-        return False
-    assert isinstance(ans, Root)
-    assert dump_node(ans, None) == dump_node(expected, None)
-    assert str(ans) == str(expected)
-    return True
+    return check_selector_parse(text)
 
 
 SELECTOR_EXAMPLES = [
@@ -377,45 +353,6 @@ def test_selector_parser_bad_arguments() -> None:
 # Printing and normalizing
 
 
-def all_nodes(node: Node) -> list[Node]:
-    ans = [node]
-    if isinstance(node, Container):
-        for child in node.nodes:
-            ans.extend(all_nodes(child))
-    return ans
-
-
-def check_print_and_normalize(text: str) -> tuple[int, int]:
-    """Compare C and Python on the trees of both parsers: return how many prints and normalizations C did."""
-    try:
-        trees = [python_parse_selector(text)]
-    except SelectorError:
-        return 0, 0
-    if (tree := C_PARSER.parse(text)) is not NotImplemented:
-        assert isinstance(tree, Root)
-        trees.append(tree)
-    printed = normalized = 0
-    for tree in trees:
-        for node in all_nodes(tree):
-            c = C_PARSER.to_string(node)
-            if c is not NotImplemented:
-                printed += 1
-                assert c == node.to_string()
-            assert str(node) == node.to_string()
-            before = dump_node(node, node.parent)
-            c = C_PARSER.normalize(node)
-            assert dump_node(node, node.parent) == before  # the node itself does not change
-            if c is NotImplemented:
-                continue
-            normalized += 1
-            assert isinstance(c, tuple)
-            ours, string = c
-            expected = python_normalize_selector(node)
-            assert string == expected.string
-            assert dump_node(ours, None) == dump_node(expected.node, None)
-    return printed, normalized
-
-
 @pytest.mark.parametrize('text', SELECTOR_EXAMPLES)
 def test_print_and_normalize_examples(text: str) -> None:
     check_print_and_normalize(text)
@@ -461,7 +398,7 @@ def test_normalize_nested_and_changed() -> None:
     parent = python_parse_selector('.b, .a')
     child = python_parse_selector('& > c, d &')
     resolved = resolve_nested_selector(child, parent)
-    check_nodes = all_nodes(resolved)
+    check_nodes = all_selector_nodes(resolved)
     for node in check_nodes:
         c = C_PARSER.normalize(node)
         if c is not NotImplemented:
@@ -488,3 +425,43 @@ def test_normalize_nested_and_changed() -> None:
         assert normalize_selector(tree).string == '.a b'
 
     tree.each(visit)
+
+
+def walk_outcome(tree: Root, cls: type[Node]) -> object:
+    walked: list[Node] = []
+
+    def visit(node: Node) -> None:
+        if isinstance(node, cls):
+            walked.append(node)
+
+    try:
+        tree.walk(visit)
+    except SelectorError as e:
+        return str(e)
+    return walked
+
+
+def find_all_outcome(tree: Root, cls: type[Node]) -> object:
+    try:
+        return tree.find_all(cls)
+    except SelectorError as e:
+        return str(e)
+
+
+def check_find_all(text: str) -> None:
+    try:
+        tree = python_parse_selector(text)
+    except SelectorError:
+        return
+    for cls in (Pseudo, Tag, ClassName, Selector, Node):
+        assert find_all_outcome(tree, cls) == walk_outcome(tree, cls)
+
+
+@pytest.mark.parametrize('text', [*SELECTOR_EXAMPLES, ':not(' * 140 + 'a' + ')' * 140])
+def test_find_all_examples(text: str) -> None:
+    check_find_all(text)
+
+
+@given(selectors)
+def test_find_all_random(text: str) -> None:
+    check_find_all(text)

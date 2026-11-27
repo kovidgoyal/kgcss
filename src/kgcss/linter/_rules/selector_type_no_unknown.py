@@ -91,9 +91,7 @@ def check(root: Root, ctx: Context) -> None:
         parsed = parse_selector_or_none(rule_selector(rule), ctx.cache)
         if parsed is None:
             continue
-        tags: list[Tag] = []
-        parsed.walk_tags(tags.append)
-        for tag in tags:
+        for tag in parsed.find_all(Tag):
             if not is_standard_syntax_type_selector(tag):
                 continue
             name = tag.value

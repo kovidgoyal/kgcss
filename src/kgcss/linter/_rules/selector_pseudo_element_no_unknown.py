@@ -27,8 +27,7 @@ def check(root: Root, ctx: Context) -> None:
         parsed = parse_selector_or_none(rule_selector(rule), ctx.cache)
         if parsed is None:
             continue
-        pseudos: list[Pseudo] = []
-        parsed.walk_pseudos(pseudos.append)
+        pseudos = parsed.find_all(Pseudo)
         for pseudo in pseudos:
             value = pseudo.value
             if not is_standard_syntax_selector(value) or value[:2] != '::':

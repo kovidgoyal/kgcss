@@ -354,6 +354,8 @@ def check(root: Root, ctx: Context) -> None:
             complaints, _ = analyze(value)
         except TypeError:  # stylelint throws: a unit that starts with -, or an unclosed function when fixing
             continue
+        if not complaints:
+            continue  # the problems do not depend on the fixes, so there is nothing to fix either
         start = declaration_value_index(decl)
         # A fix can depend on an earlier one (an operator that it inserts), so, as stylelint gives edit
         # info for the first fix of a declaration only, the first problem gets the edit of its fix, and

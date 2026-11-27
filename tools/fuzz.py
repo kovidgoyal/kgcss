@@ -3,8 +3,8 @@
 
 """Build and run the libFuzzer harnesses in fuzz/.
 
-    python tools/fuzz.py build [--target tokenizer|selectors|colors]
-    python tools/fuzz.py run --seconds 300 [--target tokenizer|selectors|colors] [-- extra libFuzzer options]
+    python tools/fuzz.py build [--target tokenizer|selectors|colors|linter]
+    python tools/fuzz.py run --seconds 300 [--target tokenizer|selectors|colors|linter] [-- extra libFuzzer options]
 
 Targets:
 
@@ -12,11 +12,15 @@ Targets:
     selectors  the selector parser (fuzz/fuzz_selectors.c), with the whole
                extension compiled in and the Python package from src/
     colors     the color parser (fuzz/fuzz_colors.c), likewise
+    linter     the C code of the linter (fuzz/fuzz_linter.c), likewise, compared with
+               the Python code it ports by tests/linter_c_checks.py
 
 Needs clang with libFuzzer. The corpus lives in build/fuzz/<target>/corpus
 and is seeded the first time: from the conformance suite inputs for the
 tokenizer, from the selector test tables for the selectors, and from the
-color tests and the color files of the suite for the colors. Crashing
+color tests and the color files of the suite for the colors, and from the
+selectors, values and rules of the corpus and the tests of the C code for
+the linter. Crashing
 inputs are written to build/fuzz/<target>/ as crash-*; reproduce one with
 build/fuzz/<target>/fuzz_<target> build/fuzz/<target>/crash-<hash>.
 """
@@ -29,7 +33,7 @@ import sysconfig
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-TARGETS = ('tokenizer', 'selectors', 'colors')
+TARGETS = ('tokenizer', 'selectors', 'colors', 'linter')
 
 
 def out_dir(target: str) -> Path:
@@ -68,6 +72,21 @@ def seed_corpus(target: str) -> Path:
     corpus.mkdir(parents=True, exist_ok=True)
     if any(corpus.iterdir()):
         return corpus
+    if target == 'linter':
+        import ast
+
+        texts: set[str] = set()
+        for name in ('postcss', 'selector', 'value_parser', 'utils'):
+            tree = ast.parse((ROOT / 'tests' / f'test_linter_{name}_c.py').read_text(encoding='utf-8'))
+            texts.update(n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str))
+        # Rules, selectors and values of real sheets
+        for path in sorted((ROOT / 'bench' / '.cache' / 'corpus').glob('*.css'))[:2]:
+            css = path.read_text(encoding='utf-8')
+            for start in range(0, min(len(css), 200_000), 1000):
+                texts.add(css[start : start + 300])
+        for i, text in enumerate(sorted(texts)):
+            (corpus / f'seed-{i}').write_bytes(text.encode('utf-8', 'surrogatepass'))
+        return corpus
     if target in ('selectors', 'colors'):
         import ast
 
@@ -99,7 +118,8 @@ def run(target: str, seconds: int, extra: list[str]) -> int:
     if not binary(target).exists():
         build(target)
     corpus = seed_corpus(target)
-    env = os.environ | {'PYTHONMALLOC': 'malloc', 'PYTHONPATH': str(ROOT / 'src')}
+    path = [str(ROOT / 'src')] + ([str(ROOT)] if target == 'linter' else [])  # tests.linter_c_checks
+    env = os.environ | {'PYTHONMALLOC': 'malloc', 'PYTHONPATH': os.pathsep.join(path)}
     # Python's own allocations at exit are not leaks of ours
     env.setdefault('ASAN_OPTIONS', 'detect_leaks=0')
     cmd = [str(binary(target)), str(corpus), f'-max_total_time={seconds}', '-max_len=4096', '-timeout=10', *extra]
