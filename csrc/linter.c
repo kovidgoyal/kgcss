@@ -1849,3 +1849,219 @@ kg_linter_clear(PyObject *module) {
 }
 
 /* }}} */
+
+/* The string predicates of kgcss/linter/_utils.py {{{
+ *
+ * The C versions of has_interpolation(), is_standard_syntax_property(),
+ * is_standard_syntax_selector() and is_standard_syntax_value(), whose
+ * Python versions are the reference. Each regular expression of those is
+ * decided by a scan, with Python's semantics: . is any character but a line
+ * feed, and $ also matches before a line feed that ends the text.
+ */
+
+typedef struct {
+    int kind;
+    const void *data;
+    Py_ssize_t n;
+} ptext;
+
+static ptext
+ptext_of(PyObject *s) {
+    return (ptext){PyUnicode_KIND(s), PyUnicode_DATA(s), PyUnicode_GET_LENGTH(s)};
+}
+
+#define NO_CHAR_PT 0x110000
+
+static Py_UCS4
+pt_at(const ptext *t, Py_ssize_t i) {
+    return (i >= 0 && i < t->n) ? PyUnicode_READ(t->kind, t->data, i) : NO_CHAR_PT;
+}
+
+/* The index of c in t from start, or -1 */
+static Py_ssize_t
+pt_find(const ptext *t, Py_UCS4 c, Py_ssize_t start) {
+    for (Py_ssize_t i = start < 0 ? 0 : start; i < t->n; i++) {
+        if (PyUnicode_READ(t->kind, t->data, i) == c) return i;
+    }
+    return -1;
+}
+
+/* The index of the two characters a and b in t from start, or -1 */
+static Py_ssize_t
+pt_find2(const ptext *t, Py_UCS4 a, Py_UCS4 b, Py_ssize_t start) {
+    for (Py_ssize_t i = start < 0 ? 0 : start; i + 1 < t->n; i++) {
+        if (PyUnicode_READ(t->kind, t->data, i) == a && PyUnicode_READ(t->kind, t->data, i + 1) == b) return i;
+    }
+    return -1;
+}
+
+static bool
+is_ascii_word_or_dash(Py_UCS4 c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
+}
+
+static bool
+is_js_line_terminator(Py_UCS4 c) {
+    return c == '\n' || c == '\r' || c == 0x2028 || c == 0x2029;
+}
+
+/* JavaScript's \s */
+static bool
+is_js_whitespace(Py_UCS4 c) {
+    switch (c) {
+        case '\t': case '\n': case 0x0b: case '\f': case '\r': case ' ': case 0xa0: case 0x1680: case 0x2028:
+        case 0x2029: case 0x202f: case 0x205f: case 0x3000: case 0xfeff:
+            return true;
+        default:
+            return c >= 0x2000 && c <= 0x200a;
+    }
+}
+
+/* RE_INTERPOLATION.search(): @{.+?} #{.+?} {.+?} or $(.+?), with . any character (DOTALL) */
+static bool
+pt_has_interpolation(const ptext *t) {
+    const Py_ssize_t brace = pt_find(t, '{', 0);
+    if (brace != -1 && pt_find(t, '}', brace + 2) != -1) return true;
+    const Py_ssize_t dollar = pt_find2(t, '$', '(', 0);
+    return dollar != -1 && pt_find(t, ')', dollar + 3) != -1;
+}
+
+static bool
+pt_startswith(const ptext *t, const char *prefix) {
+    const Py_ssize_t n = (Py_ssize_t)strlen(prefix);
+    if (n > t->n) return false;
+    for (Py_ssize_t i = 0; i < n; i++) {
+        if (pt_at(t, i) != (Py_UCS4)(unsigned char)prefix[i]) return false;
+    }
+    return true;
+}
+
+static bool
+pt_endswith(const ptext *t, const char *suffix) {
+    const Py_ssize_t n = (Py_ssize_t)strlen(suffix);
+    if (n > t->n) return false;
+    for (Py_ssize_t i = 0; i < n; i++) {
+        if (pt_at(t, t->n - n + i) != (Py_UCS4)(unsigned char)suffix[i]) return false;
+    }
+    return true;
+}
+
+static bool
+pt_contains(const ptext *t, const char *needle) {
+    const Py_ssize_t n = (Py_ssize_t)strlen(needle);
+    for (Py_ssize_t i = 0; i + n <= t->n; i++) {
+        bool same = true;
+        for (Py_ssize_t j = 0; j < n && same; j++) same = pt_at(t, i + j) == (Py_UCS4)(unsigned char)needle[j];
+        if (same) return true;
+    }
+    return false;
+}
+
+/* RE_LESS_MIXIN_RESOLVED.search(): \.[\w-]+\(.*\).+ with ASCII \w */
+static bool
+less_mixin_resolved(const ptext *t) {
+    for (Py_ssize_t i = 0; i < t->n; i++) {
+        if (pt_at(t, i) != '.') continue;
+        Py_ssize_t j = i + 1;
+        while (j < t->n && is_ascii_word_or_dash(pt_at(t, j))) j++;
+        if (j == i + 1 || pt_at(t, j) != '(') continue;
+        /* .* then ) then .+: a ) before any line feed, followed by a character that is no line feed */
+        for (Py_ssize_t m = j + 1; m < t->n; m++) {
+            const Py_UCS4 c = pt_at(t, m);
+            if (c == '\n') break;
+            if (c == ')' && m + 1 < t->n && pt_at(t, m + 1) != '\n') return true;
+        }
+    }
+    return false;
+}
+
+/* RE_LESS_PARAMETRIC_MIXIN.search(): \(@.*\)$ */
+static bool
+less_parametric_mixin(const ptext *t) {
+    const Py_ssize_t n = t->n;
+    /* Where the closing ) may be: at the end, or before a line feed that ends the text */
+    Py_ssize_t ends[2];
+    int count = 0;
+    if (n >= 1 && pt_at(t, n - 1) == ')') ends[count++] = n - 1;
+    if (n >= 2 && pt_at(t, n - 1) == '\n' && pt_at(t, n - 2) == ')') ends[count++] = n - 2;
+    for (int k = 0; k < count; k++) {
+        const Py_ssize_t e = ends[k];
+        /* A (@ after the last line feed before e, that ends by e */
+        Py_ssize_t start = e - 1;
+        while (start >= 0 && pt_at(t, start) != '\n') start--;
+        for (Py_ssize_t i = start + 1; i + 2 <= e; i++) {
+            if (pt_at(t, i) == '(' && pt_at(t, i + 1) == '@') return true;
+        }
+    }
+    return false;
+}
+
+/* is_standard_syntax_selector() */
+static bool
+pt_standard_selector(const ptext *t) {
+    if (pt_has_interpolation(t) || pt_startswith(t, "%") || pt_endswith(t, ":")) return false;
+    /* RE_LESS_EXTEND: :extend(?:\(.*?\))? matches wherever :extend is */
+    if (pt_contains(t, ":extend") || less_mixin_resolved(t)) return false;
+    if (pt_endswith(t, ")") && pt_find(t, ':', 0) == -1) return false;
+    if (less_parametric_mixin(t)) return false;
+    return !pt_contains(t, "<%") && !pt_contains(t, "%>") && !pt_contains(t, "//");
+}
+
+/* is_standard_syntax_property() */
+static bool
+pt_standard_property(const ptext *t) {
+    /* is_scss_variable() */
+    if (pt_startswith(t, "$") || pt_contains(t, ".$") || pt_startswith(t, "@")) return false;
+    if (pt_endswith(t, "+") || pt_endswith(t, "+_")) return false;
+    return !pt_has_interpolation(t);
+}
+
+/* is_standard_syntax_value() */
+static bool
+pt_standard_value(const ptext *t) {
+    const Py_UCS4 first = pt_at(t, 0);
+    const Py_ssize_t skip = (first == '-' || first == '+' || first == '*' || first == '/') ? 1 : 0;
+    const ptext normalized = {t->kind, (const char *)t->data + skip * t->kind, t->n - skip};
+    if (pt_startswith(&normalized, "$") || pt_startswith(&normalized, "@")) return false;
+    /* RE_SCSS_NAMESPACE_VAR and RE_SCSS_NAMESPACE_FUNCTION: before the first line terminator, a . after a
+     * character, followed by $, or by [-\w]+ and ( */
+    Py_ssize_t line_end = 0;
+    while (line_end < t->n && !is_js_line_terminator(pt_at(t, line_end))) line_end++;
+    for (Py_ssize_t p = 1; p < line_end; p++) {
+        if (pt_at(t, p) != '.') continue;
+        if (pt_at(t, p + 1) == '$') return false;
+        Py_ssize_t q = p + 1;
+        while (q < t->n && is_ascii_word_or_dash(pt_at(t, q))) q++;
+        if (q > p + 1 && pt_at(t, q) == '(') return false;
+    }
+    if (pt_has_interpolation(&normalized)) return false;
+    /* RE_WEBEXTENSION_MSG: __MSG_, then characters that are no whitespace, among which a __ after the first */
+    for (Py_ssize_t i = 0; i + 6 <= t->n; i++) {
+        if (!(pt_at(t, i) == '_' && pt_at(t, i + 1) == '_' && pt_at(t, i + 2) == 'M' && pt_at(t, i + 3) == 'S' &&
+              pt_at(t, i + 4) == 'G' && pt_at(t, i + 5) == '_')) continue;
+        Py_ssize_t run_end = i + 6;
+        while (run_end < t->n && !is_js_whitespace(pt_at(t, run_end))) run_end++;
+        for (Py_ssize_t k = i + 7; k + 2 <= run_end; k++) {
+            if (pt_at(t, k) == '_' && pt_at(t, k + 1) == '_') return false;
+        }
+    }
+    return true;
+}
+
+#define PREDICATE(name, fn) \
+    PyObject *name(PyObject *module, PyObject *text) { \
+        KG_UNUSED(module); \
+        if (!PyUnicode_Check(text)) { \
+            PyErr_Format(PyExc_TypeError, "expected a str, not %.200s", Py_TYPE(text)->tp_name); \
+            return NULL; \
+        } \
+        const ptext t = ptext_of(text); \
+        return Py_NewRef(fn(&t) ? Py_True : Py_False); \
+    }
+PREDICATE(kg_lint_has_interpolation, pt_has_interpolation)
+PREDICATE(kg_lint_standard_property, pt_standard_property)
+PREDICATE(kg_lint_standard_selector, pt_standard_selector)
+PREDICATE(kg_lint_standard_value, pt_standard_value)
+#undef PREDICATE
+
+/* }}} */

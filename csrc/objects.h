@@ -172,6 +172,10 @@ PyObject *kg_selector_unesc(PyObject *module, PyObject *text);
 PyObject *kg_selector_cssesc(PyObject *module, PyObject *const *args, Py_ssize_t nargs);
 PyObject *kg_selector_tokenize(PyObject *module, PyObject *css);
 int kg_linter_init(PyObject *module);
+PyObject *kg_lint_has_interpolation(PyObject *module, PyObject *text);
+PyObject *kg_lint_standard_property(PyObject *module, PyObject *text);
+PyObject *kg_lint_standard_selector(PyObject *module, PyObject *text);
+PyObject *kg_lint_standard_value(PyObject *module, PyObject *text);
 int kg_linter_traverse(PyObject *module, visitproc visit, void *arg);
 void kg_linter_clear(PyObject *module);
 

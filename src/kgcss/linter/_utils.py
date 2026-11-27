@@ -10,6 +10,12 @@ import re
 from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING, Final, cast
 
+from kgcss._kgcss import (
+    lint_has_interpolation,
+    lint_is_standard_syntax_property,
+    lint_is_standard_syntax_selector,
+    lint_is_standard_syntax_value,
+)
 from kgcss.linter._postcss import JS_WHITESPACE, AtRule, Comment, Container, Declaration, Node, Root, Rule
 
 if TYPE_CHECKING:
@@ -66,7 +72,14 @@ def before_block_string(statement: Node, no_raw_before: bool = False) -> str:
     return result + (raws.between or '')
 
 
-def has_interpolation(text: str) -> bool:
+# The string predicates are in C, with the Python versions as the reference (see csrc/linter.c)
+has_interpolation: Final = lint_has_interpolation
+is_standard_syntax_property: Final = lint_is_standard_syntax_property
+is_standard_syntax_selector: Final = lint_is_standard_syntax_selector
+is_standard_syntax_value: Final = lint_is_standard_syntax_value
+
+
+def python_has_interpolation(text: str) -> bool:
     """hasInterpolation(): Less, SCSS, template or postcss-simple-vars interpolation."""
     return RE_INTERPOLATION.search(text) is not None
 
@@ -168,13 +181,13 @@ def is_scss_variable(name: str) -> bool:
     return name.startswith('$') or '.$' in name
 
 
-def is_standard_syntax_property(name: str) -> bool:
+def python_is_standard_syntax_property(name: str) -> bool:
     """isStandardSyntaxProperty(): not a SCSS or Less variable, nor interpolated."""
     if is_scss_variable(name) or name.startswith('@'):
         return False
     if name.endswith(('+', '+_')):  # Less: transform+_: scale(2)
         return False
-    return not has_interpolation(name)
+    return not python_has_interpolation(name)
 
 
 def is_standard_syntax_declaration(decl: Declaration) -> bool:
@@ -269,9 +282,9 @@ RE_LESS_MIXIN_RESOLVED: Final = re.compile(r'\.[\w-]+\(.*\).+', re.ASCII)
 RE_LESS_PARAMETRIC_MIXIN: Final = re.compile(r'\(@.*\)$')
 
 
-def is_standard_syntax_selector(selector: str) -> bool:
+def python_is_standard_syntax_selector(selector: str) -> bool:
     """isStandardSyntaxSelector() of stylelint (the plugin has its own)."""
-    if has_interpolation(selector) or selector.startswith('%') or selector.endswith(':'):
+    if python_has_interpolation(selector) or selector.startswith('%') or selector.endswith(':'):
         return False
     if RE_LESS_EXTEND.search(selector) or RE_LESS_MIXIN_RESOLVED.search(selector):
         return False
@@ -311,14 +324,14 @@ def declaration_value_index(decl: Declaration) -> int:
     return len(decl.prop) + len(decl.raws.between or ':')
 
 
-def is_standard_syntax_value(value: str) -> bool:
+def python_is_standard_syntax_value(value: str) -> bool:
     """isStandardSyntaxValue(): not a SCSS or Less variable, nor interpolated."""
     normalized = value[1:] if value[:1] in ('-', '+', '*', '/') else value
     if normalized.startswith(('$', '@')):
         return False
     if RE_SCSS_NAMESPACE_VAR.search(value) or RE_SCSS_NAMESPACE_FUNCTION.search(value):
         return False
-    return not has_interpolation(normalized) and not RE_WEBEXTENSION_MSG.search(value)
+    return not python_has_interpolation(normalized) and not RE_WEBEXTENSION_MSG.search(value)
 
 
 def is_variable(word: str) -> bool:

@@ -92,6 +92,17 @@ static PyMethodDef module_methods[] = {
     {"value_parse", kg_value_parse, METH_O,
      "value_parse(value: str, /) -> list[ValueNode]\n\n"
      "The C version of parse() in kgcss.linter._value_parser: the nodes of a value, as postcss-value-parser's parse()."},
+    {"lint_has_interpolation", kg_lint_has_interpolation, METH_O,
+     "lint_has_interpolation(text: str, /) -> bool\n\nThe C version of has_interpolation() in kgcss.linter._utils."},
+    {"lint_is_standard_syntax_property", kg_lint_standard_property, METH_O,
+     "lint_is_standard_syntax_property(name: str, /) -> bool\n\n"
+     "The C version of is_standard_syntax_property() in kgcss.linter._utils."},
+    {"lint_is_standard_syntax_selector", kg_lint_standard_selector, METH_O,
+     "lint_is_standard_syntax_selector(selector: str, /) -> bool\n\n"
+     "The C version of is_standard_syntax_selector() in kgcss.linter._utils."},
+    {"lint_is_standard_syntax_value", kg_lint_standard_value, METH_O,
+     "lint_is_standard_syntax_value(value: str, /) -> bool\n\n"
+     "The C version of is_standard_syntax_value() in kgcss.linter._utils."},
     {NULL, NULL, 0, NULL}
 };
 
