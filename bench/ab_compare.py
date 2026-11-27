@@ -103,6 +103,7 @@ def main() -> None:
             'cssom-full',
             'cssom-urls',
             'cssom-serialize',
+            'lint',
             *SELECT_WORKLOADS,
         ),
     )
