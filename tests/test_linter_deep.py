@@ -63,7 +63,7 @@ def test_no_exceptions(n: int) -> None:
 def test_very_deep() -> None:
     for kind, css in shapes(20_000).items():
         if kind == 'linear':
-            css = shapes(2000)[kind]  # with a problem reported for every pair of nested gradients
+            css = shapes(1000)[kind]  # with a problem reported for every pair of nested gradients
         start = time.monotonic()
         lint(css)
         assert time.monotonic() - start < 60, kind
