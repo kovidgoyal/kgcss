@@ -18,6 +18,7 @@
  * when a node needs it.
  */
 
+#include "kgcss.h"
 #include "objects.h"
 #include <structmember.h>
 

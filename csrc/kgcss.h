@@ -99,6 +99,7 @@ typedef struct {
     PyTypeObject *record_types[KG_RECORD_TYPE_COUNT];
     PyTypeObject *PostcssNode_type;
     PyTypeObject *SelectorParser_type;
+    PyTypeObject *ValueNode_type;
 } kg_module_state;
 
 static inline kg_module_state *

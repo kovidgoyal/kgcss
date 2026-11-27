@@ -175,6 +175,12 @@ int kg_linter_init(PyObject *module);
 int kg_linter_traverse(PyObject *module, visitproc visit, void *arg);
 void kg_linter_clear(PyObject *module);
 
+/* value_parser.c */
+PyObject *kg_value_parse(PyObject *module, PyObject *value);
+int kg_value_parser_init(PyObject *module);
+int kg_value_parser_traverse(PyObject *module, visitproc visit, void *arg);
+void kg_value_parser_clear(PyObject *module);
+
 /* postcss.c */
 PyObject *kg_postcss_parse(PyObject *module, PyObject *const *args, Py_ssize_t nargs);
 int kg_postcss_init(PyObject *module);

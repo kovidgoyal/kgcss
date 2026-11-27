@@ -101,8 +101,14 @@ def check(root: Root, ctx: Context) -> None:
         for m in RE_IRREGULARS.finditer(value):
             ctx.report(node, 'Irregular whitespace', index=start + m.start(), end_index=start + m.end())
 
+    def clean(*texts: str | None) -> bool:
+        """Whether none of the texts of a node has irregular whitespace: then no part of them can."""
+        return RE_IRREGULAR.search(''.join(t for t in texts if t)) is None
+
     for at_rule in root.walk_at_rules():
         raws = at_rule.raws
+        if clean(raws.before, at_rule.name, raws.after_name, at_rule_params(at_rule), raws.between, raws.after):
+            continue
         validate(at_rule, raws.before, 0)
         validate(at_rule, at_rule.name, 1)
         validate(at_rule, raws.after_name, 1 + len(at_rule.name))
@@ -112,11 +118,15 @@ def check(root: Root, ctx: Context) -> None:
         validate(at_rule, raws.after, node_end_index(at_rule))
     for rule in root.walk_rules():
         selector = rule_selector(rule)
+        if clean(rule.raws.before, selector, rule.raws.between, rule.raws.after):
+            continue
         validate(rule, rule.raws.before, 0)
         validate(rule, normalize_selector(selector), 0)
         validate(rule, rule.raws.between, len(selector))
         validate(rule, rule.raws.after, node_end_index(rule))
     for decl in root.walk_decls():
+        if clean(decl.raws.before, decl.prop, decl.raws.between, declaration_value(decl)):
+            continue
         validate(decl, decl.raws.before, 0)
         validate(decl, normalize_decl(decl.prop), 0)
         validate(decl, normalize_decl(decl.raws.between), len(decl.prop))

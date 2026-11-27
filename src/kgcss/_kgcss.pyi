@@ -399,3 +399,19 @@ class SelectorParser:
     def parse(self, css: str, /) -> object: ...
     def to_string(self, node: object, /) -> object: ...
     def normalize(self, node: object, /) -> object: ...
+
+# A node of the linter's port of postcss-value-parser
+@final
+class ValueNode:
+    type: str
+    value: str
+    before: str
+    after: str
+    quote: str
+    nodes: list[ValueNode] | None
+    source_index: int
+    source_end_index: int
+    unclosed: bool
+    def __init__(self, type: str, source_index: int, value: str = '') -> None: ...
+
+def value_parse(value: str, /) -> list[ValueNode]: ...

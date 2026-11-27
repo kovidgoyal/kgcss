@@ -13,27 +13,15 @@ import re
 from collections.abc import Callable, Iterable
 from typing import Final
 
+from kgcss._kgcss import ValueNode as _ValueNode
+from kgcss._kgcss import value_parse
+
 RE_UNICODE_RANGE: Final = re.compile(r'^[a-fA-F0-9?-]+$')
 
 
-class ValueNode:
-    """A node: what postcss-value-parser gives as a plain object."""
-
-    __slots__ = ('after', 'before', 'nodes', 'quote', 'source_end_index', 'source_index', 'type', 'unclosed', 'value')
-
-    def __init__(self, type: str, source_index: int, value: str = '') -> None:
-        self.type = type  # word string div space comment function unicode-range
-        self.source_index = source_index
-        self.source_end_index = source_index
-        self.value = value
-        self.before = ''
-        self.after = ''
-        self.quote = ''
-        self.unclosed = False
-        self.nodes: list[ValueNode] | None = None
-
-    def __repr__(self) -> str:
-        return f'ValueNode({self.type}, {self.value!r}, {self.source_index}, {self.source_end_index})'
+# A node: what postcss-value-parser gives as a plain object, in C (see csrc/value_parser.c). Its type is one
+# of word string div space comment function unicode-range
+ValueNode = _ValueNode
 
 
 def _code(value: str, i: int) -> int:
@@ -46,6 +34,11 @@ def _le32(code: int) -> bool:
 
 
 def parse(value: str) -> list[ValueNode]:
+    """The nodes of a value, as postcss-value-parser's parse() (in C, python_parse() is the reference)."""
+    return value_parse(value)
+
+
+def python_parse(value: str) -> list[ValueNode]:
     """The nodes of a value, as postcss-value-parser's parse()."""
     tokens: list[ValueNode] = []
     root = ValueNode('root', 0)

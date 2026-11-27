@@ -89,6 +89,9 @@ static PyMethodDef module_methods[] = {
     {"selector_tokenize", kg_selector_tokenize, METH_O,
      "selector_tokenize(css: str, /) -> list[tuple[int, int, int, int, int, int, int]] | str\n\n"
      "The C version of tokenize() in kgcss.linter._selector_parser: the tokens, or the message of the error."},
+    {"value_parse", kg_value_parse, METH_O,
+     "value_parse(value: str, /) -> list[ValueNode]\n\n"
+     "The C version of parse() in kgcss.linter._value_parser: the nodes of a value, as postcss-value-parser's parse()."},
     {NULL, NULL, 0, NULL}
 };
 
@@ -109,6 +112,7 @@ module_exec(PyObject *module) {
     if (kg_records_init(module) != 0) return -1;
     if (kg_postcss_init(module) != 0) return -1;
     if (kg_linter_init(module) != 0) return -1;
+    if (kg_value_parser_init(module) != 0) return -1;
     return kg_syntax_init(module);
 }
 
@@ -124,6 +128,7 @@ module_traverse(PyObject *module, visitproc visit, void *arg) {
     if (kg_records_traverse(module, visit, arg) != 0) return -1;
     if (kg_postcss_traverse(module, visit, arg) != 0) return -1;
     if (kg_linter_traverse(module, visit, arg) != 0) return -1;
+    if (kg_value_parser_traverse(module, visit, arg) != 0) return -1;
     if (kg_types_traverse(module, visit, arg) != 0) return -1;
     if (kg_values_traverse(module, visit, arg) != 0) return -1;
     return kg_syntax_traverse(module, visit, arg);
@@ -141,6 +146,7 @@ module_clear(PyObject *module) {
     kg_records_clear(module);
     kg_postcss_clear(module);
     kg_linter_clear(module);
+    kg_value_parser_clear(module);
     kg_types_clear(module);
     kg_values_clear(module);
     kg_syntax_clear(module);
