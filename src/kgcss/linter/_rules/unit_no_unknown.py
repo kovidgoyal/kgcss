@@ -15,6 +15,7 @@ from kgcss.linter._csstools import (
     ComponentValue,
     ComponentWalkEntry,
     CSSToken,
+    NestingDepthError,
     TokenType,
     is_function_node,
     is_token_node,
@@ -107,7 +108,11 @@ def check(root: Root, ctx: Context) -> None:
             elif is_function_node(node) or is_token_node(node):
                 check_node(ctx, at_rule, start, node, state)
 
-        for query in parse_from_tokens(tokens):
+        try:
+            queries = parse_from_tokens(tokens)
+        except NestingDepthError:  # blocks nested too deeply, where stylelint throws
+            continue
+        for query in queries:
             query.walk(visit_media, {'ignored': False, 'allow_x': False})
 
     for decl in root.walk_decls():
@@ -131,4 +136,8 @@ def check(root: Root, ctx: Context) -> None:
                 check_node(ctx, decl, start, node, state)
 
         initial = {'ignored': False, 'allow_x': decl.prop.lower() == 'image-resolution'}
-        walk(parse_list_of_component_values(tokens), visit, initial)
+        try:
+            nodes = parse_list_of_component_values(tokens)
+        except NestingDepthError:  # functions or blocks nested too deeply, where stylelint throws
+            continue
+        walk(nodes, visit, initial)

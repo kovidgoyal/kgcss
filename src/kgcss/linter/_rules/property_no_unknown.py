@@ -27,6 +27,8 @@ OPTIONS: Final = frozenset({'checkPrefixed', 'ignoreAtRules', 'ignoreProperties'
 
 def check(root: Root, ctx: Context) -> None:
     check_prefixed = bool(ctx.options.get('checkPrefixed'))
+    # Without the option no ancestor can match it, so the ancestors of deeply nested declarations need no walk
+    ignore_at_rules = bool(ctx.options.get('ignoreAtRules'))
     for decl in root.walk_decls():
         prop = decl.prop
         if not is_standard_syntax_declaration(decl) or is_descriptor_declaration(decl, NESTING_SUPPORTED_AT_KEYWORDS):
@@ -37,7 +39,9 @@ def check(root: Root, ctx: Context) -> None:
             continue
         if isinstance(decl.parent, Rule) and ctx.matches('ignoreSelectors', decl.parent.selector):
             continue
-        if any(isinstance(n, AtRule) and ctx.matches('ignoreAtRules', n.name) for n in ancestors(decl)):
+        if ignore_at_rules and any(
+            isinstance(n, AtRule) and ctx.matches('ignoreAtRules', n.name) for n in ancestors(decl)
+        ):
             continue
         if css_tree_property(prop, CSS_TREE_PROPERTIES) is not None or prop.lower() in PREVIOUSLY_KNOWN_PROPERTIES:
             continue

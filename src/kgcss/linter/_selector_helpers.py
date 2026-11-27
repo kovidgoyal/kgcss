@@ -202,44 +202,98 @@ def resolve_nested_selectors_for_rule(rule: Rule, cache: dict[object, object] | 
     return ans
 
 
+# What a container resolves to for the rules nested in it: the resolved selector (None at the top), or FAILED
+FAILED: Final = object()
+
+
+def _nested_context(container: Container, cache: dict[object, object] | None) -> object:
+    """The selector the rules in container are resolved against, None at the top, FAILED if they are skipped.
+
+    This is the loop of resolveNestedSelectorsForRule() over the ancestors of a
+    rule, up to container. It is cached for each container, so that deep
+    nesting resolves each level once, rather than once for every rule below it.
+    """
+    key = ('nested_context', id(container))
+    if cache is not None and key in cache:
+        return cache[key]
+    # The ancestors not computed yet, innermost first
+    chain: list[Container] = []
+    node: Container | None = container
+    ast: object = None
+    while node is not None:
+        k = ('nested_context', id(node))
+        if cache is not None and k in cache:
+            ast = cache[k]
+            break
+        chain.append(node)
+        node = node.parent
+    for child in reversed(chain):
+        if ast is not FAILED:
+            try:
+                ast = _resolve_level(child, cast('SelectorRoot | None', ast), cache)
+            except SelectorError:  # too many combinations, or too deep, where stylelint throws
+                ast = FAILED
+        if cache is not None:
+            cache[('nested_context', id(child))] = ast
+    return ast
+
+
+def _resolve_level(child: Container, ast: SelectorRoot | None, cache: dict[object, object] | None) -> object:
+    if isinstance(child, AtRule) and RE_SCOPE.match(child.name):
+        return parse_selector_or_none(':where(:scope)')
+    if not isinstance(child, Rule):
+        return ast
+    if not is_standard_syntax_rule(child):
+        return FAILED
+    child_ast = parse_selector_or_none(rule_selector(child), cache)
+    if child_ast is None:
+        return FAILED
+    return child_ast if ast is None else resolve_nested_selector(child_ast, ast)
+
+
 def _resolve_nested_selectors_for_rule(rule: Rule, cache: dict[object, object] | None) -> list[Resolved]:
     own = parse_selector_or_none(rule_selector(rule), cache)
     if own is None:
         return []
-    ancestors: list[Container] = []
-    parent = rule.parent
-    while parent is not None:
-        ancestors.append(parent)
-        parent = parent.parent
-    ast: SelectorRoot | None = None
+    ast = None if rule.parent is None else _nested_context(rule.parent, cache)
+    if ast is FAILED:
+        return []
     try:
-        for child in reversed(ancestors):
-            if isinstance(child, AtRule) and RE_SCOPE.match(child.name):
-                ast = parse_selector_or_none(':where(:scope)')
-                continue
-            if not isinstance(child, Rule):
-                continue
-            if not is_standard_syntax_rule(child):
-                return []
-            child_ast = parse_selector_or_none(rule_selector(child), cache)
-            if child_ast is None:
-                return []
-            ast = child_ast if ast is None else resolve_nested_selector(child_ast, ast)
         ans = []
         for selector in own.nodes:
             root = SelectorRoot(value='', nodes=[selector])
             if ast is None:
                 ans.append(Resolved(selector, root, False))
             else:
-                ans.append(Resolved(selector, resolve_nested_selector(root, ast), True))
+                ans.append(Resolved(selector, resolve_nested_selector(root, cast(SelectorRoot, ast)), True))
         return ans
     except SelectorError:
         return []
 
 
-def at_rule_context(rule: Rule) -> AtRule | None:
-    """findAtRuleContext(): the closest at-rule around the rule, through rules only."""
+def at_rule_context(rule: Rule, cache: dict[object, object] | None = None) -> AtRule | None:
+    """findAtRuleContext(): the closest at-rule around the rule, through rules only.
+
+    With cache (which lives for one run of lint()), the answer for each rule
+    is kept, so that deeply nested rules do not each walk up to the at-rule.
+    """
     parent = rule.parent
-    while isinstance(parent, Rule):
-        parent = parent.parent
-    return parent if isinstance(parent, AtRule) else None
+    if not isinstance(parent, Rule):
+        return parent if isinstance(parent, AtRule) else None
+    if cache is None:
+        while isinstance(parent, Rule):
+            parent = parent.parent
+        return parent if isinstance(parent, AtRule) else None
+    # Up to the first rule whose answer is known, then down again with it
+    chain: list[Rule] = [rule]
+    node: Container | None = parent
+    while isinstance(node, Rule) and ('at_rule_context', id(node)) not in cache:
+        chain.append(node)
+        node = node.parent
+    if isinstance(node, Rule):
+        ans = cast('AtRule | None', cache[('at_rule_context', id(node))])
+    else:
+        ans = node if isinstance(node, AtRule) else None
+    for r in chain:
+        cache[('at_rule_context', id(r))] = ans
+    return ans

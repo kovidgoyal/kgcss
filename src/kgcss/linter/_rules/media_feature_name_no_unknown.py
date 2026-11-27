@@ -16,6 +16,7 @@ from typing import Final
 from kgcss._css_data import MEDIA_FEATURE_NAMES
 from kgcss.linter._csstools import (
     CSSToken,
+    NestingDepthError,
     TokenNode,
     TokenType,
     is_simple_block_node,
@@ -114,7 +115,11 @@ def check(root: Root, ctx: Context) -> None:
     for at_rule in root.walk_at_rules():
         if not RE_MEDIA.match(at_rule.name):
             continue
-        for token in media_feature_names(at_rule_params(at_rule)):
+        try:
+            names = list(media_feature_names(at_rule_params(at_rule)))
+        except NestingDepthError:  # blocks nested too deeply, where stylelint throws
+            continue
+        for token in names:
             name = token.value_data.value
             if name.startswith('--') or ctx.matches('ignoreMediaFeatureNames', name):
                 continue

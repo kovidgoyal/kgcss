@@ -15,7 +15,7 @@ from kgcss._css_data import (
 )
 from kgcss.linter._engine import Context
 from kgcss.linter._postcss import AtRule, Node, Root, Rule
-from kgcss.linter._selector_parser import Combinator, Nesting, Pseudo
+from kgcss.linter._selector_parser import Combinator, Nesting, Pseudo, SelectorError
 from kgcss.linter._selector_parser import Node as SelectorNode
 from kgcss.linter._utils import (
     at_rule_param_index,
@@ -35,7 +35,10 @@ RE_LEADING_COLONS: Final = re.compile(r'^:*')
 
 def pseudos_of(selector: str, cache: dict[object, object]) -> list[Pseudo]:
     parsed = parse_selector_or_none(selector, cache)
-    return [] if parsed is None else parsed.find_all(Pseudo)
+    try:
+        return [] if parsed is None else parsed.find_all(Pseudo)
+    except SelectorError:  # nested too deeply to walk, where stylelint throws
+        return []
 
 
 def has_nested_webkit_scrollbar_ancestor(node: Node, cache: dict[object, object]) -> bool:

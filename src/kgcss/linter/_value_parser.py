@@ -10,7 +10,7 @@ as words.
 """
 
 import re
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from typing import Final
 
 from kgcss._kgcss import ValueNode as _ValueNode
@@ -240,47 +240,79 @@ def python_parse(value: str) -> list[ValueNode]:
     return root.nodes
 
 
+# The end of an iterator, in the explicit stacks that replace the recursion of the JavaScript
+_END: Final = object()
+
+
 def walk(nodes: Iterable[ValueNode], callback: Callable[[ValueNode], bool | None], bubble: bool = False) -> None:
-    """walk(): call callback on every node, depth first; returning False skips a function's nodes."""
-    for node in nodes:
+    """walk(): call callback on every node, depth first; returning False skips a function's nodes.
+
+    With bubble, callback is called on a node after its nodes. As in the
+    JavaScript, the lists are iterated as they are when each item is reached.
+    This keeps a stack rather than recursing, for values nested any depth.
+    """
+    stack: list[tuple[Iterator[ValueNode], ValueNode | None]] = [(iter(nodes), None)]
+    while stack:
+        it, parent = stack[-1]
+        node = next(it, _END)
+        if node is _END:
+            stack.pop()
+            if bubble and parent is not None:
+                callback(parent)
+            continue
+        assert isinstance(node, ValueNode)
         result = None if bubble else callback(node)
         if result is not False and node.type == 'function' and node.nodes is not None:
-            walk(node.nodes, callback, bubble)
-        if bubble:
+            stack.append((iter(node.nodes), node))
+        elif bubble:
             callback(node)
 
 
-def iter_nodes(nodes: Iterable[ValueNode]) -> Iterable[ValueNode]:
+def iter_nodes(nodes: Iterable[ValueNode]) -> Iterator[ValueNode]:
     """Every node, depth first, as walk() visits them."""
-    for node in nodes:
+    stack: list[Iterator[ValueNode]] = [iter(nodes)]
+    while stack:
+        node = next(stack[-1], _END)
+        if node is _END:
+            stack.pop()
+            continue
+        assert isinstance(node, ValueNode)
         yield node
         if node.type == 'function' and node.nodes is not None:
-            yield from iter_nodes(node.nodes)
+            stack.append(iter(node.nodes))
 
 
 def stringify(nodes: ValueNode | Iterable[ValueNode]) -> str:
     """stringify(): the text of nodes."""
-    if isinstance(nodes, ValueNode):
-        return _stringify_node(nodes)
-    return ''.join(_stringify_node(n) for n in nodes)
-
-
-def _stringify_node(node: ValueNode) -> str:
-    t = node.type
-    if t in ('word', 'space'):
-        return node.value
-    if t == 'string':
-        return node.quote + node.value + ('' if node.unclosed else node.quote)
-    if t == 'comment':
-        return '/*' + node.value + ('' if node.unclosed else '*/')
-    if t == 'div':
-        return node.before + node.value + node.after
-    if node.nodes is not None:
-        buf = stringify(node.nodes)
-        if t != 'function':
-            return buf
-        return node.value + '(' + node.before + buf + node.after + ('' if node.unclosed else ')')
-    return node.value
+    out: list[str] = []
+    # The iterators of the nodes being printed, with what follows the last of them
+    stack: list[tuple[Iterator[ValueNode], str]] = [(iter((nodes,) if isinstance(nodes, ValueNode) else nodes), '')]
+    while stack:
+        it, suffix = stack[-1]
+        node = next(it, _END)
+        if node is _END:
+            stack.pop()
+            out.append(suffix)
+            continue
+        assert isinstance(node, ValueNode)
+        t = node.type
+        if t in ('word', 'space'):
+            out.append(node.value)
+        elif t == 'string':
+            out.append(node.quote + node.value + ('' if node.unclosed else node.quote))
+        elif t == 'comment':
+            out.append('/*' + node.value + ('' if node.unclosed else '*/'))
+        elif t == 'div':
+            out.append(node.before + node.value + node.after)
+        elif node.nodes is not None:
+            if t == 'function':
+                out.append(node.value + '(' + node.before)
+                stack.append((iter(node.nodes), node.after + ('' if node.unclosed else ')')))
+            else:
+                stack.append((iter(node.nodes), ''))
+        else:
+            out.append(node.value)
+    return ''.join(out)
 
 
 def _digit(code: int) -> bool:

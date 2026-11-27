@@ -295,7 +295,12 @@ or add a rule: stylelint is installed in `bench/.cache/stylelint` by
   (parsed selectors, resolved nesting, normalized selectors). Never add
   module-level caches.
 - Where stylelint crashes on some input, skip that part rather than raise:
-  `lint()` must not raise for any text.
+  `lint()` must not raise for any text. That includes deep nesting, where
+  stylelint's libraries have limits (`SelectorError` beyond 256 levels of a
+  selector tree, `NestingDepthError` beyond 512 of @csstools) and Node runs
+  out of stack: `tests/test_linter_deep.py` lints deeply nested text of many
+  shapes. Avoid recursion in Python over trees that the input can make
+  deep, and work per node that is proportional to its depth.
 
 Tests (run them with `HYPOTHESIS_PROFILE=thorough` after any change here):
 

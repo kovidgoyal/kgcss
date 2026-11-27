@@ -4,7 +4,8 @@
 
 Selectors are compared normalized (without whitespace and comments, their
 parts in a canonical order) and with nesting resolved, within the same
-at-rule context.
+at-rule context. A rule with a selector nested too deeply to copy, on which
+stylelint throws, is skipped.
 """
 
 from typing import Final
@@ -20,6 +21,7 @@ from kgcss.linter._selector_helpers import (
 from kgcss.linter._selector_parser import Container as SelectorContainer
 from kgcss.linter._selector_parser import Node as SelectorNode
 from kgcss.linter._selector_parser import Root as SelectorRoot
+from kgcss.linter._selector_parser import SelectorError
 from kgcss.linter._utils import is_keyframe_rule, is_standard_syntax_rule, parse_selector_or_none, rule_selector
 
 OPTIONS: Final = frozenset({'disallowInList', 'ignoreSelectors'})
@@ -43,10 +45,7 @@ def check(root: Root, ctx: Context) -> None:
             end_index=end_index,
         )
 
-    for rule in root.walk_rules():
-        if is_keyframe_rule(rule) or not is_standard_syntax_rule(rule):
-            continue
-        seen = contexts.setdefault(at_rule_context(rule), {})
+    def check_rule(rule: Rule, seen: dict[str, int]) -> None:
         rule_line = ctx.source.position(rule.start or 0).line
         if disallow_in_list:
             for entry in resolve_nested_selectors_for_rule(rule, ctx.cache):
@@ -60,7 +59,7 @@ def check(root: Root, ctx: Context) -> None:
                     assert isinstance(entry.selector, SelectorContainer)
                     text, index, end_index = stripped_selector_source(entry.selector)
                     complain(rule, text, index, end_index, line)
-            continue
+            return
         # The selectors of the rule itself
         in_list: dict[str, int] = {}
         if (parsed := parse_selector_or_none(rule_selector(rule), ctx.cache)) is not None:
@@ -77,10 +76,18 @@ def check(root: Root, ctx: Context) -> None:
         # The selector list as a whole, against those of other rules
         nodes = [n for entry in resolve_nested_selectors_for_rule(rule, ctx.cache) for n in entry.resolved.nodes]
         if not nodes or any(ctx.matches('ignoreSelectors', normalize_selector(n, ctx.cache).string) for n in nodes):
-            continue
+            return
         normalized = normalize_selector(SelectorRoot(value='', nodes=nodes), ctx.cache).string
         if (line := seen.get(normalized)) is None:
             seen[normalized] = rule_line
-            continue
+            return
         text = rule_selector(rule).strip(JS_WHITESPACE)
         complain(rule, text, 0, len(text), line)
+
+    for rule in root.walk_rules():
+        if is_keyframe_rule(rule) or not is_standard_syntax_rule(rule):
+            continue
+        try:
+            check_rule(rule, contexts.setdefault(at_rule_context(rule, ctx.cache), {}))
+        except SelectorError:  # nested too deeply to copy or print, where stylelint throws
+            continue

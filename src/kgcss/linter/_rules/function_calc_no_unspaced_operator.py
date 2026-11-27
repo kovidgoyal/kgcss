@@ -19,6 +19,7 @@ from kgcss.linter._csstools import (
     ComponentValue,
     ContainerNode,
     CSSToken,
+    NestingDepthError,
     TokenNode,
     TokenType,
     ValueData,
@@ -352,7 +353,9 @@ def check(root: Root, ctx: Context) -> None:
             continue
         try:
             complaints, _ = analyze(value)
-        except TypeError:  # stylelint throws: a unit that starts with -, or an unclosed function when fixing
+        except TypeError, NestingDepthError:
+            # stylelint throws: on a unit that starts with -, an unclosed function when fixing, or functions or
+            # blocks nested too deeply
             continue
         if not complaints:
             continue  # the problems do not depend on the fixes, so there is nothing to fix either
@@ -366,7 +369,7 @@ def check(root: Root, ctx: Context) -> None:
                 first_fix = value_edit(ctx.css, decl, value, fixed)
             if len(complaints) > 1 and (fixed := analyze(value, apply_all=True)[1]) is not None:
                 all_fixes = value_edit(ctx.css, decl, value, fixed)
-        except TypeError:  # stylelint throws on an unclosed nested function when it fixes
+        except TypeError, NestingDepthError:  # stylelint throws on an unclosed nested function when it fixes
             pass
         for i, c in enumerate(complaints):
             fix = first_fix if i == 0 else all_fixes

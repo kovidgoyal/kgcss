@@ -14,6 +14,7 @@ from kgcss._css_data import CSS_TREE_FUNCTIONS
 from kgcss.linter._csstools import (
     ComponentWalkEntry,
     FunctionNode,
+    NestingDepthError,
     is_function_node,
     parse_list_of_component_values,
     tokenize,
@@ -61,7 +62,11 @@ def check(root: Root, ctx: Context) -> None:
             continue
         if quick and all_known(value):
             continue
-        for func in functions(value):
+        try:
+            found = functions(value)
+        except NestingDepthError:  # functions or blocks nested too deeply, where stylelint throws
+            continue
+        for func in found:
             name = func.get_name()
             if name.startswith('--') or ctx.matches('ignoreFunctions', name):
                 continue

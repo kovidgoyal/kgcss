@@ -7,7 +7,7 @@ from typing import Final
 from kgcss._css_data import PSEUDO_ELEMENTS
 from kgcss.linter._engine import Context
 from kgcss.linter._postcss import Root
-from kgcss.linter._selector_parser import Pseudo
+from kgcss.linter._selector_parser import Pseudo, SelectorError
 from kgcss.linter._utils import (
     is_standard_syntax_rule,
     is_standard_syntax_selector,
@@ -27,7 +27,10 @@ def check(root: Root, ctx: Context) -> None:
         parsed = parse_selector_or_none(rule_selector(rule), ctx.cache)
         if parsed is None:
             continue
-        pseudos = parsed.find_all(Pseudo)
+        try:
+            pseudos = parsed.find_all(Pseudo)
+        except SelectorError:  # nested too deeply to walk, where stylelint throws
+            continue
         for pseudo in pseudos:
             value = pseudo.value
             if not is_standard_syntax_selector(value) or value[:2] != '::':

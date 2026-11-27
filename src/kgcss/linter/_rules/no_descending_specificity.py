@@ -4,7 +4,8 @@
 
 Selectors are grouped by their last compound selector without pseudo-classes,
 within the same at-rule context; a selector that is less specific than an
-earlier one of its group is reported.
+earlier one of its group is reported. A selector nested too deeply to copy,
+on which stylelint throws, is skipped.
 """
 
 from typing import Final, NamedTuple
@@ -18,7 +19,7 @@ from kgcss.linter._selector_helpers import (
     resolve_nested_selectors_for_rule,
     stripped_selector_source,
 )
-from kgcss.linter._selector_parser import Combinator, Pseudo
+from kgcss.linter._selector_parser import Combinator, Pseudo, SelectorError
 from kgcss.linter._selector_parser import Container as SelectorContainer
 from kgcss.linter._selector_parser import Node as SelectorNode
 from kgcss.linter._selector_tools import Specificity, compare, selector_specificity
@@ -119,7 +120,10 @@ def check(root: Root, ctx: Context) -> None:
             continue
         if not has_declaration(rule):
             continue
-        context = contexts.setdefault(at_rule_context(rule), {})
+        context = contexts.setdefault(at_rule_context(rule, ctx.cache), {})
         for entry in resolve_nested_selectors_for_rule(rule, ctx.cache):
             for resolved in list(entry.resolved.nodes):
-                check_selector(resolved, entry.selector, rule, context)
+                try:
+                    check_selector(resolved, entry.selector, rule, context)
+                except SelectorError:  # nested too deeply to copy or print, where stylelint throws
+                    continue

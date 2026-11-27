@@ -17,7 +17,7 @@ from kgcss._css_data import (
 )
 from kgcss.linter._engine import Context
 from kgcss.linter._postcss import Root
-from kgcss.linter._selector_parser import Nesting, Pseudo, Tag, is_pseudo_class, is_pseudo_element
+from kgcss.linter._selector_parser import Nesting, Pseudo, SelectorError, Tag, is_pseudo_class, is_pseudo_element
 from kgcss.linter._utils import (
     is_keyframe_rule,
     is_standard_syntax_rule,
@@ -91,7 +91,11 @@ def check(root: Root, ctx: Context) -> None:
         parsed = parse_selector_or_none(rule_selector(rule), ctx.cache)
         if parsed is None:
             continue
-        for tag in parsed.find_all(Tag):
+        try:
+            tags = parsed.find_all(Tag)
+        except SelectorError:  # nested too deeply to walk, where stylelint throws
+            continue
+        for tag in tags:
             if not is_standard_syntax_type_selector(tag):
                 continue
             name = tag.value
