@@ -56,8 +56,10 @@ def check(oracle: Stylelint, css: str) -> None:
         crash = str(err)
         result = None
     if result is None:
-        # stylelint crashes on some input, such as keyframe-declaration-no-important on "! /**/ important"
-        assert 'TypeError' in crash or 'AssertionError' in crash
+        # stylelint crashes on some input, such as keyframe-declaration-no-important on "! /**/ important", and
+        # no-irregular-whitespace on a selector with irregular whitespace that postcss-selector-parser rejects
+        # ("a\f: a {}"), where kgcss skips the selector
+        assert 'TypeError' in crash or 'AssertionError' in crash or 'postcss-selector-parser' in crash
         reject()
         return
     if any(BAD_DISABLE.search(w['text']) for w in result['warnings']):
