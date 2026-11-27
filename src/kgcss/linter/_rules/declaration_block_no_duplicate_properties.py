@@ -37,10 +37,11 @@ def check(root: Root, ctx: Context) -> None:
     ignore_prefixless = ctx.ignores('consecutive-duplicates-with-same-prefixless-values')
 
     def report(node: Declaration, word: str) -> None:
-        ctx.report(node, DUPLICATE_PROPERTY, (word,), word=word, fix=removal_edit(ctx.css, node))
+        ctx.report(node, DUPLICATE_PROPERTY, (word,), word=word, fix=removal_edit(ctx.css, node, ctx.cache))
 
     for block in each_declaration_block(root):
         decls: list[Declaration] = []
+        index_of: dict[str, int] = {}  # decls.findIndex() by the lowercase property, which all of decls[i] have
         previous = ''
         for decl in block:
             prop = decl.prop
@@ -49,10 +50,11 @@ def check(root: Root, ctx: Context) -> None:
                 continue
             if ctx.matches('ignoreProperties', prop) or lower == 'src':
                 continue
-            index = next((i for i, d in enumerate(decls) if d.prop.lower() == lower), -1)
+            index = index_of.get(lower, -1)
             consecutive = previous == lower
             previous = lower
             if index == -1:
+                index_of[lower] = len(decls)
                 decls.append(decl)
                 continue
             duplicate = decls[index]

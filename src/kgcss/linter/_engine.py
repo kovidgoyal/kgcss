@@ -24,7 +24,20 @@ from kgcss.linter import (
     TextEdit,
 )
 from kgcss.linter._disables import disabled_ranges, is_disabled
-from kgcss.linter._postcss import CssSyntaxError, Node, Root, parse, to_string
+from kgcss.linter._postcss import (
+    Comment,
+    Container,
+    CssSyntaxError,
+    Node,
+    Root,
+    child_semicolon,
+    last_terminated,
+    parse,
+    print_child,
+    print_marked,
+    semicolon_raw,
+    to_string,
+)
 
 SYNTAX_PROBLEM_KINDS: Final[Mapping[str, SyntaxProblemKind]] = {t: k for k, t in SYNTAX_PROBLEM_TEMPLATES.items()}
 # Fixing one problem can leave or make another that a further pass fixes
@@ -236,11 +249,22 @@ def narrow_edit(css: str, start: int, end: int, text: str) -> TextEdit:
     return TextEdit(edit_start, edit_end, text[text_start:text_end])
 
 
-def removal_edit(css: str, node: Node) -> TextEdit | None:
-    """The edit that removes node from its parent, as PostCSS prints the parent without it."""
+def removal_edit(css: str, node: Node, cache: dict[object, object] | None = None) -> TextEdit | None:
+    """The edit that removes node from its parent, as PostCSS prints the parent without it.
+
+    With a cache (ctx.cache), the parent is printed only once for the edits of all its children: removing many
+    children of a large block takes time linear in its size, rather than quadratic.
+    """
     parent = node.parent
     if parent is None or parent.nodes is None or parent.start is None or parent.end is None:
         return None
+    if cache is not None:
+        key = ('removal', id(parent))
+        removals = cache.get(key)
+        if removals is None:
+            removals = cache[key] = _Removals.make(css, parent, parent.start, parent.end) or False
+        if isinstance(removals, _Removals) and (edit := removals.edit(node)) is not None:
+            return edit
     nodes = parent.nodes
     i = nodes.index(node)
     # Root.removeChild() gives the next node the raws.before of the first when it removes it
@@ -256,6 +280,213 @@ def removal_edit(css: str, node: Node) -> TextEdit | None:
         if following is not None:
             following.raws.before = before
     return narrow_edit(css, parent.start, parent.end, text)
+
+
+LCP_BLOCK: Final = 256
+
+
+class _CommonPrefixes:
+    """lcp(i, j): the length of the common prefix of a[i:] and b[j:].
+
+    For each shift j - i, the texts are compared in blocks, by slice comparisons, when first needed, and runs of
+    blocks without a difference are then skipped with path compression. So the queries take time linear in the
+    length of the texts for each shift, rather than for each query.
+    """
+
+    __slots__ = ('a', 'b', 'shifts')
+
+    def __init__(self, a: str, b: str) -> None:
+        self.a, self.b = a, b
+        # For each shift: the first difference in each block that has one, and where to skip to from the others
+        self.shifts: dict[int, tuple[dict[int, int], dict[int, int]]] = {}
+
+    def _difference(self, lo: int, hi: int, shift: int) -> int:
+        """The first k in [lo, hi) with a[k] != b[k + shift], or -1."""
+        a, b = self.a, self.b
+        if a[lo:hi] == b[lo + shift : hi + shift]:
+            return -1
+        while hi - lo > 16:
+            mid = (lo + hi) // 2
+            if a[lo:mid] == b[lo + shift : mid + shift]:
+                lo = mid
+            else:
+                hi = mid
+        while a[lo] == b[lo + shift]:
+            lo += 1
+        return lo
+
+    def lcp(self, i: int, j: int) -> int:
+        shift = j - i
+        end = min(len(self.a), len(self.b) - shift)  # the positions in a that have a counterpart in b
+        block = LCP_BLOCK
+        stop = min(end, (i // block + 1) * block)
+        if i >= stop:
+            return 0
+        if (d := self._difference(i, stop, shift)) >= 0:
+            return d - i
+        if stop == end:
+            return end - i
+        firsts, skips = self.shifts.setdefault(shift, ({}, {}))
+        k = stop // block
+        path: list[int] = []
+        while k * block < end and k not in firsts:
+            nk = skips.get(k)
+            if nk is None:
+                d = self._difference(k * block, min(k * block + block, end), shift)
+                if d >= 0:
+                    firsts[k] = d
+                    break
+                nk = k + 1
+            path.append(k)
+            k = nk
+        for x in path:
+            skips[x] = k
+        return (firsts[k] if k * block < end else end) - i
+
+
+class _Removals:
+    """A container printed once, for removal_edit() of each of its children.
+
+    Removing a child changes the printed text only in that child, and in the child that becomes the last (whose
+    semicolon can change) or the first child of a root (whose raws.before changes). So the text without the child
+    is text[:a] + x + text[b:], and narrow_edit() of it against the source needs only the common prefixes and
+    suffixes of the source and the printed text, from _CommonPrefixes.
+    """
+
+    __slots__ = (
+        'forward', 'index', 'last', 'offsets', 'parent', 'prefix', 'reverse', 'semicolon', 'source', 'start',
+        'suffix', 'text',
+    )  # fmt: skip
+
+    def __init__(self, parent: Container, start: int, source: str, text: str, offsets: list[int]) -> None:
+        self.parent = parent
+        self.start = start
+        self.source = source
+        self.text = text
+        self.offsets = offsets
+        nodes = parent.nodes or []
+        self.index = {id(child): i for i, child in enumerate(nodes)}
+        self.last = last_terminated(nodes)
+        self.semicolon = semicolon_raw(parent)
+        self.forward = _CommonPrefixes(source, text)
+        self.reverse = _CommonPrefixes(source[::-1], text[::-1])
+        self.prefix = self.forward.lcp(0, 0)  # of the source and the whole printed text
+        self.suffix = self.reverse.lcp(0, 0)
+
+    @classmethod
+    def make(cls, css: str, parent: Container, start: int, end: int) -> _Removals | None:
+        """None where the rest of the tree can change how the children print: escape_html() (which needs a <),
+        and the semicolons that raw() takes from other blocks."""
+        if not parent.nodes or end > len(css):  # an unclosed comment ends past the text
+            return None
+        stack: list[Node] = list(parent.nodes)
+        while stack:
+            child = stack.pop()
+            if isinstance(child, Container) and child.nodes:
+                if child.raws.semicolon is None:
+                    return None
+                stack.extend(child.nodes)
+        pieces, marks = print_marked(parent)
+        text = ''.join(pieces)
+        if '<' in text:
+            return None
+        lengths = [0]
+        for piece in pieces:
+            lengths.append(lengths[-1] + len(piece))
+        return cls(parent, start, css[start:end], text, [lengths[m] for m in marks])
+
+    def edit(self, node: Node) -> TextEdit | None:
+        i = self.index.get(id(node), -1)
+        nodes = self.parent.nodes or []
+        n = len(nodes)
+        if i < 0 or n != len(self.offsets) - 1 or nodes[i] is not node:
+            return None
+        last, semicolon, root = self.last, self.semicolon, isinstance(self.parent, Root)
+        # The last child that is not a comment, once node is gone (last_terminated() of the remaining children)
+        if i != last:
+            new_last = last if last < i else last - 1
+        else:
+            k = n - 1
+            while True:
+                if k == i:
+                    k -= 1
+                    continue
+                new_last = k if k < i else k - 1
+                if new_last <= 0 or not isinstance(nodes[k], Comment):
+                    break
+                k -= 1
+        # The children that print differently, by their index before the removal: those whose semicolon changes
+        # and, in a root, the one that becomes first
+        candidates = {last, n - 1, new_last if new_last < i else new_last + 1, n - 2 if i == n - 1 else n - 1}
+        if root and i == 0:
+            candidates.add(1)
+        changed: dict[int, str] = {}
+        for k in candidates:
+            if k == i or not 0 <= k < n:
+                continue
+            child, kr = nodes[k], (k if k < i else k - 1)
+            old = child_semicolon(child, k, n, last, semicolon)
+            new = child_semicolon(child, kr, n - 1, new_last, semicolon)
+            new_first = root and i == 0 and k == 1
+            if old != new or new_first:
+                before = node.raws.before if new_first else child.raws.before
+                if before is None:
+                    before = '' if root and kr == 0 else '\n'
+                changed[k] = before + print_child(child, new)
+        offsets, text = self.offsets, self.text
+        lo, hi = min(i, *changed, i), max(i, *changed, i)
+        a, b = offsets[lo], offsets[hi + 1]
+        x = ''.join(
+            changed[k] if k in changed else text[offsets[k] : offsets[k + 1]] for k in range(lo, hi + 1) if k != i
+        )
+        if '<' in x:
+            return None
+        return self._narrow(a, b, x)
+
+    def _narrow(self, a: int, b: int, x: str) -> TextEdit:
+        """narrow_edit() of the source and the printed text without text[a:b], which x replaces."""
+        o, t = self.source, self.text
+        no, nx = len(o), len(x)
+        nt = len(t) - (b - a) + nx  # the length of the new text, t[:a] + x + t[b:]
+        # The common prefix: of the source and t[:a], then x, then t[b:]
+        if self.prefix < a:
+            prefix = self.prefix
+        else:
+            k, limit = 0, min(nx, no - a)
+            while k < limit and x[k] == o[a + k]:
+                k += 1
+            prefix = a + k
+            if k == nx:
+                prefix += self.forward.lcp(a + nx, b)
+        # The common suffix, likewise from the end
+        tail = len(t) - b
+        if self.suffix < tail:
+            suffix = self.suffix
+        else:
+            k, limit = 0, min(nx, no - tail)
+            while k < limit and x[nx - 1 - k] == o[no - tail - 1 - k]:
+                k += 1
+            suffix = tail + k
+            if k == nx:
+                suffix += self.reverse.lcp(tail + nx, len(t) - a)
+        suffix = min(suffix, no - prefix, nt - prefix)
+        edit_start, edit_end, text_start, text_end = prefix, no - suffix, prefix, nt - suffix
+        if edit_start == edit_end:
+            if edit_start > 0:
+                edit_start -= 1
+                text_start -= 1
+            elif edit_end < no:
+                edit_end += 1
+                text_end += 1
+        # The new text from text_start to text_end
+        parts: list[str] = []
+        if text_start < a:
+            parts.append(t[text_start : min(text_end, a)])
+        if text_end > a and text_start < a + nx:
+            parts.append(x[max(text_start - a, 0) : min(text_end - a, nx)])
+        if text_end > a + nx:
+            parts.append(t[max(text_start, a + nx) - a - nx + b : text_end - a - nx + b])
+        return TextEdit(self.start + edit_start, self.start + edit_end, ''.join(parts))
 
 
 def syntax_problem(err: CssSyntaxError, source: Source, shift: int) -> SyntaxProblem:

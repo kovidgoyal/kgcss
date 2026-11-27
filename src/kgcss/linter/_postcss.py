@@ -17,7 +17,7 @@ its ASCII-only \\w and \\d.
 
 import builtins
 import re
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from typing import ClassVar, Final, NamedTuple, cast
 
 from kgcss._kgcss import PostcssNode, PostcssRaws, PostcssRawValue, postcss_parse
@@ -1042,7 +1042,8 @@ def _is_custom_property(node: Declaration) -> bool:
     return before is None or not RE_NOT_SPACE_OR_SEMICOLON_AT_END.search(before)
 
 
-def _print(node: Node, semicolon: bool, out: list[str]) -> None:
+def _print(node: Node, semicolon: bool, out: list[str], marks: list[int] | None = None) -> None:
+    """Print node to out. If marks is given, the children of node mark their places in it (see _body())."""
     if isinstance(node, Declaration):
         text = node.prop + (node.raws.between if node.raws.between is not None else ': ')
         text += _raw_value(node, node.value, node.raws.value)
@@ -1054,53 +1055,86 @@ def _print(node: Node, semicolon: bool, out: list[str]) -> None:
         right = node.raws.right if node.raws.right is not None else ' '
         out.append('/*' + left + node.text + right + '*/')
     elif isinstance(node, Rule):
-        _block(node, _raw_value(node, node.selector, node.raws.selector), out)
+        _block(node, _raw_value(node, node.selector, node.raws.selector), out, marks)
         if node.raws.own_semicolon:
             out.append(node.raws.own_semicolon)
     elif isinstance(node, AtRule):
         start = _at_rule_start(node)
         if node.nodes is not None:
-            _block(node, start, out)
+            _block(node, start, out, marks)
         else:
             out.append(start + (node.raws.between or '') + (';' if semicolon else ''))
     elif isinstance(node, Root):
-        _body(node, out)
+        _body(node, out, marks)
         if node.raws.after:
             out.append(node.raws.after)
 
 
-def _block(node: Container, start: str, out: list[str]) -> None:
+def _block(node: Container, start: str, out: list[str], marks: list[int] | None = None) -> None:
     out.append(start + (node.raws.between if node.raws.between is not None else ' ') + '{')
     if node.nodes:
-        _body(node, out)
+        _body(node, out, marks)
     if node.raws.after:  # a parsed container always has raws.after
         out.append(node.raws.after)
     out.append('}')
 
 
-def _body(node: Container, out: list[str]) -> None:
-    nodes = node.nodes or []
+def last_terminated(nodes: Sequence[Node]) -> int:
+    """The index of the child that _body() ends without a semicolon of its own: the last that is not a comment."""
     last = len(nodes) - 1
     while last > 0 and isinstance(nodes[last], Comment):
         last -= 1
+    return last
+
+
+def child_semicolon(child: Node, i: int, count: int, last: int, semicolon: bool) -> bool:
+    """Whether _body() prints the child at index i of count children with a semicolon after it."""
+    if last != i or semicolon:
+        return True
+    # A childless at-rule or a custom property followed by siblings must be terminated
+    return i < count - 1 and (
+        (isinstance(child, AtRule) and child.nodes is None)
+        or (isinstance(child, Declaration) and _is_custom_property(child))
+    )
+
+
+def _body(node: Container, out: list[str], marks: list[int] | None = None) -> None:
+    """Print the children of node. With marks, the index in out where each child (its raws.before) starts, and
+    where the last ends."""
+    nodes = node.nodes or []
+    last = last_terminated(nodes)
     semicolon = _semicolon(node)
     for i, child in enumerate(nodes):
-        child_semicolon = last != i or semicolon
-        # A childless at-rule or a custom property followed by siblings must be terminated
-        if (
-            not child_semicolon
-            and i < len(nodes) - 1
-            and (
-                (isinstance(child, AtRule) and child.nodes is None)
-                or (isinstance(child, Declaration) and _is_custom_property(child))
-            )
-        ):
-            child_semicolon = True
         before = child.raws.before
         if before is None:
             before = '' if isinstance(node, Root) and i == 0 else '\n'
+        if marks is not None:
+            marks.append(len(out))
         out.append(before)
-        _print(child, child_semicolon, out)
+        _print(child, child_semicolon(child, i, len(nodes), last, semicolon), out)
+    if marks is not None:
+        marks.append(len(out))
+
+
+def print_marked(node: Container) -> tuple[list[str], list[int]]:
+    """The pieces of node.toString() before escape_html(), and the index of the piece where each child starts
+    (with its raws.before), then that where the last ends. Empty marks for a container without children."""
+    out: list[str] = []
+    marks: list[int] = []
+    _print(node, False, out, marks)
+    return out, marks
+
+
+def print_child(node: Node, semicolon: bool) -> str:
+    """The text of a child as _body() prints it, without its raws.before and before escape_html()."""
+    out: list[str] = []
+    _print(node, semicolon, out)
+    return ''.join(out)
+
+
+def semicolon_raw(node: Container) -> bool:
+    """raw(node, 'semicolon'), as _body() uses it."""
+    return _semicolon(node)
 
 
 def to_string(node: Node) -> str:
