@@ -108,6 +108,7 @@ module_exec(PyObject *module) {
     if (kg_color_init(module) != 0) return -1;
     if (kg_records_init(module) != 0) return -1;
     if (kg_postcss_init(module) != 0) return -1;
+    if (kg_linter_init(module) != 0) return -1;
     return kg_syntax_init(module);
 }
 
@@ -122,6 +123,7 @@ module_traverse(PyObject *module, visitproc visit, void *arg) {
     if (kg_color_traverse(module, visit, arg) != 0) return -1;
     if (kg_records_traverse(module, visit, arg) != 0) return -1;
     if (kg_postcss_traverse(module, visit, arg) != 0) return -1;
+    if (kg_linter_traverse(module, visit, arg) != 0) return -1;
     if (kg_types_traverse(module, visit, arg) != 0) return -1;
     if (kg_values_traverse(module, visit, arg) != 0) return -1;
     return kg_syntax_traverse(module, visit, arg);
@@ -138,6 +140,7 @@ module_clear(PyObject *module) {
     kg_color_clear(module);
     kg_records_clear(module);
     kg_postcss_clear(module);
+    kg_linter_clear(module);
     kg_types_clear(module);
     kg_values_clear(module);
     kg_syntax_clear(module);

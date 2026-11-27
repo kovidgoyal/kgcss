@@ -13,6 +13,7 @@ from typing import Final, NamedTuple, cast
 
 from kgcss.linter._postcss import JS_WHITESPACE, AtRule, Container, Rule
 from kgcss.linter._selector_parser import (
+    C_PARSER,
     MAX_NESTING_DEPTH,
     Attribute,
     ClassName,
@@ -158,16 +159,26 @@ def normalize_selector(node: SelectorNode, cache: dict[object, object] | None = 
     key = ('normalize_selector', str(node))
     if cache is not None and isinstance(cached := cache.get(key), Normalized):
         return cached
+    in_c = C_PARSER.normalize(node)
+    ans = (
+        python_normalize_selector(node)
+        if in_c is NotImplemented
+        else Normalized(*cast('tuple[SelectorNode, str]', in_c))
+    )
+    if cache is not None:
+        cache[key] = ans
+    return ans
+
+
+def python_normalize_selector(node: SelectorNode) -> Normalized:
+    """normalize_selector() in Python, without a cache: the reference of the C version."""
     normalized = node.clone()
     _escaping(normalized)
     _whitespace_and_comments(normalized)
     if isinstance(normalized, SelectorContainer):
         _clean(normalized, 0)
     _order(normalized)
-    ans = Normalized(normalized, str(normalized))
-    if cache is not None:
-        cache[key] = ans
-    return ans
+    return Normalized(normalized, normalized.to_string())
 
 
 class Resolved(NamedTuple):

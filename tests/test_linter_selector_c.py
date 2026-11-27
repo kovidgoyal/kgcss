@@ -1,6 +1,6 @@
 # License: BSD-3-Clause Copyright: 2026, Kovid Goyal <kovid at kovidgoyal.net>
 
-"""The C versions of unesc(), cssesc() and tokenize() (csrc/linter.c) against the Python ones.
+"""The C versions of unesc(), cssesc(), tokenize() and the parser (csrc/linter.c) against the Python ones.
 
 The Python versions in kgcss.linter._selector_parser are the reference: the
 C ones must give exactly the same results, errors included, for any text.
@@ -12,11 +12,17 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from kgcss._kgcss import selector_cssesc, selector_tokenize, selector_unesc
+from kgcss._kgcss import SelectorParser, selector_cssesc, selector_tokenize, selector_unesc
+from kgcss.linter._selector_helpers import python_normalize_selector
 from kgcss.linter._selector_parser import (
+    C_PARSER,
+    Container,
+    Node,
+    Root,
     SelectorError,
     cssesc,
     python_cssesc,
+    python_parse_selector,
     python_tokenize,
     python_unesc,
     tokenize,
@@ -175,3 +181,306 @@ def test_threads() -> None:
     for t in threads:
         t.join()
     assert not errors
+
+
+# The selector parser
+
+
+def dump_value(value: object) -> object:
+    """A record as its type name and fields, anything else as it is."""
+    fields: tuple[str, ...] | None = getattr(type(value), '_fields', None)
+    if fields is not None and type(value).__module__ == 'kgcss':
+        return (type(value).__name__, *(dump_value(getattr(value, f)) for f in fields))
+    return value
+
+
+def dump_node(node: Node, parent: Container | None) -> dict[str, object]:
+    assert node.parent is parent
+    ans: dict[str, object] = {'class': type(node).__name__}
+    for cls in type(node).__mro__:
+        for name in getattr(cls, '__slots__', ()):
+            if name in ('parent', 'nodes'):
+                continue
+            ans[name] = dump_value(getattr(node, name))
+    if isinstance(node, Container):
+        ans['nodes'] = [dump_node(child, node) for child in node.nodes]
+    return ans
+
+
+def check_parse(text: str) -> bool:
+    """Compare the trees: return whether the C parser parsed text."""
+    ans = C_PARSER.parse(text)
+    try:
+        expected = python_parse_selector(text)
+    except SelectorError:
+        assert ans is NotImplemented
+        return False
+    if ans is NotImplemented:
+        return False
+    assert isinstance(ans, Root)
+    assert dump_node(ans, None) == dump_node(expected, None)
+    assert str(ans) == str(expected)
+    return True
+
+
+SELECTOR_EXAMPLES = [
+    '',
+    ' ',
+    'a',
+    '.a.b#c',
+    'a > b',
+    'a b',
+    'a  ~  b',
+    'a\n+\tb',
+    'a >b',
+    'a> b',
+    '>a',
+    'a >',
+    'a ||b',
+    ':not(.a, b)',
+    ':not( .a , b )',
+    ':is(:not(a))',
+    ':is((a))',
+    ':not(a',
+    'a:not()',
+    ':nth-child(2n + 1 of .a)',
+    'a, b',
+    'a,',
+    'a,,b',
+    ',a',
+    'a , b ',
+    ' a',
+    'a\n',
+    'x:hover::before',
+    '::-webkit-scrollbar',
+    ':::x',
+    'a:',
+    '.sm\\:p-4',
+    '.\\31 0',
+    '#a\\#b',
+    'a\\.b.c',
+    'a\\',
+    'a\\ b',
+    '10.5%',
+    '1.5.%',
+    '& > *',
+    '&.a',
+    '*.a',
+    '*|a',
+    'a|b',
+    '|a',
+    'a#{b}',
+    '#{a}.b',
+    'a$b',
+    'a^=b',
+    '$a',
+    '.a/* x */ .b',
+    'a /deep/ b',
+    'a / b',
+    '[a]',
+    'a"b"',
+    'a;',
+    'a!',
+    ':hover(a)',
+    'a:hover.b(c)',
+    'a.b:c(d)',
+    'é.ü#ö',
+    '\U0001f600',
+    '\ud800',
+    ':not(' * 300 + ')' * 300,
+]
+
+
+@pytest.mark.parametrize('text', SELECTOR_EXAMPLES)
+def test_selector_parser_examples(text: str) -> None:
+    check_parse(text)
+
+
+def test_selector_parser_parses_common_selectors() -> None:
+    for text in ('a', '.a.b#c', 'a > b', 'a b', ':not(.a, b)', 'a, b', 'x:hover::before', '.sm\\:p-4', '& > *', 'a,'):
+        assert check_parse(text), text
+
+
+SELECTOR_PARTS = st.sampled_from(
+    (
+        'a',
+        'div',
+        '.a',
+        '#b',
+        '.sm\\:p',
+        '\\31 x',
+        '\\',
+        '*',
+        '&',
+        ':hover',
+        '::before',
+        ':not(',
+        ':is(',
+        '(',
+        ')',
+        ',',
+        ' ',
+        '  ',
+        '\n',
+        '>',
+        '+',
+        '~',
+        '||',
+        '|',
+        '/',
+        '/* c */',
+        '[x=y]',
+        '"s"',
+        '$',
+        '^',
+        '=',
+        '1',
+        '.5',
+        '%',
+        '#{',
+        '}',
+        '!',
+        'é',
+    )
+)
+selectors = st.lists(SELECTOR_PARTS, max_size=12).map(''.join)
+
+
+@given(selectors)
+def test_selector_parser_random(text: str) -> None:
+    check_parse(text)
+
+
+@given(
+    st.lists(
+        st.sampled_from(('a', '.b', '#c', ' ', ' > ', ', ', ':not(', ')', ':hover', '*', '&', '+')), max_size=10
+    ).map(''.join)
+)
+def test_selector_parser_random_supported(text: str) -> None:
+    check_parse(text)
+
+
+@given(selector_text)
+def test_selector_parser_random_text(text: str) -> None:
+    check_parse(text)
+
+
+def test_selector_parser_bad_arguments() -> None:
+    with pytest.raises(TypeError):
+        SelectorParser()
+    with pytest.raises(TypeError):
+        SelectorParser(*[Root] * 11)
+    with pytest.raises(TypeError):
+        C_PARSER.parse(1)  # ty: ignore[invalid-argument-type]
+
+
+# Printing and normalizing
+
+
+def all_nodes(node: Node) -> list[Node]:
+    ans = [node]
+    if isinstance(node, Container):
+        for child in node.nodes:
+            ans.extend(all_nodes(child))
+    return ans
+
+
+def check_print_and_normalize(text: str) -> tuple[int, int]:
+    """Compare C and Python on the trees of both parsers: return how many prints and normalizations C did."""
+    try:
+        trees = [python_parse_selector(text)]
+    except SelectorError:
+        return 0, 0
+    if (tree := C_PARSER.parse(text)) is not NotImplemented:
+        assert isinstance(tree, Root)
+        trees.append(tree)
+    printed = normalized = 0
+    for tree in trees:
+        for node in all_nodes(tree):
+            c = C_PARSER.to_string(node)
+            if c is not NotImplemented:
+                printed += 1
+                assert c == node.to_string()
+            assert str(node) == node.to_string()
+            before = dump_node(node, node.parent)
+            c = C_PARSER.normalize(node)
+            assert dump_node(node, node.parent) == before  # the node itself does not change
+            if c is NotImplemented:
+                continue
+            normalized += 1
+            assert isinstance(c, tuple)
+            ours, string = c
+            expected = python_normalize_selector(node)
+            assert string == expected.string
+            assert dump_node(ours, None) == dump_node(expected.node, None)
+    return printed, normalized
+
+
+@pytest.mark.parametrize('text', SELECTOR_EXAMPLES)
+def test_print_and_normalize_examples(text: str) -> None:
+    check_print_and_normalize(text)
+
+
+@pytest.mark.parametrize(
+    'text',
+    [
+        'b a, a b, a',
+        'a.b, a.b, .b.a',
+        ':not(b, a, b)',
+        '.b#a.c > d::before.e:hover',
+        'a:first-line.b',
+        'a:FIRST-LETTER.b',
+        '.x\\:y .\\31 0',
+        '.a\\.b',
+        'a /* c */ b',
+        '[x] .a',
+        'ns|a .b',
+        'a, b,',
+        '& .a, .a &',
+        '.b .a,.a .b',
+    ],
+)
+def test_normalize_examples(text: str) -> None:
+    assert check_print_and_normalize(text)[1]
+
+
+@given(selectors)
+def test_print_and_normalize_random(text: str) -> None:
+    check_print_and_normalize(text)
+
+
+@given(selector_text)
+def test_print_and_normalize_random_text(text: str) -> None:
+    check_print_and_normalize(text)
+
+
+def test_normalize_nested_and_changed() -> None:
+    from kgcss.linter._selector_helpers import normalize_selector
+    from kgcss.linter._selector_tools import resolve_nested_selector
+
+    parent = python_parse_selector('.b, .a')
+    child = python_parse_selector('& > c, d &')
+    resolved = resolve_nested_selector(child, parent)
+    check_nodes = all_nodes(resolved)
+    for node in check_nodes:
+        c = C_PARSER.normalize(node)
+        if c is not NotImplemented:
+            assert isinstance(c, tuple)
+            assert c[1] == python_normalize_selector(node).string
+    # Trees changed after parsing: values that are no strings are left to Python
+    tree = python_parse_selector('.a b')
+    selector = tree.nodes[0]
+    assert isinstance(selector, Container)
+    tag = selector.nodes[-1]
+    tag._value = 1  # ty: ignore[invalid-assignment]
+    assert C_PARSER.to_string(tag) is NotImplemented
+    assert C_PARSER.normalize(tree) is NotImplemented
+    assert normalize_selector(tree).string == python_normalize_selector(tree).string
+    # A node during an iteration of each()
+    tree = python_parse_selector('.a b')
+
+    def visit(node: Node) -> None:
+        assert C_PARSER.normalize(tree) is NotImplemented
+        assert normalize_selector(tree).string == '.a b'
+
+    tree.each(visit)

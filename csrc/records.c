@@ -267,6 +267,13 @@ record_copy(PyObject *o, PyObject *Py_UNUSED(ignored)) {
     return (PyObject *)ans;
 }
 
+static PyObject *record_deepcopy(PyObject *o, PyObject *Py_UNUSED(ignored));
+
+PyObject *
+kg_record_deepcopy(PyObject *o) {
+    return record_deepcopy(o, NULL);
+}
+
 static PyObject *
 record_deepcopy(PyObject *o, PyObject *Py_UNUSED(ignored)) {
     /* Records are acyclic and shallow (a few levels at most), so this recursion is bounded */

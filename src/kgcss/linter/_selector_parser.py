@@ -32,6 +32,7 @@ from enum import Enum
 from typing import ClassVar, Final, Literal, cast
 
 from kgcss._kgcss import (
+    SelectorParser,
     SelectorPartSpaces,
     SelectorPosition,
     SelectorRaws,
@@ -393,7 +394,9 @@ class Node:
         return f'{self.__class__.__name__}({self.to_string()!r})'
 
     def __str__(self) -> str:
-        return self.to_string()
+        # to_string(), in C where it can be (see csrc/linter.c)
+        ans = C_PARSER.to_string(self)
+        return self.to_string() if ans is NotImplemented else cast(str, ans)
 
     def remove(self) -> Node:
         if self.parent is not None:
@@ -2481,8 +2484,22 @@ def _unescape_namespace(node: Namespace | ClassName | ID) -> None:
             node.raws.namespace = value
 
 
+# The C version of _Parser, for the selectors it knows (see csrc/linter.c)
+C_PARSER: Final = SelectorParser(
+    Root, Selector, Pseudo, ClassName, ID, Tag, Universal, Combinator, Nesting, String, Comment
+)
+
+
 def parse_selector(selector: str) -> Root:
     """The tree of a selector list, as parser().astSync(selector). Raises SelectorError."""
+    ans = C_PARSER.parse(selector)
+    if ans is NotImplemented:
+        return _Parser(selector).root
+    return cast(Root, ans)
+
+
+def python_parse_selector(selector: str) -> Root:
+    """parse_selector() with the Python parser only: the reference of the C one."""
     return _Parser(selector).root
 
 

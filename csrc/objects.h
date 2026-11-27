@@ -161,6 +161,8 @@ typedef struct {
 } kg_Record;
 /* A record of type with the default values of its fields: required fields are None until set */
 PyObject *kg_record_new(kg_module_state *state, kg_record_type type);
+/* record.deepcopy(): a copy with copies of the records it holds */
+PyObject *kg_record_deepcopy(PyObject *record);
 int kg_records_init(PyObject *module);
 int kg_records_traverse(PyObject *module, visitproc visit, void *arg);
 void kg_records_clear(PyObject *module);
@@ -169,6 +171,9 @@ void kg_records_clear(PyObject *module);
 PyObject *kg_selector_unesc(PyObject *module, PyObject *text);
 PyObject *kg_selector_cssesc(PyObject *module, PyObject *const *args, Py_ssize_t nargs);
 PyObject *kg_selector_tokenize(PyObject *module, PyObject *css);
+int kg_linter_init(PyObject *module);
+int kg_linter_traverse(PyObject *module, visitproc visit, void *arg);
+void kg_linter_clear(PyObject *module);
 
 /* postcss.c */
 PyObject *kg_postcss_parse(PyObject *module, PyObject *const *args, Py_ssize_t nargs);
