@@ -1872,6 +1872,11 @@ class _Parser:
         return nxt < n
 
     def attribute(self) -> None:
+        self.new_node(self.attribute_node())
+        self.position += 1
+
+    def attribute_node(self) -> Attribute:
+        """The attribute selector at the current token: the position is then at its closing bracket."""
         attr: list[Token] = []
         starting = self.tok
         self.position += 1
@@ -2074,8 +2079,7 @@ class _Parser:
                 setattr(node, prop, unesc(v))
                 if getattr(raws, prop) is None:
                     setattr(raws, prop, v)
-        self.new_node(Attribute._from_opts(node.to_list()))
-        self.position += 1
+        return Attribute._from_opts(node.to_list())
 
     def parse_whitespace_equivalent_tokens(self, stop: int) -> list[Node]:
         if stop < 0:
@@ -2484,9 +2488,28 @@ def _unescape_namespace(node: Namespace | ClassName | ID) -> None:
             node.raws.namespace = value
 
 
+def _attribute_node(css: str, tokens: list[Token], position: int) -> Attribute:
+    """For the C parser: the attribute selector of the tokens of css that starts at position."""
+    parser = object.__new__(_Parser)
+    parser.css, parser.tokens, parser.position = css, tokens, position
+    return parser.attribute_node()
+
+
 # The C version of _Parser, for the selectors it knows (see csrc/linter.c)
 C_PARSER: Final = SelectorParser(
-    Root, Selector, Pseudo, ClassName, ID, Tag, Universal, Combinator, Nesting, String, Comment
+    Root,
+    Selector,
+    Pseudo,
+    ClassName,
+    ID,
+    Tag,
+    Universal,
+    Combinator,
+    Nesting,
+    String,
+    Comment,
+    Attribute,
+    _attribute_node,
 )
 
 

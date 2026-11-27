@@ -367,9 +367,9 @@ def test_selector_parser_random_text(text: str) -> None:
 
 def test_selector_parser_bad_arguments() -> None:
     with pytest.raises(TypeError):
-        SelectorParser()
+        SelectorParser()  # ty: ignore[missing-argument]
     with pytest.raises(TypeError):
-        SelectorParser(*[Root] * 11)
+        SelectorParser(*[Root] * 12, print)
     with pytest.raises(TypeError):
         C_PARSER.parse(1)  # ty: ignore[invalid-argument-type]
 
@@ -473,9 +473,13 @@ def test_normalize_nested_and_changed() -> None:
     assert isinstance(selector, Container)
     tag = selector.nodes[-1]
     tag._value = 1  # ty: ignore[invalid-assignment]
-    assert C_PARSER.to_string(tag) is NotImplemented
-    assert C_PARSER.normalize(tree) is NotImplemented
-    assert normalize_selector(tree).string == python_normalize_selector(tree).string
+    # C prints the nodes it can and leaves the others to their Python _stringify()
+    assert C_PARSER.to_string(tag) == tag.to_string() == '1'
+    assert C_PARSER.to_string(tree) == tree.to_string() == '.a 1'
+    c = C_PARSER.normalize(tree)
+    assert isinstance(c, tuple)
+    assert c[1] == normalize_selector(tree).string == python_normalize_selector(tree).string == '.a 1'
+    assert dump_node(c[0], None) == dump_node(python_normalize_selector(tree).node, None)
     # A node during an iteration of each()
     tree = python_parse_selector('.a b')
 

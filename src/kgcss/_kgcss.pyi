@@ -3,7 +3,7 @@
 # Type stubs for the C extension module built from csrc/. Keep in sync with
 # the method tables, types and constants in csrc/module.c and csrc/types.c.
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from types import NotImplementedType
 from typing import Any, Final, Literal, Self, TypeVar, final
 from weakref import ReferenceType
@@ -395,7 +395,23 @@ def selector_tokenize(css: str, /) -> list[tuple[int, int, int, int, int, int, i
 # The C version of the selector parser of kgcss.linter._selector_parser, made from its node classes
 @final
 class SelectorParser:
-    def __new__(cls, *node_classes: type) -> Self: ...
+    def __new__(
+        cls,
+        root: type,
+        selector: type,
+        pseudo: type,
+        class_name: type,
+        id_: type,
+        tag: type,
+        universal: type,
+        combinator: type,
+        nesting: type,
+        string: type,
+        comment: type,
+        attribute: type,
+        attribute_node: Callable[[str, list[tuple[int, int, int, int, int, int, int]], int], object],
+        /,
+    ) -> Self: ...
     def parse(self, css: str, /) -> object: ...
     def to_string(self, node: object, /) -> object: ...
     def normalize(self, node: object, /) -> object: ...

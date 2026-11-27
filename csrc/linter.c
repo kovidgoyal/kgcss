@@ -483,16 +483,19 @@ kg_selector_tokenize(PyObject *module, PyObject *css) {
 
 /* The node classes, in the order SelectorParser() takes them */
 enum { SN_ROOT, SN_SELECTOR, SN_PSEUDO, SN_CLASS, SN_ID, SN_TAG, SN_UNIVERSAL, SN_COMBINATOR, SN_NESTING, SN_STRING,
-       SN_COMMENT, SN_COUNT };
+       SN_COMMENT, SN_ATTRIBUTE, SN_COUNT };
 static const char *const SN_NAMES[SN_COUNT] = {
-    "Root", "Selector", "Pseudo", "ClassName", "ID", "Tag", "Universal", "Combinator", "Nesting", "String", "Comment"};
+    "Root", "Selector", "Pseudo", "ClassName", "ID", "Tag", "Universal", "Combinator", "Nesting", "String", "Comment",
+    "Attribute"};
 
 /* The slots of the nodes */
 enum { SS_VALUE, SS_PARENT, SS_RAWS, SS_SOURCE, SS_SOURCE_INDEX, SS_SPACES, SS_NODES, SS_LAST_EACH, SS_INDEXES,
-       SS_TRAILING_COMMA, SS_CONSTRUCTED, SS_NAMESPACE, SS__NAMESPACE, SS_COUNT };
+       SS_TRAILING_COMMA, SS_CONSTRUCTED, SS_NAMESPACE, SS__NAMESPACE, SS_ATTR_VALUE, SS_ATTRIBUTE, SS_INSENSITIVE,
+       SS_QUOTE_MARK, SS_RAWS_PENDING, SS_SENSITIVE, SS_OPERATOR, SS_COUNT };
 static const char *const SS_NAMES[SS_COUNT] = {
     "_value", "parent", "raws", "source", "source_index", "spaces", "nodes", "last_each", "indexes",
-    "trailing_comma", "_constructed", "namespace", "_namespace"};
+    "trailing_comma", "_constructed", "namespace", "_namespace", "_attr_value", "_attribute", "_insensitive",
+    "_quote_mark", "_raws_pending", "_sensitive", "operator"};
 
 /* Whether a class has a slot */
 static bool
@@ -502,9 +505,12 @@ has_slot(int cls, int slot) {
         case SS_NODES: case SS_LAST_EACH: case SS_INDEXES:
             return cls == SN_ROOT || cls == SN_SELECTOR || cls == SN_PSEUDO;
         case SS_TRAILING_COMMA: return cls == SN_ROOT;
-        case SS_CONSTRUCTED: return cls == SN_CLASS || cls == SN_COMBINATOR;
+        case SS_CONSTRUCTED: return cls == SN_CLASS || cls == SN_COMBINATOR || cls == SN_ATTRIBUTE;
         case SS_NAMESPACE: return cls == SN_CLASS || cls == SN_ID;
-        case SS__NAMESPACE: return cls == SN_TAG || cls == SN_UNIVERSAL;
+        case SS__NAMESPACE: return cls == SN_TAG || cls == SN_UNIVERSAL || cls == SN_ATTRIBUTE;
+        case SS_ATTR_VALUE: case SS_ATTRIBUTE: case SS_INSENSITIVE: case SS_QUOTE_MARK: case SS_RAWS_PENDING:
+        case SS_SENSITIVE: case SS_OPERATOR:
+            return cls == SN_ATTRIBUTE;
         default: return false;
     }
 }
@@ -512,6 +518,8 @@ has_slot(int cls, int slot) {
 typedef struct {
     PyObject_HEAD
     PyTypeObject *classes[SN_COUNT];
+    /* attribute_node(css, tokens, position): the Attribute of the tokens from position, as _Parser makes it */
+    PyObject *attribute_node;
     /* The offsets of the slots in the instances of each class, -1 for none */
     Py_ssize_t offsets[SN_COUNT][SS_COUNT];
 } kg_SelectorParser;
@@ -521,6 +529,7 @@ SelectorParser_traverse(PyObject *o, visitproc visit, void *arg) {
     kg_SelectorParser *self = (kg_SelectorParser *)o;
     Py_VISIT(Py_TYPE(o));
     for (int i = 0; i < SN_COUNT; i++) Py_VISIT(self->classes[i]);
+    Py_VISIT(self->attribute_node);
     return 0;
 }
 
@@ -528,6 +537,7 @@ static int
 SelectorParser_clear(PyObject *o) {
     kg_SelectorParser *self = (kg_SelectorParser *)o;
     for (int i = 0; i < SN_COUNT; i++) Py_CLEAR(self->classes[i]);
+    Py_CLEAR(self->attribute_node);
     return 0;
 }
 
@@ -557,12 +567,14 @@ slot_offset(PyTypeObject *cls, const char *name) {
 
 static PyObject *
 SelectorParser_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
-    if ((kwds != NULL && PyDict_GET_SIZE(kwds)) || PyTuple_GET_SIZE(args) != SN_COUNT) {
-        PyErr_Format(PyExc_TypeError, "SelectorParser() takes the %d node classes", SN_COUNT);
+    if ((kwds != NULL && PyDict_GET_SIZE(kwds)) || PyTuple_GET_SIZE(args) != SN_COUNT + 1 ||
+        !PyCallable_Check(PyTuple_GET_ITEM(args, SN_COUNT))) {
+        PyErr_Format(PyExc_TypeError, "SelectorParser() takes the %d node classes and attribute_node()", SN_COUNT);
         return NULL;
     }
     kg_SelectorParser *self = (kg_SelectorParser *)type->tp_alloc(type, 0);
     if (self == NULL) return NULL;
+    self->attribute_node = Py_NewRef(PyTuple_GET_ITEM(args, SN_COUNT));
     for (int i = 0; i < SN_COUNT; i++) {
         PyObject *cls = PyTuple_GET_ITEM(args, i);
         if (!PyType_Check(cls) || strcmp(((PyTypeObject *)cls)->tp_name, SN_NAMES[i]) != 0) {
@@ -595,6 +607,7 @@ typedef struct {
     stokens t;
     Py_ssize_t position;
     int nesting_depth;
+    PyObject *token_list;  /* the tokens as tuples, made for attribute_node() when first needed */
     PyObject *spaces;
     PyObject *root, *current;  /* current is borrowed: the tree holds it */
 } sparser;
@@ -1129,6 +1142,36 @@ space(sparser *p) {
     return combinator(p);
 }
 
+/* attribute(), with the Python code that makes the node */
+static int
+attribute(sparser *p) {
+    Py_ssize_t close = p->position + 1;
+    while (close < p->t.len && p->t.items[close].type != ']') close++;
+    if (close >= p->t.len) return SP_FALLBACK;  /* an error */
+    if (p->token_list == NULL) {
+        if ((p->token_list = PyList_New(p->t.len)) == NULL) return SP_ERROR;
+        for (Py_ssize_t i = 0; i < p->t.len; i++) {
+            const stoken k = p->t.items[i];
+            PyObject *t = Py_BuildValue("(lnnnnnn)", k.type, k.line, k.col, k.end_line, k.end_col, k.start, k.end);
+            if (t == NULL) return SP_ERROR;
+            PyList_SET_ITEM(p->token_list, i, t);
+        }
+    }
+    PyObject *node = PyObject_CallFunction(p->f->attribute_node, "OOn", p->css, p->token_list, p->position);
+    if (node == NULL) {
+        /* An error: the Python parser raises it */
+        PyErr_Clear();
+        return SP_FALLBACK;
+    }
+    if (!Py_IS_TYPE(node, p->f->classes[SN_ATTRIBUTE])) {
+        Py_DECREF(node);
+        PyErr_SetString(PyExc_TypeError, "attribute_node() must return an Attribute");
+        return SP_ERROR;
+    }
+    p->position = close + 1;
+    return add_node(p, node);
+}
+
 /* parse() */
 static int
 parse_token(sparser *p, bool throw_on_parenthesis) {
@@ -1142,6 +1185,7 @@ parse_token(sparser *p, bool throw_on_parenthesis) {
         case '*': return single(p, SN_UNIVERSAL);
         case '&': return single(p, SN_NESTING);
         case TK_COMBINATOR: return combinator(p);
+        case '[': return attribute(p);
         default: return SP_FALLBACK;
     }
 }
@@ -1190,6 +1234,7 @@ SelectorParser_parse(PyObject *self, PyObject *css) {
     ans = Py_NewRef(p.root);
 end:
     PyMem_Free(p.t.items);
+    Py_XDECREF(p.token_list);
     Py_XDECREF(p.spaces);
     Py_XDECREF(p.root);
     if (r == SP_FALLBACK) return Py_NewRef(Py_NotImplemented);
@@ -1291,6 +1336,17 @@ base_value(kg_module_state *state, const kg_SelectorParser *f, PyObject *node, i
 
 static int write_node(kg_module_state *state, const kg_SelectorParser *f, PyUnicodeWriter *w, PyObject *node, int depth);
 
+/* node._stringify(depth) in Python, for what is not printed here */
+static int
+write_python(PyUnicodeWriter *w, PyObject *node, int depth) {
+    PyObject *s = PyObject_CallMethod(node, "_stringify", "i", depth);
+    if (s == NULL) return SP_ERROR;
+    int r = SP_FALLBACK;
+    if (PyUnicode_CheckExact(s)) r = PyUnicodeWriter_WriteStr(w, s) < 0 ? SP_ERROR : SP_OK;
+    Py_DECREF(s);
+    return r;
+}
+
 /* The children of a container, joined by sep (0 for none) */
 static int
 write_children(kg_module_state *state, const kg_SelectorParser *f, PyUnicodeWriter *w, PyObject *node, int cls,
@@ -1313,61 +1369,70 @@ write_children(kg_module_state *state, const kg_SelectorParser *f, PyUnicodeWrit
 static int
 write_node(kg_module_state *state, const kg_SelectorParser *f, PyUnicodeWriter *w, PyObject *node, int depth) {
     const int cls = known_class(f, node);
-    if (cls < 0) return SP_FALLBACK;
+    if (cls < 0 || cls == SN_ATTRIBUTE) return write_python(w, node, depth);
     if (cls == SN_PSEUDO && depth >= MAX_NESTING_DEPTH) return SP_FALLBACK;  /* an error */
-    if (Py_EnterRecursiveCall(" in to_string()")) return SP_ERROR;
+    const bool leaf = !has_slot(cls, SS_NODES);
     PyObject *before = NULL, *after = NULL, *value = NULL;
     int r = node_spaces(state, f, node, cls, &before, &after);
-    if (r != SP_OK) goto end;
+    if (r != SP_OK) return (r == SP_FALLBACK && leaf) ? write_python(w, node, depth) : r;
+    if (leaf) {
+        /* What C cannot print is printed in Python, before any of the node is written */
+        if (cls == SN_TAG || cls == SN_UNIVERSAL) {
+            PyObject *ns = get_slot(f, node, cls, SS__NAMESPACE);
+            const int t = ns == NULL ? 1 : PyObject_IsTrue(ns);
+            Py_XDECREF(ns);
+            if (t != 0) {  /* qualified_name() */
+                r = t < 0 ? SP_ERROR : write_python(w, node, depth);
+                goto end;
+            }
+        }
+        if ((value = base_value(state, f, node, cls)) == NULL) {
+            r = write_python(w, node, depth);
+            goto end;
+        }
+    }
+    if (Py_EnterRecursiveCall(" in to_string()")) { r = SP_ERROR; goto end; }
     r = SP_ERROR;
-    if (PyUnicodeWriter_WriteStr(w, before) < 0) goto end;
+    if (PyUnicodeWriter_WriteStr(w, before) < 0) goto leave;
     switch (cls) {
         case SN_ROOT: {
-            if ((r = write_children(state, f, w, node, cls, ',', depth)) != SP_OK) goto end;
+            if ((r = write_children(state, f, w, node, cls, ',', depth)) != SP_OK) goto leave;
             r = SP_ERROR;
             PyObject *tc = get_slot(f, node, cls, SS_TRAILING_COMMA);
             const int t = tc == NULL ? 0 : PyObject_IsTrue(tc);
             Py_XDECREF(tc);
-            if (t < 0 || (t && PyUnicodeWriter_WriteChar(w, ',') < 0)) goto end;
+            if (t < 0 || (t && PyUnicodeWriter_WriteChar(w, ',') < 0)) goto leave;
             break;
         }
         case SN_SELECTOR:
-            if ((r = write_children(state, f, w, node, cls, 0, depth)) != SP_OK) goto end;
+            if ((r = write_children(state, f, w, node, cls, 0, depth)) != SP_OK) goto leave;
             break;
         case SN_PSEUDO: {
             /* stringify_property('value'), then the arguments */
             value = base_value(state, f, node, cls);
-            if (value == NULL) { r = SP_FALLBACK; goto end; }
-            if (PyUnicodeWriter_WriteStr(w, value) < 0) goto end;
+            if (value == NULL) { r = SP_FALLBACK; goto leave; }
+            if (PyUnicodeWriter_WriteStr(w, value) < 0) goto leave;
             PyObject *nodes = get_slot(f, node, cls, SS_NODES);
             const bool has_nodes = nodes != NULL && PyList_CheckExact(nodes) && PyList_GET_SIZE(nodes);
             Py_XDECREF(nodes);
             if (has_nodes) {
-                if (PyUnicodeWriter_WriteChar(w, '(') < 0) goto end;
-                if ((r = write_children(state, f, w, node, cls, ',', depth + 1)) != SP_OK) goto end;
+                if (PyUnicodeWriter_WriteChar(w, '(') < 0) goto leave;
+                if ((r = write_children(state, f, w, node, cls, ',', depth + 1)) != SP_OK) goto leave;
                 r = SP_ERROR;
-                if (PyUnicodeWriter_WriteChar(w, ')') < 0) goto end;
+                if (PyUnicodeWriter_WriteChar(w, ')') < 0) goto leave;
             }
             break;
         }
-        case SN_TAG: case SN_UNIVERSAL: {
-            PyObject *ns = get_slot(f, node, cls, SS__NAMESPACE);
-            const int t = ns == NULL ? 1 : PyObject_IsTrue(ns);
-            Py_XDECREF(ns);
-            if (t) { r = t < 0 ? SP_ERROR : SP_FALLBACK; goto end; }  /* qualified_name() */
-        }
-        /* fall through */
         default:
-            value = base_value(state, f, node, cls);
-            if (value == NULL) { r = SP_FALLBACK; goto end; }
-            if (cls == SN_CLASS && PyUnicodeWriter_WriteChar(w, '.') < 0) goto end;
-            if (cls == SN_ID && PyUnicodeWriter_WriteChar(w, '#') < 0) goto end;
-            if (PyUnicodeWriter_WriteStr(w, value) < 0) goto end;
+            if (cls == SN_CLASS && PyUnicodeWriter_WriteChar(w, '.') < 0) goto leave;
+            if (cls == SN_ID && PyUnicodeWriter_WriteChar(w, '#') < 0) goto leave;
+            if (PyUnicodeWriter_WriteStr(w, value) < 0) goto leave;
             break;
     }
     r = PyUnicodeWriter_WriteStr(w, after) < 0 ? SP_ERROR : SP_OK;
-end:
+leave:
     Py_LeaveRecursiveCall();
+end:
     Py_XDECREF(before);
     Py_XDECREF(after);
     Py_XDECREF(value);
@@ -1441,6 +1506,14 @@ clone_node(kg_module_state *state, const kg_SelectorParser *f, PyObject *node, P
         (SLOT_OF(f, copy, cls, SS_NAMESPACE) = get_slot(f, node, cls, SS_NAMESPACE)) == NULL) goto end;
     if (has_slot(cls, SS__NAMESPACE) &&
         (SLOT_OF(f, copy, cls, SS__NAMESPACE) = get_slot(f, node, cls, SS__NAMESPACE)) == NULL) goto end;
+    if (cls == SN_ATTRIBUTE) {
+        static const int copied[] = {SS_ATTR_VALUE, SS_ATTRIBUTE, SS_OPERATOR, SS_QUOTE_MARK, SS_INSENSITIVE,
+                                     SS_SENSITIVE};
+        for (size_t i = 0; i < sizeof(copied) / sizeof(copied[0]); i++) {
+            if ((SLOT_OF(f, copy, cls, copied[i]) = get_slot(f, node, cls, copied[i])) == NULL) goto end;
+        }
+        SLOT_OF(f, copy, cls, SS_RAWS_PENDING) = Py_NewRef(Py_False);
+    }
     if (has_slot(cls, SS_NODES)) {
         if ((SLOT_OF(f, copy, cls, SS_LAST_EACH) = get_slot(f, node, cls, SS_LAST_EACH)) == NULL) goto end;
         PyObject *indexes = get_slot(f, node, cls, SS_INDEXES);
@@ -1516,6 +1589,11 @@ whitespace(kg_module_state *state, const kg_SelectorParser *f, PyObject *node) {
     rec_set(rs, RS_AFTER, Py_NewRef(state->empty_string));
     rec_set(spaces, SP_BEFORE, Py_NewRef(state->empty_string));
     rec_set(spaces, SP_AFTER, Py_NewRef(state->empty_string));
+    if (known_class(f, node) == SN_ATTRIBUTE) {
+        /* The spaces around the parts of the attribute selector go too */
+        for (int i = 2; i < 6; i++) rec_set(spaces, i, Py_NewRef(Py_None));
+        rec_set(raws, RAWS_SPACES, Py_NewRef(Py_None));
+    }
     return SP_OK;
 }
 
@@ -1592,6 +1670,7 @@ type_priority(int cls) {
         case SN_NESTING: return 2;
         case SN_ID: return 3;
         case SN_CLASS: return 4;
+        case SN_ATTRIBUTE: return 5;
         case SN_PSEUDO: return 6;
         case SN_COMMENT: return 7;
         default: return (1LL << 53) - 1;
