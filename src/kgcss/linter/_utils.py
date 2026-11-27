@@ -209,20 +209,29 @@ def is_standard_syntax_declaration(decl: Declaration) -> bool:
 
 
 def each_declaration_block(root: Root) -> Iterator[list[Declaration]]:
-    """eachDeclarationBlock(): the declarations of each block (inner blocks first), the root's too."""
+    """eachDeclarationBlock(): the declarations of each block (inner blocks first), the root's too.
 
-    def each(node: Node) -> Iterator[list[Declaration]]:
-        if not isinstance(node, (Rule, AtRule, Root)) or not node.nodes:
-            return
-        decls: list[Declaration] = []
-        for child in node.nodes:
-            if isinstance(child, Declaration):
-                decls.append(child)
-            yield from each(child)
-        if decls:
-            yield decls
-
-    return each(root)
+    A block's own declarations come after those of the blocks in it, in the
+    order of the depth first walk of the JavaScript, without its recursion.
+    """
+    ans: list[list[Declaration]] = []
+    # For each block being walked: its declarations so far and the iterator of its children
+    stack: list[tuple[list[Declaration], Iterator[Node]]] = []
+    if root.nodes:
+        stack.append(([], iter(root.nodes)))
+    while stack:
+        decls, children = stack[-1]
+        child = next(children, None)
+        if child is None:
+            stack.pop()
+            if decls:
+                ans.append(decls)
+            continue
+        if isinstance(child, Declaration):
+            decls.append(child)
+        elif isinstance(child, (Rule, AtRule)) and child.nodes:
+            stack.append(([], iter(child.nodes)))
+    return iter(ans)
 
 
 def ancestors(node: Node) -> Iterator[Container]:
