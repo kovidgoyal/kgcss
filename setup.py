@@ -40,9 +40,20 @@ def compile_args() -> list[str]:
         args += ['-O3']
     if os.environ.get('KGCSS_SANITIZE') == '1':
         args += ['-fsanitize=address,undefined', '-fno-omit-frame-pointer']
-    if os.environ.get('KGCSS_WERROR') == '1':
+    if werror():
         args += ['-Werror']
     return args
+
+
+def werror() -> bool:
+    # Warnings are errors in a git checkout, so that they are fixed as they appear, but not when
+    # building a release with a compiler newer than the code. KGCSS_WERROR=0 or 1 overrides this.
+    match os.environ.get('KGCSS_WERROR'):
+        case '1':
+            return True
+        case '0':
+            return False
+    return Path('.git').exists()
 
 
 def link_args() -> list[str]:

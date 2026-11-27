@@ -696,7 +696,7 @@ parse_complex(sp *p, uint32_t start, uint32_t end, list_mode mode, uint32_t text
         } else if (mode == M_RELATIVE) comb = C_DESCENDANT;
     }
     while (true) {
-        bool has_pseudo_element;
+        bool has_pseudo_element = false;
         if (!parse_compound(p, &i, end, comb, mode, &has_pseudo_element)) return false;
         uint32_t j = i;
         bool ws = false;

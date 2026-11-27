@@ -14,8 +14,9 @@ kgcss uses `uv <https://docs.astral.sh/uv/>`_:
 ``uv sync`` and ``uv run`` rebuild the extension when files in ``csrc/``
 change. ``python setup.py build_ext --inplace`` builds it in place. Build
 options, as environment variables: ``KGCSS_DEBUG=1`` (a debug build with
-assertions), ``KGCSS_SANITIZE=1`` (ASan and UBSan), ``KGCSS_WERROR=1``
-(compiler warnings are errors).
+assertions), ``KGCSS_SANITIZE=1`` (ASan and UBSan), ``KGCSS_WERROR=1`` or
+``0`` (compiler warnings are errors, the default when building from a git
+checkout).
 
 More testing
 ------------
