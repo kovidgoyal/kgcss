@@ -154,6 +154,28 @@ PyObject *kg_find_urls(PyObject *module, PyObject *const *args, Py_ssize_t nargs
 PyObject *kg_write_values(PyObject *module, PyObject *const *args, Py_ssize_t nargs);
 PyObject *kg_write_declarations(PyObject *module, PyObject *const *args, Py_ssize_t nargs);
 
+/* records.c: a record holds the values of its fields, in their order, never NULL once made */
+typedef struct {
+    PyObject_HEAD
+    PyObject *values[];
+} kg_Record;
+/* A record of type with the default values of its fields: required fields are None until set */
+PyObject *kg_record_new(kg_module_state *state, kg_record_type type);
+int kg_records_init(PyObject *module);
+int kg_records_traverse(PyObject *module, visitproc visit, void *arg);
+void kg_records_clear(PyObject *module);
+
+/* linter.c */
+PyObject *kg_selector_unesc(PyObject *module, PyObject *text);
+PyObject *kg_selector_cssesc(PyObject *module, PyObject *const *args, Py_ssize_t nargs);
+PyObject *kg_selector_tokenize(PyObject *module, PyObject *css);
+
+/* postcss.c */
+PyObject *kg_postcss_parse(PyObject *module, PyObject *const *args, Py_ssize_t nargs);
+int kg_postcss_init(PyObject *module);
+int kg_postcss_traverse(PyObject *module, visitproc visit, void *arg);
+void kg_postcss_clear(PyObject *module);
+
 /* syntax.c */
 int kg_syntax_init(PyObject *module);
 int kg_syntax_traverse(PyObject *module, visitproc visit, void *arg);

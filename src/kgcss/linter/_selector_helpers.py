@@ -13,12 +13,13 @@ from typing import Final, NamedTuple, cast
 
 from kgcss.linter._postcss import JS_WHITESPACE, AtRule, Container, Rule
 from kgcss.linter._selector_parser import (
+    MAX_NESTING_DEPTH,
     Attribute,
     ClassName,
     Combinator,
     Comment,
+    Pseudo,
     SelectorError,
-    is_pseudo_class,
     is_pseudo_element,
 )
 from kgcss.linter._selector_parser import Container as SelectorContainer
@@ -85,6 +86,10 @@ def _escaping(node: SelectorNode) -> None:
         node.value = node.value  # re-escapes into raws.value
 
 
+def _compound_key(n: SelectorNode) -> tuple[int, str]:
+    return TYPE_PRIORITY.get(n.type, 2**53 - 1), str(n)
+
+
 def _sort_compounds(nodes: list[SelectorNode]) -> list[SelectorNode]:
     groups: list[list[SelectorNode]] = []
     current: list[SelectorNode] = []
@@ -96,7 +101,8 @@ def _sort_compounds(nodes: list[SelectorNode]) -> list[SelectorNode]:
             current.append(child)
     groups.append(current)
     for group in groups:
-        group.sort(key=lambda n: (TYPE_PRIORITY.get(n.type, 2**53 - 1), str(n)))
+        if len(group) > 1:  # sorting one node changes nothing, and its key costs a str()
+            group.sort(key=_compound_key)
     return [n for group in groups for n in group]
 
 
@@ -105,14 +111,37 @@ def _order(node: SelectorNode) -> None:
         return
     for child in list(node.nodes):
         _order(child)
-    if isinstance(node, SelectorRoot) or is_pseudo_class(node) or is_pseudo_element(node):
-        unique: dict[str, SelectorNode] = {}
-        for child in sorted(node.nodes, key=str):
-            unique.setdefault(str(child), child)
-        keep = {id(n): i for i, n in enumerate(unique.values())}
-        node.nodes = sorted((n for n in node.nodes if id(n) in keep), key=lambda n: keep[id(n)])
+    # Pseudos are pseudo-classes or pseudo-elements: is_pseudo_class(node) or is_pseudo_element(node)
+    if isinstance(node, (SelectorRoot, Pseudo)):
+        if len(node.nodes) > 1:
+            unique: dict[str, SelectorNode] = {}
+            for child in sorted(node.nodes, key=str):
+                unique.setdefault(str(child), child)
+            keep = {id(n): i for i, n in enumerate(unique.values())}
+            node.nodes = sorted((n for n in node.nodes if id(n) in keep), key=lambda n: keep[id(n)])
+        else:
+            node.nodes = list(node.nodes)
     if isinstance(node, SelectorSelector):
         node.nodes = _sort_compounds(node.nodes)
+
+
+def _clean(node: SelectorContainer, depth: int) -> None:
+    """node.walk() with _escaping() and _whitespace_and_comments(), without the bookkeeping of walk().
+
+    As in walk(), a comment that is removed makes the next node take its index.
+    """
+    if depth > MAX_NESTING_DEPTH:
+        raise SelectorError(f'Cannot walk selector: nesting depth exceeds the maximum of {MAX_NESTING_DEPTH}.')
+    i = 0
+    while i < len(node.nodes):
+        child = node.nodes[i]
+        _escaping(child)
+        _whitespace_and_comments(child)
+        if isinstance(child, Comment):
+            continue  # removed from node: the next node is at i now
+        if isinstance(child, SelectorContainer) and child.nodes:
+            _clean(child, depth + 1)
+        i += 1
 
 
 class Normalized(NamedTuple):
@@ -133,12 +162,7 @@ def normalize_selector(node: SelectorNode, cache: dict[object, object] | None = 
     _escaping(normalized)
     _whitespace_and_comments(normalized)
     if isinstance(normalized, SelectorContainer):
-
-        def visit(child: SelectorNode) -> None:
-            _escaping(child)
-            _whitespace_and_comments(child)
-
-        normalized.walk(visit)
+        _clean(normalized, 0)
     _order(normalized)
     ans = Normalized(normalized, str(normalized))
     if cache is not None:

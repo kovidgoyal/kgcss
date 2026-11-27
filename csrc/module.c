@@ -76,6 +76,19 @@ static PyMethodDef module_methods[] = {
     {"color_to_rgba", (PyCFunction)(void (*)(void))kg_color_to_rgba, METH_FASTCALL,
      "color_to_rgba(space: str, c0, c1, c2, alpha, /) -> RGBA\n\n"
      "A color in one of the spaces of parse_color_raw() as sRGB, clipped. None counts as 0."},
+    {"postcss_parse", (PyCFunction)(void (*)(void))kg_postcss_parse, METH_FASTCALL,
+     "postcss_parse(css: str, safe: bool, classes: tuple[type, type, type, type, type], /) -> PostcssNode | tuple[str, int, int | None]\n\n"
+     "The C version of Parser (or SafeParser if safe) in kgcss.linter._postcss: the root, an instance of classes[0], with "
+     "nodes of the classes of at-rules, rules, declarations and comments that follow it. For the error of the parser, its "
+     "reason, offset and end."},
+    {"selector_unesc", kg_selector_unesc, METH_O,
+     "selector_unesc(text: str, /) -> str\n\nThe C version of unesc() in kgcss.linter._selector_parser."},
+    {"selector_cssesc", (PyCFunction)(void (*)(void))kg_selector_cssesc, METH_FASTCALL,
+     "selector_cssesc(text: str, is_identifier: bool, double_quotes: bool, wrap: bool, /) -> str\n\n"
+     "The C version of cssesc() in kgcss.linter._selector_parser."},
+    {"selector_tokenize", kg_selector_tokenize, METH_O,
+     "selector_tokenize(css: str, /) -> list[tuple[int, int, int, int, int, int, int]] | str\n\n"
+     "The C version of tokenize() in kgcss.linter._selector_parser: the tokens, or the message of the error."},
     {NULL, NULL, 0, NULL}
 };
 
@@ -93,6 +106,8 @@ module_exec(PyObject *module) {
     if (kg_selectors_init(module) != 0) return -1;
     if (kg_select_init(module) != 0) return -1;
     if (kg_color_init(module) != 0) return -1;
+    if (kg_records_init(module) != 0) return -1;
+    if (kg_postcss_init(module) != 0) return -1;
     return kg_syntax_init(module);
 }
 
@@ -105,6 +120,8 @@ module_traverse(PyObject *module, visitproc visit, void *arg) {
     if (kg_selectors_traverse(module, visit, arg) != 0) return -1;
     if (kg_select_traverse(module, visit, arg) != 0) return -1;
     if (kg_color_traverse(module, visit, arg) != 0) return -1;
+    if (kg_records_traverse(module, visit, arg) != 0) return -1;
+    if (kg_postcss_traverse(module, visit, arg) != 0) return -1;
     if (kg_types_traverse(module, visit, arg) != 0) return -1;
     if (kg_values_traverse(module, visit, arg) != 0) return -1;
     return kg_syntax_traverse(module, visit, arg);
@@ -119,6 +136,8 @@ module_clear(PyObject *module) {
     kg_selectors_clear(module);
     kg_select_clear(module);
     kg_color_clear(module);
+    kg_records_clear(module);
+    kg_postcss_clear(module);
     kg_types_clear(module);
     kg_values_clear(module);
     kg_syntax_clear(module);

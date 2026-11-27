@@ -72,35 +72,39 @@ def _only_universal(node: Node) -> bool:
     return not nodes or (len(nodes) == 1 and nodes[0].type == 'universal')
 
 
+def _sum(nodes: list[Node], custom_specificity: CustomSpecificity | None) -> tuple[int, int, int]:
+    a = b = c = 0
+    for n in nodes:
+        s = selector_specificity(n, custom_specificity)
+        a += s.a
+        b += s.b
+        c += s.c
+    return a, b, c
+
+
+ONE_ID: Final = Specificity(1, 0, 0)
+ONE_CLASS: Final = Specificity(0, 1, 0)
+ONE_TYPE: Final = Specificity(0, 0, 1)
+SIMPLE: Final = {'universal': ZERO, 'id': ONE_ID, 'tag': ONE_TYPE, 'class': ONE_CLASS, 'attribute': ONE_CLASS}
+
+
 def selector_specificity(node: Node | None, custom_specificity: CustomSpecificity | None = None) -> Specificity:
     """The specificity of a node: of a selector or a list (the sum of its items), or of a simple selector."""
     if custom_specificity is not None and node is not None and (custom := custom_specificity(node)):
         return custom
     if node is None:
         return ZERO
-    a = b = c = 0
-
-    def add(s: Specificity) -> None:
-        nonlocal a, b, c
-        a += s.a
-        b += s.b
-        c += s.c
-
     t = node.type
-    if t == 'universal':
-        return ZERO
-    if t == 'id':
-        a += 1
-    elif t == 'tag':
-        c += 1
-    elif t in ('class', 'attribute'):
-        b += 1
-    elif isinstance(node, Pseudo) and is_pseudo_element(node):
+    if (simple := SIMPLE.get(t)) is not None:
+        return simple
+    a = b = c = 0
+    if isinstance(node, Pseudo) and is_pseudo_element(node):
         name = node.value.lower()
         if name == '::slotted':
             c += 1
             if node.nodes:
-                add(specificity_of_most_specific_list_item(node.nodes, custom_specificity))
+                s = specificity_of_most_specific_list_item(node.nodes, custom_specificity)
+                a, b, c = a + s.a, b + s.b, c + s.c
         elif name in (
             '::highlight',
             '::view-transition-group',
@@ -110,14 +114,14 @@ def selector_specificity(node: Node | None, custom_specificity: CustomSpecificit
         ):
             if len(node.nodes) == 1 and node.nodes[0].type == 'selector' and _only_universal(node.nodes[0]):
                 return ZERO
-            return Specificity(0, 0, 1)
+            return ONE_TYPE
         else:
             c += 1
     elif isinstance(node, Pseudo) and is_pseudo_class(node):
         name = node.value.lower()
         if name in (':-moz-any', ':has', ':is', ':matches', ':not'):
             if node.nodes:
-                add(specificity_of_most_specific_list_item(node.nodes, custom_specificity))
+                return specificity_of_most_specific_list_item(node.nodes, custom_specificity)
         elif name == ':where':
             pass
         elif name in (':nth-child', ':nth-last-child'):
@@ -134,21 +138,21 @@ def selector_specificity(node: Node | None, custom_specificity: CustomSpecificit
                     for n in children[of + 1 :]:
                         selector.append(n.clone())
                     items: list[Node] = [selector, *node.nodes[1:]]
-                    add(specificity_of_most_specific_list_item(items, custom_specificity))
+                    s = specificity_of_most_specific_list_item(items, custom_specificity)
+                    a, b, c = a + s.a, b + s.b, c + s.c
         elif name in (':local', ':global'):
-            for n in node.nodes:
-                add(selector_specificity(n, custom_specificity))
+            a, b, c = _sum(node.nodes, custom_specificity)
         elif name in (':host', ':host-context'):
             b += 1
             if node.nodes:
-                add(specificity_of_most_specific_list_item(node.nodes, custom_specificity))
+                s = specificity_of_most_specific_list_item(node.nodes, custom_specificity)
+                a, b, c = a + s.a, b + s.b, c + s.c
         elif name in (':active-view-transition', ':active-view-transition-type'):
-            return Specificity(0, 1, 0)
+            return ONE_CLASS
         else:
             b += 1
     elif isinstance(node, Container) and node.nodes:
-        for n in node.nodes:
-            add(selector_specificity(n, custom_specificity))
+        a, b, c = _sum(node.nodes, custom_specificity)
     return Specificity(a, b, c)
 
 

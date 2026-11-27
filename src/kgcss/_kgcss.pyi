@@ -282,3 +282,112 @@ class NodeList:
     def __len__(self) -> int: ...
     def __getitem__(self, index: int, /) -> AtRule | QualifiedRule | Declaration | Token: ...
     def __iter__(self) -> Iterator[AtRule | QualifiedRule | Declaration | Token]: ...
+
+# The records of the linter (records.c): not tracked by the garbage collector, they hold only None,
+# str, int, bool and records of the types above them
+
+@final
+class SelectorPosition:
+    _fields: Final[tuple[str, ...]]
+    line: int
+    column: int
+    def __init__(self, line: int, column: int) -> None: ...
+    def copy(self) -> Self: ...
+    def deepcopy(self) -> Self: ...
+
+@final
+class SelectorSource:
+    _fields: Final[tuple[str, ...]]
+    start: SelectorPosition | None
+    end: SelectorPosition | None
+    def __init__(self, start: SelectorPosition | None = None, end: SelectorPosition | None = None) -> None: ...
+    def copy(self) -> Self: ...
+    def deepcopy(self) -> Self: ...
+
+@final
+class SelectorPartSpaces:
+    _fields: Final[tuple[str, ...]]
+    before: str | None
+    after: str | None
+    def __init__(self, before: str | None = None, after: str | None = None) -> None: ...
+    def copy(self) -> Self: ...
+    def deepcopy(self) -> Self: ...
+
+@final
+class SelectorSpaces:
+    _fields: Final[tuple[str, ...]]
+    before: str
+    after: str
+    attribute: SelectorPartSpaces | None
+    operator: SelectorPartSpaces | None
+    value: SelectorPartSpaces | None
+    insensitive: SelectorPartSpaces | None
+    def __init__(self, before: str = '', after: str = '') -> None: ...
+    def copy(self) -> Self: ...
+    def deepcopy(self) -> Self: ...
+
+@final
+class SelectorRawSpaces:
+    _fields: Final[tuple[str, ...]]
+    before: str | None
+    after: str | None
+    attribute: SelectorPartSpaces | None
+    operator: SelectorPartSpaces | None
+    value: SelectorPartSpaces | None
+    insensitive: SelectorPartSpaces | None
+    namespace: SelectorPartSpaces | None
+    def __init__(self, before: str | None = None, after: str | None = None) -> None: ...
+    def copy(self) -> Self: ...
+    def deepcopy(self) -> Self: ...
+
+@final
+class SelectorRaws:
+    _fields: Final[tuple[str, ...]]
+    value: str | None
+    namespace: str | None
+    attribute: str | None
+    operator: str | None
+    insensitive_flag: str | None
+    sensitive_flag: str | None
+    spaces: SelectorRawSpaces | None
+    def __init__(self, value: str | None = None) -> None: ...
+    def copy(self) -> Self: ...
+    def deepcopy(self) -> Self: ...
+
+@final
+class PostcssRawValue:
+    _fields: Final[tuple[str, ...]]
+    raw: str
+    value: str
+    def __init__(self, raw: str, value: str) -> None: ...
+    def copy(self) -> Self: ...
+    def deepcopy(self) -> Self: ...
+
+@final
+class PostcssRaws:
+    _fields: Final[tuple[str, ...]]
+    before: str | None
+    after: str | None
+    between: str | None
+    after_name: str | None
+    semicolon: bool | None
+    own_semicolon: str | None
+    important: str | None
+    left: str | None
+    right: str | None
+    selector: PostcssRawValue | None
+    params: PostcssRawValue | None
+    value: PostcssRawValue | None
+    def __init__(self) -> None: ...
+    def copy(self) -> Self: ...
+    def deepcopy(self) -> Self: ...
+
+# The fields of the nodes of kgcss.linter._postcss: the node classes declare those they have
+class PostcssNode: ...
+
+def postcss_parse(
+    css: str, safe: bool, classes: tuple[type[PostcssNode], ...], /
+) -> PostcssNode | tuple[str, int, int | None]: ...
+def selector_unesc(text: str, /) -> str: ...
+def selector_cssesc(text: str, is_identifier: bool, double_quotes: bool, wrap: bool, /) -> str: ...
+def selector_tokenize(css: str, /) -> list[tuple[int, int, int, int, int, int, int]] | str: ...

@@ -31,6 +31,18 @@ from collections.abc import Callable
 from enum import Enum
 from typing import ClassVar, Final, Literal, cast
 
+from kgcss._kgcss import (
+    SelectorPartSpaces,
+    SelectorPosition,
+    SelectorRaws,
+    SelectorRawSpaces,
+    SelectorSource,
+    SelectorSpaces,
+    selector_cssesc,
+    selector_tokenize,
+    selector_unesc,
+)
+
 MAX_NESTING_DEPTH: Final = 256
 
 # Token types: a character code for the single character tokens
@@ -177,6 +189,11 @@ def _is_hex_char(c: str) -> bool:
 
 
 def unesc(text: str) -> str:
+    """Remove CSS escapes, as util/unesc.js (in C, python_unesc() is the reference)."""
+    return selector_unesc(text)
+
+
+def python_unesc(text: str) -> str:
     """Remove CSS escapes, as util/unesc.js."""
     if '\\' not in text:
         return text
@@ -260,6 +277,11 @@ def _remove_excessive_spaces(output: str) -> str:
 
 
 def cssesc(text: str, *, is_identifier: bool = False, quotes: str = 'single', wrap: bool = False) -> str:
+    """Escape text for CSS, as util/cssesc.js (in C, python_cssesc() is the reference)."""
+    return selector_cssesc(text, is_identifier, quotes == 'double', wrap)
+
+
+def python_cssesc(text: str, *, is_identifier: bool = False, quotes: str = 'single', wrap: bool = False) -> str:
     """Escape text for CSS, as util/cssesc.js (cssesc 3 with a linear space removal)."""
     quote = '"' if quotes == 'double' else "'"
     first = text[:1]
@@ -304,121 +326,13 @@ def _cssesc_for_quote(text: str, quote_mark: str | _Undefined | None) -> str:
 # Node data {{{
 
 
-class Position:
-    """A line and column, both 1-based as postcss-selector-parser counts them."""
-
-    __slots__ = ('column', 'line')
-
-    def __init__(self, line: int, column: int) -> None:
-        self.line = line
-        self.column = column
-
-    def __repr__(self) -> str:
-        return f'Position({self.line}, {self.column})'
-
-
-class Source:
-    """The start and end of a node, either of which may be missing."""
-
-    __slots__ = ('end', 'start')
-
-    def __init__(self, start: Position | None = None, end: Position | None = None) -> None:
-        self.start = start
-        self.end = end
-
-    def __repr__(self) -> str:
-        return f'Source({self.start}, {self.end})'
-
-
-class PartSpaces:
-    """The spaces around a part of an attribute selector. None is a missing key."""
-
-    __slots__ = ('after', 'before')
-
-    def __init__(self, before: str | None = None, after: str | None = None) -> None:
-        self.before = before
-        self.after = after
-
-
-class Spaces:
-    """node.spaces: before and after, and for attributes the spaces around their parts."""
-
-    __slots__ = ('after', 'attribute', 'before', 'insensitive', 'operator', 'value')
-
-    def __init__(self, before: str = '', after: str = '') -> None:
-        self.before = before
-        self.after = after
-        self.attribute: PartSpaces | None = None
-        self.operator: PartSpaces | None = None
-        self.value: PartSpaces | None = None
-        self.insensitive: PartSpaces | None = None
-
-
-class RawSpaces:
-    """node.raws.spaces: the spaces with comments. None is a missing key."""
-
-    __slots__ = ('after', 'attribute', 'before', 'insensitive', 'namespace', 'operator', 'value')
-
-    def __init__(self, before: str | None = None, after: str | None = None) -> None:
-        self.before = before
-        self.after = after
-        self.attribute: PartSpaces | None = None
-        self.operator: PartSpaces | None = None
-        self.value: PartSpaces | None = None
-        self.insensitive: PartSpaces | None = None
-        self.namespace: PartSpaces | None = None
-
-
-class Raws:
-    """node.raws: the source text of properties that differ from their value. None is a missing key."""
-
-    __slots__ = ('attribute', 'insensitive_flag', 'namespace', 'operator', 'sensitive_flag', 'spaces', 'value')
-
-    def __init__(self, value: str | None = None) -> None:
-        self.value = value
-        self.namespace: str | None = None
-        self.attribute: str | None = None
-        self.operator: str | None = None
-        self.insensitive_flag: str | None = None
-        self.sensitive_flag: str | None = None
-        self.spaces: RawSpaces | None = None
-
-
-def _copy_part(p: PartSpaces | None) -> PartSpaces | None:
-    return None if p is None else PartSpaces(p.before, p.after)
-
-
-def _copy_source(s: Source | None) -> Source | None:
-    if s is None:
-        return None
-    return Source(
-        None if s.start is None else Position(s.start.line, s.start.column),
-        None if s.end is None else Position(s.end.line, s.end.column),
-    )
-
-
-def _copy_spaces(s: Spaces) -> Spaces:
-    ans = Spaces(s.before, s.after)
-    if s.attribute is not None or s.operator is not None or s.value is not None or s.insensitive is not None:
-        ans.attribute = _copy_part(s.attribute)
-        ans.operator = _copy_part(s.operator)
-        ans.value = _copy_part(s.value)
-        ans.insensitive = _copy_part(s.insensitive)
-    return ans
-
-
-def _copy_raws(r: Raws) -> Raws:
-    ans = Raws(r.value)
-    ans.namespace = r.namespace
-    ans.attribute = r.attribute
-    ans.operator = r.operator
-    ans.insensitive_flag = r.insensitive_flag
-    ans.sensitive_flag = r.sensitive_flag
-    if r.spaces is not None:
-        s = ans.spaces = RawSpaces(r.spaces.before, r.spaces.after)
-        for k in ('attribute', 'operator', 'value', 'insensitive', 'namespace'):
-            setattr(s, k, _copy_part(getattr(r.spaces, k)))
-    return ans
+# The records of a node, in C so that the garbage collector does not track them (see csrc/records.c)
+Position = SelectorPosition  # A line and column, both 1-based as postcss-selector-parser counts them
+Source = SelectorSource  # The start and end of a node, either of which may be missing
+PartSpaces = SelectorPartSpaces  # The spaces around a part of an attribute selector. None is a missing key
+Spaces = SelectorSpaces  # node.spaces: before and after, and for attributes the spaces around their parts
+RawSpaces = SelectorRawSpaces  # node.raws.spaces: the spaces with comments. None is a missing key
+Raws = SelectorRaws  # node.raws: the source text of properties that differ from their value. None is a missing key
 
 
 def _clone_depth(node: Node) -> int:
@@ -527,10 +441,10 @@ class Node:
 
     def _copy_into(self, cloned: Node) -> None:
         cloned._value = self._value
-        cloned.source = _copy_source(self.source)
+        cloned.source = None if self.source is None else self.source.deepcopy()
         cloned.source_index = self.source_index
-        cloned.spaces = _copy_spaces(self.spaces)
-        cloned.raws = _copy_raws(self.raws)
+        cloned.spaces = self.spaces.deepcopy()
+        cloned.raws = self.raws.deepcopy()
 
     def append_to_property_and_escape(self, name: str, value: str, value_escaped: str) -> None:
         original_value = getattr(self, name)
@@ -599,7 +513,16 @@ class Node:
 
     def to_string(self) -> str:
         """What the node prints as, as toString() in the JavaScript."""
-        return self.raw_space_before + self.value_to_string() + self.raw_space_after
+        # raw_space_before + value_to_string() + raw_space_after, without the properties
+        rs, sp = self.raws.spaces, self.spaces
+        if rs is None:
+            return (sp.before or '') + self.value_to_string() + (sp.after or '')
+        before, after = rs.before, rs.after
+        if before is None:
+            before = sp.before
+        if after is None:
+            after = sp.after
+        return (before or '') + self.value_to_string() + (after or '')
 
     def _stringify(self, depth: int) -> str:
         return self.to_string()
@@ -624,7 +547,8 @@ class Container(Node):
         # As in the JavaScript, the nodes given keep their parent
         self.nodes: list[Node] = [] if nodes is None else nodes
         self.last_each = 0
-        self.indexes: dict[int, int] = {}
+        # The positions of the iterations of each() and walk(), made when first needed: most nodes never have one
+        self.indexes: dict[int, int] | None = None
 
     def _clone(self, parent: Container | None, depth: int) -> Node:
         self._check_clone_depth(depth)
@@ -632,7 +556,7 @@ class Container(Node):
         self._copy_into(cloned)
         cloned.parent = parent
         cloned.last_each = self.last_each
-        cloned.indexes = dict(self.indexes)
+        cloned.indexes = None if self.indexes is None else dict(self.indexes)
         cloned.nodes = [child._clone(cloned, depth + 1) for child in self.nodes]
         return cloned
 
@@ -647,8 +571,9 @@ class Container(Node):
     def prepend(self, node: Node) -> Container:
         node.parent = self
         self.nodes.insert(0, node)
-        for k in self.indexes:
-            self.indexes[k] += 1
+        if self.indexes:
+            for k in self.indexes:
+                self.indexes[k] += 1
         return self
 
     def at(self, index: int) -> Node | None:
@@ -682,9 +607,10 @@ class Container(Node):
             raise SelectorError("Cannot set properties of undefined (setting 'parent')", 'TypeError')
         node.parent = None
         del self.nodes[idx]
-        for k, v in self.indexes.items():
-            if v >= idx:
-                self.indexes[k] = v - 1
+        if self.indexes:
+            for k, v in self.indexes.items():
+                if v >= idx:
+                    self.indexes[k] = v - 1
         return self
 
     def remove_all(self) -> Container:
@@ -702,9 +628,10 @@ class Container(Node):
         if at < 0:
             at = max(len(self.nodes) + at, 0)
         self.nodes[at:at] = new_nodes
-        for k, v in self.indexes.items():
-            if (old_index < v) if after else (v >= old_index):
-                self.indexes[k] = v + len(new_nodes)
+        if self.indexes:
+            for k, v in self.indexes.items():
+                if (old_index < v) if after else (v >= old_index):
+                    self.indexes[k] = v + len(new_nodes)
 
     def insert_after(self, old_node: Node | int, new_node: Node, *more: Node) -> Container:
         old_index = self.index(old_node)
@@ -749,17 +676,22 @@ class Container(Node):
         """Call callback with each child, safely against changes of the children, until it returns False."""
         self.last_each += 1
         id_ = self.last_each
-        self.indexes[id_] = 0
+        if self.indexes is None:
+            self.indexes = {}
+        indexes = self.indexes
+        indexes[id_] = 0
         if not self.nodes:
-            return None
+            return None  # leaving the index, as in the JavaScript
         result: object = None
-        while self.indexes[id_] < len(self.nodes):
-            index = self.indexes[id_]
+        while indexes[id_] < len(self.nodes):
+            index = indexes[id_]
             result = callback(self.nodes[index])
             if result is False:
                 break
-            self.indexes[id_] += 1
-        del self.indexes[id_]
+            indexes[id_] += 1
+        del indexes[id_]
+        if not indexes and self.indexes is indexes:
+            self.indexes = None
         return False if result is False else None
 
     def walk(self, callback: Callable[[Node], object], depth: int = 0) -> Literal[False] | None:
@@ -768,19 +700,24 @@ class Container(Node):
             raise SelectorError(f'Cannot walk selector: nesting depth exceeds the maximum of {MAX_NESTING_DEPTH}.')
         self.last_each += 1
         id_ = self.last_each
-        self.indexes[id_] = 0
+        if self.indexes is None:
+            self.indexes = {}
+        indexes = self.indexes
+        indexes[id_] = 0
         if not self.nodes:
-            return None
+            return None  # leaving the index, as in the JavaScript
         result: object = None
-        while self.indexes[id_] < len(self.nodes):
-            node = self.nodes[self.indexes[id_]]
+        while indexes[id_] < len(self.nodes):
+            node = self.nodes[indexes[id_]]
             result = callback(node)
             if result is not False and isinstance(node, Container) and node.nodes:
                 result = node.walk(callback, depth + 1)
             if result is False:
                 break
-            self.indexes[id_] += 1
-        del self.indexes[id_]
+            indexes[id_] += 1
+        del indexes[id_]
+        if not indexes and self.indexes is indexes:
+            self.indexes = None
         return False if result is False else None
 
     def _walk_type[T: Node](self, cls: type[T], callback: Callable[[T], object]) -> Literal[False] | None:
@@ -833,7 +770,17 @@ class Container(Node):
 
     def _stringify(self, depth: int) -> str:
         # A list, not a generator, so that each level of nesting takes one Python frame
-        return self.raw_space_before + ''.join([c._stringify(depth) for c in self.nodes]) + self.raw_space_after
+        text = ''.join([c._stringify(depth) for c in self.nodes])
+        rs, sp = self.raws.spaces, self.spaces
+        if rs is None:
+            before, after = sp.before, sp.after
+        else:
+            before, after = rs.before, rs.after
+            if before is None:
+                before = sp.before
+            if after is None:
+                after = sp.after
+        return (before or '') + text + (after or '')
 
 
 class Root(Container):
@@ -1521,6 +1468,14 @@ def _consume_word(css: str, start: int) -> int:
 
 
 def tokenize(css: str) -> list[Token]:
+    """The tokens of a selector, as tokenize.js (in C, python_tokenize() is the reference)."""
+    ans = selector_tokenize(css)
+    if isinstance(ans, str):
+        raise SelectorError(ans)
+    return ans
+
+
+def python_tokenize(css: str) -> list[Token]:
     """The tokens of a selector, as tokenize.js: (type, start line, start column, end line, end column, start, end)."""
     tokens: list[Token] = []
     length = len(css)

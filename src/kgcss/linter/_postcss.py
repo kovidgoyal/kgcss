@@ -18,8 +18,9 @@ its ASCII-only \\w and \\d.
 import builtins
 import re
 from collections.abc import Iterator
-from dataclasses import dataclass
 from typing import ClassVar, Final, NamedTuple, cast
+
+from kgcss._kgcss import PostcssNode, PostcssRaws, PostcssRawValue, postcss_parse
 
 # JavaScript's \s, which trim() also strips
 JS_WHITESPACE: Final = (
@@ -194,37 +195,26 @@ class Tokenizer:
 # Nodes
 
 
-@dataclass(slots=True)
-class RawValue:
-    """The raw text of a selector, params or value that holds comments, and the value without them."""
-
-    raw: str
-    value: str
-
-
-@dataclass(slots=True)
-class Raws:
-    """PostCSS's raws: the text around and between the parts of a node. None is undefined."""
-
-    before: str | None = None
-    after: str | None = None
-    between: str | None = None
-    after_name: str | None = None  # afterName
-    semicolon: bool | None = None
-    own_semicolon: str | None = None  # ownSemicolon
-    important: str | None = None
-    left: str | None = None
-    right: str | None = None
-    selector: RawValue | None = None
-    params: RawValue | None = None
-    value: RawValue | None = None
+# In C so that the garbage collector does not track them (see csrc/records.c):
+# RawValue is the raw text of a selector, params or value that holds comments, and the value without them;
+# Raws are PostCSS's raws, the text around and between the parts of a node, where None is undefined
+RawValue = PostcssRawValue
+Raws = PostcssRaws
 
 
-class Node:
-    """A PostCSS node: start and end are offsets, end exclusive or None."""
+class Node(PostcssNode):
+    """A PostCSS node: start and end are offsets, end exclusive or None.
 
-    __slots__ = ('end', 'parent', 'raws', 'start')
+    The fields of the nodes are those of their C base, PostcssNode, which the
+    C version of the parser fills (see csrc/postcss.c).
+    """
+
+    __slots__ = ()
     type: ClassVar[str] = ''
+    parent: Container | None
+    raws: Raws
+    start: int | None
+    end: int | None
 
     def __init__(self) -> None:
         self.parent: Container | None = None
@@ -254,7 +244,8 @@ class Node:
 
 
 class Container(Node):
-    __slots__ = ('nodes',)
+    __slots__ = ()
+    nodes: list[Node] | None
 
     def __init__(self) -> None:
         super().__init__()
@@ -300,7 +291,10 @@ class Container(Node):
 
 
 class Root(Container):
-    __slots__ = ('by_type', 'css', 'descendants')
+    __slots__ = ()
+    css: str
+    descendants: list[Node] | None
+    by_type: dict[builtins.type[Node], list[Node]]
     type: ClassVar[str] = 'root'
 
     def __init__(self, css: str) -> None:
@@ -338,7 +332,9 @@ class Root(Container):
 
 
 class AtRule(Container):
-    __slots__ = ('name', 'params')
+    __slots__ = ()
+    name: str
+    params: str
     type: ClassVar[str] = 'atrule'
 
     def __init__(self) -> None:
@@ -348,7 +344,8 @@ class AtRule(Container):
 
 
 class Rule(Container):
-    __slots__ = ('selector',)
+    __slots__ = ()
+    selector: str
     type: ClassVar[str] = 'rule'
 
     def __init__(self) -> None:
@@ -358,7 +355,10 @@ class Rule(Container):
 
 
 class Declaration(Node):
-    __slots__ = ('important', 'prop', 'value')
+    __slots__ = ()
+    prop: str
+    value: str
+    important: bool
     type: ClassVar[str] = 'decl'
 
     def __init__(self) -> None:
@@ -369,7 +369,8 @@ class Declaration(Node):
 
 
 class Comment(Node):
-    __slots__ = ('text',)
+    __slots__ = ()
+    text: str
     type: ClassVar[str] = 'comment'
 
     def __init__(self) -> None:
@@ -920,12 +921,31 @@ class SafeParser(Parser):
         node.name = ''
 
 
-def parse(css: str) -> tuple[Root, CssSyntaxError | None]:
-    """Parse as stylelint does: the error PostCSS raises, if any, and the safe parser's tree."""
+NODE_CLASSES: Final = (Root, AtRule, Rule, Declaration, Comment)
+
+
+def c_parse(css: str, safe: bool) -> Root:
+    """Parser(css).parse(), or SafeParser's if safe, in C."""
+    ans = postcss_parse(css, safe, NODE_CLASSES)
+    if isinstance(ans, tuple):
+        raise CssSyntaxError(*ans)
+    return cast(Root, ans)
+
+
+def python_parse(css: str) -> tuple[Root, CssSyntaxError | None]:
+    """parse() with the Python parsers, the reference of the C version."""
     try:
         return Parser(css).parse(), None
     except CssSyntaxError as err:
         return SafeParser(css).parse(), err
+
+
+def parse(css: str) -> tuple[Root, CssSyntaxError | None]:
+    """Parse as stylelint does: the error PostCSS raises, if any, and the safe parser's tree."""
+    ans = postcss_parse(css, False, NODE_CLASSES)
+    if not isinstance(ans, tuple):
+        return cast(Root, ans), None
+    return c_parse(css, True), CssSyntaxError(*ans)
 
 
 # Printing: node.toString(), PostCSS's lib/stringify.js and lib/stringifier.js

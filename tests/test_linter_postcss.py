@@ -36,7 +36,7 @@ def dump(node: Node) -> dict[str, object]:
     if getattr(node, 'important', False):
         ans['important'] = True
     raws: dict[str, object] = {}
-    for key in node.raws.__slots__:
+    for key in node.raws._fields:
         value = getattr(node.raws, key)
         if value is not None:
             raws[RAW_NAMES.get(key, key)] = (

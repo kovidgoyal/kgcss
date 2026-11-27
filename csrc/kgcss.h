@@ -64,6 +64,19 @@
  * objects, exception types, heap types) lives here.
  * ------------------------------------------------------------------------- */
 
+/* The record types of records.c, in the order they are defined */
+typedef enum {
+    KG_RECORD_SELECTOR_POSITION,
+    KG_RECORD_SELECTOR_SOURCE,
+    KG_RECORD_SELECTOR_PART_SPACES,
+    KG_RECORD_SELECTOR_SPACES,
+    KG_RECORD_SELECTOR_RAW_SPACES,
+    KG_RECORD_SELECTOR_RAWS,
+    KG_RECORD_POSTCSS_RAW_VALUE,
+    KG_RECORD_POSTCSS_RAWS,
+    KG_RECORD_TYPE_COUNT
+} kg_record_type;
+
 typedef struct {
     PyObject *empty_string;
     PyObject *str_important;
@@ -83,6 +96,8 @@ typedef struct {
     PyObject *token_types;
     /* error_kinds[i] is the kind string for kg_error_kind i */
     PyObject *error_kinds;
+    PyTypeObject *record_types[KG_RECORD_TYPE_COUNT];
+    PyTypeObject *PostcssNode_type;
 } kg_module_state;
 
 static inline kg_module_state *
