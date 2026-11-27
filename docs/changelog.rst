@@ -1,6 +1,22 @@
 Changelog
 =========
 
+1.4.1
+-----
+
+- :func:`kgcss.lint` takes time and memory linear in the size of a
+  declaration with many missed semicolons, which PostCSS's safe parser splits
+  into declarations by recursion: before, 8000 of them took 16.8 GB, and the
+  Python version of the parser raised RecursionError at about 400.
+- The fixes of ``declaration-block-no-duplicate-properties`` take time linear
+  in the size of the block, rather than quadratic: a block of 8000 duplicates
+  took 19 seconds to lint, and now takes a tenth of a second. The fixes are
+  unchanged.
+- Fixes to the memory and thread safety of the linter's C code: a reference
+  leak on an error path, cycles through the fields of the value parser's
+  nodes that the garbage collector could not free, and checks of what the
+  Python side passes to the C selector parser.
+
 1.4.0
 -----
 
