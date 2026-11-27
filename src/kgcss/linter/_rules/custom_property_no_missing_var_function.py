@@ -12,6 +12,7 @@ from typing import Final
 
 from kgcss._css_data import CSS_TREE_DASHED_IDENT_PROPERTIES, CSS_TREE_PROPERTIES
 from kgcss.linter._engine import Context
+from kgcss.linter._messages import MISSING_VAR_FUNCTION
 from kgcss.linter._postcss import Declaration, Root
 from kgcss.linter._utils import css_tree_property, declaration_value_index, is_custom_property
 from kgcss.linter._value_parser import ValueNode, parse
@@ -81,7 +82,7 @@ def check(root: Root, ctx: Context) -> None:
         value = RE_TRAILING_SEMICOLONS.sub('', node.value)  # postcss-value-parser keeps semicolons in words
         if value in known:
             index = declaration_value_index(decl) + node.source_index
-            ctx.report(decl, f'Missing var function for "{value}"', (value,), index=index, end_index=index + len(value))
+            ctx.report(decl, MISSING_VAR_FUNCTION, (value,), index=index, end_index=index + len(value))
 
     if not known:
         return

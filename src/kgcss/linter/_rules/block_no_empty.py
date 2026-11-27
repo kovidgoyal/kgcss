@@ -5,6 +5,7 @@
 from typing import Final
 
 from kgcss.linter._engine import Context
+from kgcss.linter._messages import EMPTY_BLOCK
 from kgcss.linter._postcss import JS_WHITESPACE, AtRule, Comment, Root, Rule
 from kgcss.linter._utils import before_block_string, is_configuration_comment
 
@@ -29,4 +30,4 @@ def check(root: Root, ctx: Context) -> None:
             index -= 1
         start = ctx.source.position_by(statement, index)
         end = ctx.source.node_range(statement)[1]
-        ctx.report(statement, 'Empty block', start=start, end=end)
+        ctx.report(statement, EMPTY_BLOCK, start=start, end=end)

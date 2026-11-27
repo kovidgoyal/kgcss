@@ -6,6 +6,7 @@ import re
 from typing import Final
 
 from kgcss.linter._engine import Context
+from kgcss.linter._messages import DISALLOWED_IMPORTANT
 from kgcss.linter._postcss import JS_WHITESPACE, Root, to_string
 
 RE_KEYFRAMES: Final = re.compile(r'^(-(o|moz|ms|webkit)-)?keyframes$', re.IGNORECASE)
@@ -18,4 +19,4 @@ def check(root: Root, ctx: Context) -> None:
             continue
         for decl in keyframes.walk_decls():  # nested @keyframes report their declarations again, as in stylelint
             if decl.important and (m := RE_IMPORTANT.search(to_string(decl))):
-                ctx.report(decl, 'Disallowed !important', index=m.start(), end_index=m.end())
+                ctx.report(decl, DISALLOWED_IMPORTANT, index=m.start(), end_index=m.end())

@@ -1,6 +1,19 @@
 Changelog
 =========
 
+1.4.0
+-----
+
+- The messages of :func:`kgcss.lint` can be translated. A
+  :class:`kgcss.LintProblem` or :class:`kgcss.SyntaxProblem` has the
+  ``template`` of its message, the message with its values replaced by
+  ``{0}``, ``{1}`` and so on, so that ``template.format(*args)`` is the
+  message, and ``_(p.template).format(*p.args)`` translates it with gettext.
+  :class:`kgcss.SyntaxProblem` has the ``args`` of its message too.
+  :attr:`kgcss.LintRuleInfo.messages` and
+  :data:`kgcss.SYNTAX_PROBLEM_TEMPLATES` list every template, for message
+  catalogues. The messages themselves are unchanged.
+
 1.3.0
 -----
 

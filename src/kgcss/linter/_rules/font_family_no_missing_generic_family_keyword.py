@@ -7,6 +7,7 @@ from typing import Final
 from kgcss._css_data import FONT_FAMILY_KEYWORDS, SYSTEM_FONT_KEYWORDS
 from kgcss.linter._engine import Context
 from kgcss.linter._fonts import RE_FONT_FAMILY_PROPERTY, find_font_family
+from kgcss.linter._messages import MISSING_GENERIC_FONT_FAMILY
 from kgcss.linter._postcss import AtRule, Root
 from kgcss.linter._utils import declaration_value_index, is_standard_syntax_value, is_variable, postcss_list_comma
 
@@ -41,7 +42,7 @@ def check(root: Root, ctx: Context) -> None:
         last = families[-1]
         ctx.report(
             decl,
-            'Missing generic font family',
+            MISSING_GENERIC_FONT_FAMILY,
             index=start + last.source_index,
             end_index=start + last.source_end_index,
         )

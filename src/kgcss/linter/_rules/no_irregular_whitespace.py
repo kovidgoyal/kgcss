@@ -13,6 +13,7 @@ from collections.abc import Callable
 from typing import Final
 
 from kgcss.linter._engine import Context
+from kgcss.linter._messages import IRREGULAR_WHITESPACE
 from kgcss.linter._postcss import Node, Root
 from kgcss.linter._selector_parser import Attribute, Comment, SelectorError, parse_selector
 from kgcss.linter._selector_parser import Node as SelectorNode
@@ -99,7 +100,7 @@ def check(root: Root, ctx: Context) -> None:
         if not value:
             return
         for m in RE_IRREGULARS.finditer(value):
-            ctx.report(node, 'Irregular whitespace', index=start + m.start(), end_index=start + m.end())
+            ctx.report(node, IRREGULAR_WHITESPACE, index=start + m.start(), end_index=start + m.end())
 
     def clean(*texts: str | None) -> bool:
         """Whether none of the texts of a node has irregular whitespace: then no part of them can."""

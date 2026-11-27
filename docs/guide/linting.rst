@@ -25,6 +25,30 @@ translated anew, and its position: ``pos`` and ``end`` index the text, and
 reports, except that columns count code points where stylelint counts UTF-16
 code units. Rules can be turned off with ``disabled``.
 
+Translating messages
+--------------------
+
+The ``template`` of a problem is its message with the values replaced by
+``{0}``, ``{1}`` and so on, so that ``template.format(*args)`` is the message.
+The indices are explicit, so a translation can put the values in another
+order, and literal braces are doubled (``'Unexpected }}'``). With gettext, a
+message is translated by ``_(p.template).format(*p.args)``, and
+:attr:`kgcss.LintRuleInfo.messages` and :data:`kgcss.SYNTAX_PROBLEM_TEMPLATES`
+list every template that can be in a message catalogue.
+
+.. doctest::
+
+   >>> p = result.problems[1]
+   >>> p.template, p.args
+   ('Unknown at-rule "{0}"', ('@foo',))
+   >>> p.template in kgcss.LINT_RULES[p.rule].messages
+   True
+   >>> sp = kgcss.lint('a b').syntax_problems[0]
+   >>> sp.template, sp.args, sp.message
+   ('Unknown word {0}', ('a',), 'Unknown word a')
+   >>> kgcss.SYNTAX_PROBLEM_TEMPLATES[sp.kind]
+   'Unknown word {0}'
+
 Options
 -------
 

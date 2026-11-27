@@ -8,6 +8,7 @@ from kgcss._css_data import (
     SHORTHAND_TO_RESET_TO_INITIAL_PROPERTY,
 )
 from kgcss.linter._engine import Context
+from kgcss.linter._messages import OVERRIDDEN_PROPERTY
 from kgcss.linter._postcss import Root
 from kgcss.linter._utils import each_declaration_block, vendor_prefix, vendor_unprefixed
 
@@ -29,6 +30,4 @@ def check(root: Root, ctx: Context) -> None:
             declarations[prop.lower()] = prop
             for name in overridden:
                 if original := declarations.get(prefix + name):
-                    ctx.report(
-                        decl, f'Overridden property "{original}" by shorthand "{prop}"', (prop, original), word=prop
-                    )
+                    ctx.report(decl, OVERRIDDEN_PROPERTY, (prop, original), word=prop)

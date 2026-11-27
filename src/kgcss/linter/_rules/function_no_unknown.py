@@ -21,6 +21,7 @@ from kgcss.linter._csstools import (
     walk,
 )
 from kgcss.linter._engine import Context
+from kgcss.linter._messages import UNKNOWN_FUNCTION
 from kgcss.linter._postcss import Root
 from kgcss.linter._utils import declaration_value_index, is_standard_syntax_value, vendor_prefix
 
@@ -76,7 +77,7 @@ def check(root: Root, ctx: Context) -> None:
             # From the name to the ( that ends the function token
             ctx.report(
                 decl,
-                f'Unknown function "{name}"',
+                UNKNOWN_FUNCTION,
                 (name,),
                 index=start + func.name.start,
                 end_index=start + func.name.end,

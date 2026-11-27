@@ -12,6 +12,12 @@ from typing import Final, NamedTuple
 
 from kgcss._css_data import PSEUDO_ELEMENTS
 from kgcss.linter._engine import Context
+from kgcss.linter._messages import (
+    DESCENDING_SPECIFICITY,
+    DESCENDING_SPECIFICITY_RESOLVED,
+    DESCENDING_SPECIFICITY_RESOLVED_BEFORE,
+    DESCENDING_SPECIFICITY_RESOLVED_BOTH,
+)
 from kgcss.linter._postcss import AtRule, Container, Declaration, Root, Rule
 from kgcss.linter._selector_helpers import (
     at_rule_context,
@@ -101,12 +107,14 @@ def check(root: Root, ctx: Context) -> None:
             p = next(p for p in group.entries if compare(entry.specificity, p.specificity) < 0)
             text, resolved_text = entry.texts()
             prior_text, prior_resolved = p.texts()
-            subsequent = f'"{text}"' + (f' ("{resolved_text}")' if resolved_text else '')
-            before = f'"{prior_text}"' + (f' ("{prior_resolved}")' if prior_resolved else '')
+            if resolved_text:
+                template = DESCENDING_SPECIFICITY_RESOLVED_BOTH if prior_resolved else DESCENDING_SPECIFICITY_RESOLVED
+            else:
+                template = DESCENDING_SPECIFICITY_RESOLVED_BEFORE if prior_resolved else DESCENDING_SPECIFICITY
             _, index, end_index = stripped_selector_source(selector)
             ctx.report(
                 rule,
-                f'Expected selector {subsequent} to come before selector {before}, at line {p.line}',
+                template,
                 (text, prior_text, str(p.line), resolved_text, prior_resolved),
                 index=index,
                 end_index=end_index,

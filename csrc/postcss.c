@@ -176,9 +176,10 @@ typedef struct {
     kg_PostcssNode *root, *current;
     PyObject *spaces;
     bool semicolon;
-    /* The error of the non-safe parser */
+    /* The error of the non-safe parser: the template of its message (kgcss.linter._messages), and the
+       argument of the template, if any */
     const char *reason;
-    PyObject *reason_text;
+    PyObject *reason_arg;
     Py_ssize_t err_offset, err_end;
 } parser;
 
@@ -728,10 +729,8 @@ unknown_word(parser *p, const tokens *t, Py_ssize_t a, Py_ssize_t b) {
     const Py_ssize_t start = first.start < 0 ? 0 : first.start;
     PyObject *text = text_of(p, first);
     if (text == NULL) return ERR_PYTHON;
-    p->reason_text = PyUnicode_FromFormat("Unknown word %U", text);
-    Py_DECREF(text);
-    if (p->reason_text == NULL) return ERR_PYTHON;
-    return syntax_error(p, NULL, start, start + text_len(p, first));
+    Py_XSETREF(p->reason_arg, text);
+    return syntax_error(p, "Unknown word {0}", start, start + text_len(p, first));
 }
 
 /* Parser.end() */
@@ -749,7 +748,7 @@ end_block(parser *p, token tok) {
         p->current = (kg_PostcssNode *)current->parent;
         return ERR_NONE;
     }
-    if (!p->safe) return syntax_error(p, "Unexpected }", tok.start, tok.start + 1);
+    if (!p->safe) return syntax_error(p, "Unexpected }}", tok.start, tok.start + 1);
     /* SafeParser.unexpected_close() */
     PyObject *after = get_raw(current, R_AFTER);
     PyObject *base = after == Py_None ? NULL : Py_NewRef(after);
@@ -1349,14 +1348,14 @@ parse(kg_module_state *state, PyObject *css, bool safe, PyTypeObject **classes) 
     if (r == ERR_NONE) {
         ans = Py_NewRef((PyObject *)p.root);
     } else if (r == ERR_SYNTAX) {
-        PyObject *reason = p.reason_text != NULL ? Py_NewRef(p.reason_text) : PyUnicode_FromString(p.reason);
-        if (reason != NULL) {
-            if (p.err_end < 0) ans = Py_BuildValue("(NnO)", reason, p.err_offset, Py_None);
-            else ans = Py_BuildValue("(Nnn)", reason, p.err_offset, p.err_end);
+        PyObject *args = p.reason_arg != NULL ? PyTuple_Pack(1, p.reason_arg) : PyTuple_New(0);
+        if (args != NULL) {
+            if (p.err_end < 0) ans = Py_BuildValue("(sNnO)", p.reason, args, p.err_offset, Py_None);
+            else ans = Py_BuildValue("(sNnn)", p.reason, args, p.err_offset, p.err_end);
         }
     }
 end:
-    Py_XDECREF(p.reason_text);
+    Py_XDECREF(p.reason_arg);
     Py_XDECREF(p.spaces);
     Py_XDECREF(p.root);
     tokens_free(&p.returned);

@@ -2,10 +2,42 @@
 
 """Results of kgcss.linter in the terms of stylelint's warnings, to compare them."""
 
-from kgcss.linter import LINT_RULES, LintResult
+from string import Formatter
+
+from kgcss.linter import LINT_RULES, SYNTAX_PROBLEM_TEMPLATES, LintResult
 
 from .stylelint_fixtures import ExpectedWarning
 from .stylelint_oracle import utf16_offsets
+
+
+def template_indices(template: str) -> list[int]:
+    """The indices of the replacement fields of a template, in order; ValueError if it has others."""
+    ans = []
+    for _, field, spec, conversion in Formatter().parse(template):
+        if field is None:
+            continue
+        if not field.isdigit() or spec or conversion:
+            raise ValueError(f'Not a plain explicit index: {{{field}}} in {template!r}')
+        ans.append(int(field))
+    return ans
+
+
+def check_templates(result: LintResult) -> None:
+    """Every message of result is its template with its args, and the template is registered.
+
+    The template of a problem uses as many distinct indices as it has args, but where an arg is empty
+    (as no-descending-specificity leaves out the resolved selectors of rules that are not nested), so
+    that no value is left out of a message.
+    """
+    for p in result.problems:
+        assert p.template in LINT_RULES[p.rule].messages, p
+        assert p.template.format(*p.args) == p.message, p
+        used = set(template_indices(p.template))
+        assert all(not arg for i, arg in enumerate(p.args) if i not in used), p
+    for sp in result.syntax_problems:
+        assert sp.template == SYNTAX_PROBLEM_TEMPLATES[sp.kind], sp
+        assert sp.template.format(*sp.args) == sp.message, sp
+        assert len(set(template_indices(sp.template))) == len(sp.args), sp
 
 
 def as_stylelint(source: str, result: LintResult) -> list[ExpectedWarning]:
@@ -13,6 +45,7 @@ def as_stylelint(source: str, result: LintResult) -> list[ExpectedWarning]:
 
     Where the text has a syntax error, stylelint reports only that.
     """
+    check_templates(result)
     code = source[1:] if source[:1] in ('\ufeff', '\ufffe') else source  # PostCSS strips one
     lines = code.split('\n')
 

@@ -10,6 +10,7 @@ parser, is not supported.
 from typing import Final
 
 from kgcss.linter._engine import Context, removal_edit
+from kgcss.linter._messages import DUPLICATE_PROPERTY
 from kgcss.linter._postcss import Declaration, Root
 from kgcss.linter._utils import (
     each_declaration_block,
@@ -36,7 +37,7 @@ def check(root: Root, ctx: Context) -> None:
     ignore_prefixless = ctx.ignores('consecutive-duplicates-with-same-prefixless-values')
 
     def report(node: Declaration, word: str) -> None:
-        ctx.report(node, f'Duplicate property "{word}"', (word,), word=word, fix=removal_edit(ctx.css, node))
+        ctx.report(node, DUPLICATE_PROPERTY, (word,), word=word, fix=removal_edit(ctx.css, node))
 
     for block in each_declaration_block(root):
         decls: list[Declaration] = []

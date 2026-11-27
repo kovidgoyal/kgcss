@@ -16,6 +16,7 @@ from kgcss._css_data import (
     SVG_TYPE_SELECTORS,
 )
 from kgcss.linter._engine import Context
+from kgcss.linter._messages import UNKNOWN_TYPE_SELECTOR
 from kgcss.linter._postcss import Root
 from kgcss.linter._selector_parser import Nesting, Pseudo, SelectorError, Tag, is_pseudo_class, is_pseudo_element
 from kgcss.linter._utils import (
@@ -112,4 +113,4 @@ def check(root: Root, ctx: Context) -> None:
             if lower in HTML_TYPE_SELECTORS or name in SVG_TYPE_SELECTORS or lower in MATHML_TYPE_SELECTORS:
                 continue
             index = selector_index(tag)
-            ctx.report(rule, f'Unknown type selector "{name}"', (name,), index=index, end_index=index + len(name))
+            ctx.report(rule, UNKNOWN_TYPE_SELECTOR, (name,), index=index, end_index=index + len(name))

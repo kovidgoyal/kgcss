@@ -7,6 +7,7 @@ from collections.abc import Iterable
 from typing import Final
 
 from kgcss.linter._engine import Context
+from kgcss.linter._messages import INVALID_HEX_COLOR
 from kgcss.linter._postcss import Root
 from kgcss.linter._utils import declaration_value_index
 from kgcss.linter._value_parser import ValueNode, parse
@@ -33,7 +34,7 @@ def check(root: Root, ctx: Context) -> None:
                 index = declaration_value_index(decl) + node.source_index
                 ctx.report(
                     decl,
-                    f'Invalid hex color "{hex_value}"',
+                    INVALID_HEX_COLOR,
                     (hex_value,),
                     index=index,
                     end_index=index + len(hex_value),

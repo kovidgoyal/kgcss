@@ -6,6 +6,7 @@ from typing import Final
 
 from kgcss._css_data import PSEUDO_ELEMENTS
 from kgcss.linter._engine import Context
+from kgcss.linter._messages import UNKNOWN_PSEUDO_ELEMENT
 from kgcss.linter._postcss import Root
 from kgcss.linter._selector_parser import Pseudo, SelectorError
 from kgcss.linter._utils import (
@@ -39,6 +40,4 @@ def check(root: Root, ctx: Context) -> None:
             if ctx.matches('ignorePseudoElements', name) or vendor_prefix(name) or name.lower() in PSEUDO_ELEMENTS:
                 continue
             index = selector_index(pseudo)
-            ctx.report(
-                rule, f'Unknown pseudo-element selector "{value}"', (value,), index=index, end_index=index + len(value)
-            )
+            ctx.report(rule, UNKNOWN_PSEUDO_ELEMENT, (value,), index=index, end_index=index + len(value))

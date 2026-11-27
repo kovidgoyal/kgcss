@@ -11,6 +11,7 @@ from kgcss._css_data import (
     PREVIOUSLY_KNOWN_PROPERTIES,
 )
 from kgcss.linter._engine import Context
+from kgcss.linter._messages import UNKNOWN_PROPERTY
 from kgcss.linter._postcss import AtRule, Root, Rule
 from kgcss.linter._utils import (
     ancestors,
@@ -47,4 +48,4 @@ def check(root: Root, ctx: Context) -> None:
             continue
         if check_prefixed and prop.lower() in PREVIOUSLY_KNOWN_PREFIXED_PROPERTIES:
             continue
-        ctx.report(decl, f'Unknown property "{prop}"', (prop,), word=prop)
+        ctx.report(decl, UNKNOWN_PROPERTY, (prop,), word=prop)

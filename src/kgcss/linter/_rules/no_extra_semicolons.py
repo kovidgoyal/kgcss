@@ -16,10 +16,10 @@ from typing import Final
 
 from kgcss.linter import TextEdit
 from kgcss.linter._engine import Context
+from kgcss.linter._messages import EXTRA_SEMICOLON
 from kgcss.linter._postcss import Container, Node, Root, Rule, js_trim
 from kgcss.linter._utils import has_interpolation, style_search
 
-MESSAGE: Final = 'Unexpected extra semicolon'
 # The plugin's EVERY_ESCAPE_STRING_OR_COMMENT
 RE_ESCAPE_STRING_OR_COMMENT: Final = re.compile(
     r'\\.|//|"[^"\\]*(?:\\.[^"\\]*)*"|\'[^\'\\]*(?:\\.[^\'\\]*)*\'|/\*.*?\*/', re.DOTALL
@@ -103,7 +103,7 @@ def check(root: Root, ctx: Context) -> None:
     text = root.css
 
     def complain(index: int) -> None:
-        ctx.report(root, MESSAGE, index=index, end_index=index, fix=TextEdit(index, index + 1, ''))
+        ctx.report(root, EXTRA_SEMICOLON, index=index, end_index=index, fix=TextEdit(index, index + 1, ''))
 
     def take_out(raw: str | None, found: list[int], base: int) -> None:
         """Report the semicolons found in raw, which ends at base in the text (offsetOf)."""

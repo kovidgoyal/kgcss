@@ -6,6 +6,7 @@ import re
 from typing import Final, NamedTuple
 
 from kgcss.linter._engine import Context
+from kgcss.linter._messages import EXPECTED_CELL_TOKEN, EXPECTED_RECTANGLE, EXPECTED_SAME_CELL_COUNT
 from kgcss.linter._postcss import Declaration, Root
 from kgcss.linter._utils import declaration_value_index, is_standard_syntax_value, js_split_whitespace, js_trim_str
 from kgcss.linter._value_parser import iter_nodes, parse
@@ -38,8 +39,8 @@ def not_contiguous_or_rectangular(areas: list[list[str]]) -> list[str]:
 def check_decl(decl: Declaration, ctx: Context) -> None:
     start = declaration_value_index(decl)
 
-    def complain(message: str, args: tuple[str, ...], index: int, end_index: int) -> None:
-        ctx.report(decl, message, args, index=start + index, end_index=start + end_index)
+    def complain(template: str, args: tuple[str, ...], index: int, end_index: int) -> None:
+        ctx.report(decl, template, args, index=start + index, end_index=start + end_index)
 
     areas: list[Area] = []
     report_sent = False
@@ -47,7 +48,7 @@ def check_decl(decl: Declaration, ctx: Context) -> None:
         if node.type != 'string':
             continue
         if node.value == '':
-            complain('Expected cell token within string', (), node.source_index, node.source_end_index)
+            complain(EXPECTED_CELL_TOKEN, (), node.source_index, node.source_end_index)
             report_sent = True
             continue
         areas.append(Area(js_split_whitespace(js_trim_str(node.value)), node.source_index, node.source_end_index))
@@ -55,11 +56,11 @@ def check_decl(decl: Declaration, ctx: Context) -> None:
         return
     first = areas[0]
     if other := next((a for a in areas if len(a.values) != len(first.values)), None):
-        complain('Expected same number of cell tokens in each string', (), other.index, other.end_index)
+        complain(EXPECTED_SAME_CELL_COUNT, (), other.index, other.end_index)
         return
     for name in sorted(not_contiguous_or_rectangular([a.values for a in areas])):
         area = next(a for a in areas if name in a.values)
-        complain(f'Expected single filled-in rectangle for "{name}"', (name,), area.index, area.end_index)
+        complain(EXPECTED_RECTANGLE, (name,), area.index, area.end_index)
 
 
 def check(root: Root, ctx: Context) -> None:

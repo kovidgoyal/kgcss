@@ -267,6 +267,11 @@ Linting
 
    The :class:`LintRuleInfo` of every rule, in the order of :class:`LintRule`.
 
+.. data:: kgcss.SYNTAX_PROBLEM_TEMPLATES
+
+   The template of the message of each :class:`SyntaxProblemKind`
+   (:attr:`SyntaxProblem.template`).
+
 The css_parser-style facade
 ---------------------------
 

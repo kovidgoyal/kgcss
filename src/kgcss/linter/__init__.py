@@ -12,6 +12,14 @@ The results are data rather than text: each LintProblem has its rule, the
 arguments of its message, its position and, for rules that can fix what
 they find, the edit that fixes it.
 
+Messages can be translated: each problem has the template of its message
+as well as the message, and message == template.format(*args). The
+templates use explicit indices ({0}, {1}), so that a translation can put
+the values in another order. LintRuleInfo.messages and
+SYNTAX_PROBLEM_TEMPLATES list every template, for message catalogues::
+
+    message = _(problem.template).format(*problem.args)
+
 The rules are implemented in their own modules, imported the first time
 they are used.
 """
@@ -21,6 +29,8 @@ from dataclasses import dataclass
 from enum import Enum, StrEnum, unique
 from types import MappingProxyType
 from typing import Final
+
+from kgcss.linter import _messages as m
 
 
 @unique
@@ -75,6 +85,8 @@ class LintRuleInfo:
     stylelint_name: str
     #: The module that implements it
     module: str
+    #: The template of every message the rule can report (LintProblem.template), in a fixed order
+    messages: tuple[str, ...] = ()
 
 
 def _stylelint(rule: LintRule, description: str, fixable: bool = False) -> LintRuleInfo:
@@ -149,7 +161,7 @@ def _info(rule: LintRule) -> LintRuleInfo:
     else:
         url = f'https://stylelint.io/user-guide/rules/{rule.value}'
         name = rule.value
-    return LintRuleInfo(rule, _DESCRIPTIONS[rule], url, rule in _FIXABLE, name, module)
+    return LintRuleInfo(rule, _DESCRIPTIONS[rule], url, rule in _FIXABLE, name, module, m.RULE_MESSAGES[rule.value])
 
 
 #: Every rule, in the order of LintRule
@@ -176,7 +188,7 @@ class LintProblem:
     """
 
     rule: LintRule
-    #: The message, as stylelint words it, without stylelint's " (rule-name)" suffix
+    #: The message, as stylelint words it, without stylelint's " (rule-name)" suffix: ``template.format(*args)``
     message: str
     #: The values in the message, such as the name of an unknown property
     args: tuple[str, ...]
@@ -188,6 +200,8 @@ class LintProblem:
     end_column: int
     #: How to fix the problem, if the rule can
     fix: TextEdit | None = None
+    #: The message with the values replaced by {0}, {1}... (an item of LintRuleInfo.messages), to translate
+    template: str = ''
 
 
 @unique
@@ -216,7 +230,7 @@ class SyntaxProblem:
     """
 
     kind: SyntaxProblemKind
-    #: The message, as PostCSS words it ('Unknown word foo')
+    #: The message, as PostCSS words it ('Unknown word foo'): ``template.format(*args)``
     message: str
     pos: int
     end: int | None
@@ -224,6 +238,26 @@ class SyntaxProblem:
     column: int
     end_line: int | None
     end_column: int | None
+    #: The message with the values replaced by {0}, {1}... (SYNTAX_PROBLEM_TEMPLATES[kind]), to translate
+    template: str = ''
+    #: The values in the message, such as the unknown word
+    args: tuple[str, ...] = ()
+
+
+#: The template of the message of each kind of SyntaxProblem (SyntaxProblem.template)
+SYNTAX_PROBLEM_TEMPLATES: Final[Mapping[SyntaxProblemKind, str]] = MappingProxyType(
+    {
+        SyntaxProblemKind.UNCLOSED_BLOCK: m.UNCLOSED_BLOCK,
+        SyntaxProblemKind.UNCLOSED_STRING: m.UNCLOSED_STRING,
+        SyntaxProblemKind.UNCLOSED_COMMENT: m.UNCLOSED_COMMENT,
+        SyntaxProblemKind.UNCLOSED_BRACKET: m.UNCLOSED_BRACKET,
+        SyntaxProblemKind.UNKNOWN_WORD: m.UNKNOWN_WORD,
+        SyntaxProblemKind.UNEXPECTED_CLOSE: m.UNEXPECTED_CLOSE,
+        SyntaxProblemKind.MISSED_SEMICOLON: m.MISSED_SEMICOLON,
+        SyntaxProblemKind.DOUBLE_COLON: m.DOUBLE_COLON,
+        SyntaxProblemKind.AT_RULE_WITHOUT_NAME: m.AT_RULE_WITHOUT_NAME,
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -268,6 +302,7 @@ def lint(
 
 __all__ = [
     'LINT_RULES',
+    'SYNTAX_PROBLEM_TEMPLATES',
     'LintProblem',
     'LintResult',
     'LintRule',

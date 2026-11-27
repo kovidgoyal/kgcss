@@ -5,6 +5,7 @@
 from typing import Final
 
 from kgcss.linter._engine import Context
+from kgcss.linter._messages import INVALID_POSITION_IMPORT_RULE
 from kgcss.linter._postcss import AtRule, Root, to_string
 from kgcss.linter._utils import is_standard_syntax_at_rule, is_standard_syntax_rule
 
@@ -25,4 +26,4 @@ def check(root: Root, ctx: Context) -> None:
             invalid_position = True
             continue
         if isinstance(node, AtRule) and name == 'import' and invalid_position:
-            ctx.report(node, 'Invalid position for @import rule', word=to_string(node))
+            ctx.report(node, INVALID_POSITION_IMPORT_RULE, word=to_string(node))

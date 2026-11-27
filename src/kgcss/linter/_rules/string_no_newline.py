@@ -12,6 +12,7 @@ from typing import Final
 
 from kgcss.linter._csstools import ParseError, ParseErrorMessage, ParseErrorWithToken, tokenize
 from kgcss.linter._engine import Context
+from kgcss.linter._messages import NEWLINE_IN_STRING
 from kgcss.linter._postcss import AtRule, Declaration, Node, Root, Rule
 from kgcss.linter._utils import at_rule_param_index, declaration_value_index, is_standard_syntax_selector
 
@@ -26,7 +27,7 @@ def check_text(ctx: Context, node: Node, text: str, start: int) -> None:
     def on_error(err: ParseError) -> None:
         if isinstance(err, ParseErrorWithToken) and err.message == ParseErrorMessage.UNEXPECTED_NEW_LINE_IN_STRING:
             token = err.token
-            ctx.report(node, 'Newline in string', index=start + token.start, end_index=start + token.end + 1)
+            ctx.report(node, NEWLINE_IN_STRING, index=start + token.start, end_index=start + token.end + 1)
 
     tokenize(text, on_parse_error=on_error)
 

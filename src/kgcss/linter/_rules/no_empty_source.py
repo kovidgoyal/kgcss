@@ -3,6 +3,7 @@
 """no-empty-source: stylelint's lib/rules/no-empty-source."""
 
 from kgcss.linter._engine import Context
+from kgcss.linter._messages import EMPTY_SOURCE
 from kgcss.linter._postcss import Root, js_trim
 from kgcss.linter._utils import is_configuration_comment
 
@@ -14,4 +15,4 @@ def check(root: Root, ctx: Context) -> None:
     # A non-standard syntax, such as JSX, that leaves the text in raws.after
     if not nodes and js_trim(root.raws.after or ''):
         return
-    ctx.report(root, 'Empty source')
+    ctx.report(root, EMPTY_SOURCE)

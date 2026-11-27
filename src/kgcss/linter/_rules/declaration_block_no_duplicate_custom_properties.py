@@ -5,6 +5,7 @@
 from typing import Final
 
 from kgcss.linter._engine import Context
+from kgcss.linter._messages import DUPLICATE_CUSTOM_PROPERTY
 from kgcss.linter._postcss import Root
 from kgcss.linter._utils import each_declaration_block, is_custom_property, is_standard_syntax_property
 
@@ -23,6 +24,6 @@ def check(root: Root, ctx: Context) -> None:
             ):
                 continue
             if prop in seen:
-                ctx.report(decl, f'Duplicate custom property "{prop}"', (prop,), word=prop)
+                ctx.report(decl, DUPLICATE_CUSTOM_PROPERTY, (prop,), word=prop)
             else:
                 seen.add(prop)

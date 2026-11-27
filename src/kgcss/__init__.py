@@ -73,6 +73,7 @@ from kgcss.fonts import FontDict, parse_font, parse_font_family, serialize_font,
 from kgcss.grammar import CSS_WIDE_KEYWORDS, is_color, matches
 from kgcss.linter import (
     LINT_RULES,
+    SYNTAX_PROBLEM_TEMPLATES,
     LintProblem,
     LintResult,
     LintRule,
@@ -101,6 +102,7 @@ __all__ = [
     'INITIAL_VALUES',
     'LINT_RULES',
     'RGBA',
+    'SYNTAX_PROBLEM_TEMPLATES',
     'CSSSyntaxError',
     'CharsetRule',
     'Color',

@@ -6,6 +6,7 @@ from typing import Final
 
 from kgcss._css_data import AT_KEYWORDS
 from kgcss.linter._engine import Context
+from kgcss.linter._messages import UNKNOWN_AT_RULE
 from kgcss.linter._postcss import Root
 from kgcss.linter._utils import is_standard_syntax_at_rule, vendor_prefix
 
@@ -20,4 +21,4 @@ def check(root: Root, ctx: Context) -> None:
         if ctx.matches('ignoreAtRules', name) or vendor_prefix(name) or name.lower() in AT_KEYWORDS:
             continue
         at_name = '@' + name
-        ctx.report(at_rule, f'Unknown at-rule "{at_name}"', (at_name,), word=at_name)
+        ctx.report(at_rule, UNKNOWN_AT_RULE, (at_name,), word=at_name)

@@ -11,6 +11,7 @@ stylelint throws, is skipped.
 from typing import Final
 
 from kgcss.linter._engine import Context
+from kgcss.linter._messages import DUPLICATE_SELECTOR
 from kgcss.linter._postcss import JS_WHITESPACE, AtRule, Root, Rule
 from kgcss.linter._selector_helpers import (
     at_rule_context,
@@ -39,7 +40,7 @@ def check(root: Root, ctx: Context) -> None:
     def complain(rule: Rule, selector: str, index: int, end_index: int, line: int) -> None:
         ctx.report(
             rule,
-            f'Duplicate selector "{selector}", first used at line {line}',
+            DUPLICATE_SELECTOR,
             (selector, str(line)),
             index=index,
             end_index=end_index,

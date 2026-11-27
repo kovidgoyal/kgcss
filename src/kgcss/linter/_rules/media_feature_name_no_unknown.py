@@ -34,6 +34,7 @@ from kgcss.linter._media_query import (
     is_media_feature,
     parse_from_tokens,
 )
+from kgcss.linter._messages import UNKNOWN_MEDIA_FEATURE_NAME
 from kgcss.linter._postcss import Root
 from kgcss.linter._utils import at_rule_param_index, at_rule_params, vendor_prefix
 
@@ -128,7 +129,7 @@ def check(root: Root, ctx: Context) -> None:
             start = at_rule_param_index(at_rule)
             ctx.report(
                 at_rule,
-                f'Unknown media feature name "{name}"',
+                UNKNOWN_MEDIA_FEATURE_NAME,
                 (name,),
                 index=start + token.start,
                 end_index=start + token.end + 1,

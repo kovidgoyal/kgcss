@@ -17,10 +17,10 @@ from typing import Final, cast
 
 import pytest
 
-from kgcss.linter import LINT_RULES, lint
+from kgcss.linter import LINT_RULES, LintRule, lint
 from kgcss.linter._engine import check_options
 
-from .linter_compare import as_stylelint, sort_key
+from .linter_compare import as_stylelint, check_templates, sort_key
 from .stylelint_fixtures import Case, cases
 from .stylelint_oracle import Config
 
@@ -107,3 +107,25 @@ def test_case(case: Case) -> None:
 
 def test_every_rule_has_cases() -> None:
     assert {RULE_BY_NAME[c.rule] for c in CASES} == set(LINT_RULES)
+
+
+def test_every_template_is_produced() -> None:
+    """The templates of LINT_RULES are all used: each is the template of a problem of some case.
+
+    (test_linter.py checks that the templates of syntax problems are all used.)
+    """
+    produced: set[str] = set()
+    for case in CASES:
+        if case.warnings:
+            rule = RULE_BY_NAME[case.rule]
+            result = lint(case.code, disabled=frozenset(LINT_RULES) - {rule}, options={rule: options_of(case) or {}})
+            produced.update(p.template for p in result.problems)
+    # No case of stylelint's has a nested selector after a selector that is not nested
+    css = '#c b {x:y}\na { & b {x:y} }'
+    result = lint(css, disabled=frozenset(LINT_RULES) - {LintRule.NO_DESCENDING_SPECIFICITY})
+    check_templates(result)
+    (problem,) = result.problems
+    assert problem.message == 'Expected selector "& b" ("a b") to come before selector "#c b", at line 1'
+    produced.update(p.template for p in result.problems)
+    registered = {t for info in LINT_RULES.values() for t in info.messages}
+    assert registered - produced == set()

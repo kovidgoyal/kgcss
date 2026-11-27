@@ -7,6 +7,7 @@ from typing import Final
 from kgcss._css_data import FONT_FAMILY_KEYWORDS
 from kgcss.linter._engine import Context
 from kgcss.linter._fonts import RE_FONT_FAMILY_PROPERTY, find_font_family
+from kgcss.linter._messages import DUPLICATE_FONT_FAMILY_NAME
 from kgcss.linter._postcss import Root
 from kgcss.linter._utils import declaration_value_index, js_trim_str
 
@@ -32,6 +33,4 @@ def check(root: Root, ctx: Context) -> None:
                 names.add(family)
             if seen:
                 index = declaration_value_index(decl) + node.source_index
-                ctx.report(
-                    decl, f'Duplicate font-family name "{family}"', (family,), index=index, end_index=index + len(raw)
-                )
+                ctx.report(decl, DUPLICATE_FONT_FAMILY_NAME, (family,), index=index, end_index=index + len(raw))

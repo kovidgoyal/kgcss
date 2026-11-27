@@ -6,6 +6,7 @@ import re
 from typing import Final
 
 from kgcss.linter._engine import Context
+from kgcss.linter._messages import DUPLICATE_IMPORT_RULE
 from kgcss.linter._postcss import Root, to_string
 from kgcss.linter._utils import RE_JS_WHITESPACE, at_rule_params
 from kgcss.linter._value_parser import ValueNode, parse, stringify
@@ -65,6 +66,6 @@ def check(root: Root, ctx: Context) -> None:
         imported = imports.get(uri)
         duplicate = (imported is not None and any(q in imported for q in media)) if media else imported is not None
         if duplicate:
-            ctx.report(at_rule, f'Duplicate @import rule {uri}', (uri,), word=to_string(at_rule))
+            ctx.report(at_rule, DUPLICATE_IMPORT_RULE, (uri,), word=to_string(at_rule))
             continue
         imports.setdefault(uri, []).extend(media)

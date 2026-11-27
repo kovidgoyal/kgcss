@@ -46,6 +46,7 @@ from kgcss.linter._csstools import (
     walk,
 )
 from kgcss.linter._engine import Context, narrow_edit
+from kgcss.linter._messages import SPACE_AFTER_OPERATOR, SPACE_BEFORE_OPERATOR
 from kgcss.linter._postcss import Declaration, Root
 from kgcss.linter._utils import declaration_value, declaration_value_index
 
@@ -221,10 +222,10 @@ def parse_operation(container: list[ComponentValue], cursor: int) -> tuple[Opera
 
 
 class Complaint:
-    __slots__ = ('index', 'message', 'operator')
+    __slots__ = ('index', 'operator', 'template')
 
-    def __init__(self, message: str, operator: str, index: int) -> None:
-        self.message, self.operator, self.index = message, operator, index
+    def __init__(self, template: str, operator: str, index: int) -> None:
+        self.template, self.operator, self.index = template, operator, index
 
 
 def analyze(value: str, apply: int | None = None, apply_all: bool = False) -> tuple[list[Complaint], str | None]:
@@ -240,8 +241,8 @@ def analyze(value: str, apply: int | None = None, apply_all: bool = False) -> tu
 
     def complain(before: bool, operation: Operation, fix: object) -> None:
         char = operation.operator_char
-        message = f'Expected single space {"before" if before else "after"} "{char}" operator'
-        complaints.append(Complaint(message, char, operation.operator_position))
+        template = SPACE_BEFORE_OPERATOR if before else SPACE_AFTER_OPERATOR
+        complaints.append(Complaint(template, char, operation.operator_position))
         if apply_all or (apply is not None and len(complaints) - 1 == apply):
             assert callable(fix)
             fix()
@@ -374,4 +375,4 @@ def check(root: Root, ctx: Context) -> None:
         for i, c in enumerate(complaints):
             fix = first_fix if i == 0 else all_fixes
             index = start + c.index
-            ctx.report(decl, c.message, (c.operator,), index=index, end_index=index + len(c.operator), fix=fix)
+            ctx.report(decl, c.template, (c.operator,), index=index, end_index=index + len(c.operator), fix=fix)

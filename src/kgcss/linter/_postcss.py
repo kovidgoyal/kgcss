@@ -21,6 +21,17 @@ from collections.abc import Iterator
 from typing import ClassVar, Final, NamedTuple, cast
 
 from kgcss._kgcss import PostcssNode, PostcssRaws, PostcssRawValue, postcss_parse
+from kgcss.linter._messages import (
+    AT_RULE_WITHOUT_NAME,
+    DOUBLE_COLON,
+    MISSED_SEMICOLON,
+    UNCLOSED_BLOCK,
+    UNCLOSED_BRACKET,
+    UNCLOSED_COMMENT,
+    UNCLOSED_STRING,
+    UNEXPECTED_CLOSE,
+    UNKNOWN_WORD,
+)
 
 # JavaScript's \s, which trim() also strips
 JS_WHITESPACE: Final = (
@@ -43,11 +54,17 @@ class Token(NamedTuple):
 
 
 class CssSyntaxError(Exception):
-    """An error the PostCSS parser throws, at an offset, with an optional exclusive end."""
+    """An error the PostCSS parser throws, at an offset, with an optional exclusive end.
 
-    def __init__(self, reason: str, offset: int, end: int | None = None) -> None:
+    Its reason, PostCSS's message, is template.format(*args), with a template of kgcss.linter._messages.
+    """
+
+    def __init__(self, template: str, args: tuple[str, ...], offset: int, end: int | None = None) -> None:
+        reason = template.format(*args)
         super().__init__(reason)
         self.reason = reason
+        self.template = template
+        self.args = args
         self.offset = offset
         self.end = end
 
@@ -88,8 +105,8 @@ class Tokenizer:
     def _char(self, index: int) -> str:
         return self.css[index] if 0 <= index < self.length else ''
 
-    def _unclosed(self, what: str) -> CssSyntaxError:
-        return CssSyntaxError('Unclosed ' + what, self.pos)
+    def _unclosed(self, template: str) -> CssSyntaxError:
+        return CssSyntaxError(template, (), self.pos)
 
     def _escaped_at(self, index: int) -> bool:
         """Whether the character at index is escaped by an odd number of backslashes."""
@@ -124,7 +141,7 @@ class Tokenizer:
                         if ignore:
                             nxt = pos
                             break
-                        raise self._unclosed('bracket')
+                        raise self._unclosed(UNCLOSED_BRACKET)
                     if not self._escaped_at(nxt):
                         break
                 token = Token('brackets', css[pos : nxt + 1], pos, nxt)
@@ -148,7 +165,7 @@ class Tokenizer:
                     if ignore:
                         nxt = pos + 1
                         break
-                    raise self._unclosed('string')
+                    raise self._unclosed(UNCLOSED_STRING)
                 if not self._escaped_at(nxt):
                     break
             token = Token('string', css[pos : nxt + 1], pos, nxt)
@@ -179,7 +196,7 @@ class Tokenizer:
             nxt = css.find('*/', pos + 2) + 1
             if nxt == 0:
                 if not ignore:
-                    raise self._unclosed('comment')
+                    raise self._unclosed(UNCLOSED_COMMENT)
                 nxt = self.length
             token = Token('comment', css[pos : nxt + 1], pos, nxt)
             pos = nxt
@@ -818,31 +835,31 @@ class Parser:
                 if founded == 2:
                     break
         offset = (token.end or 0) + 1 if token.type == 'word' else token.start
-        raise CssSyntaxError('Missed semicolon', offset or 0)
+        raise CssSyntaxError(MISSED_SEMICOLON, (), offset or 0)
 
     def double_colon(self, token: Token) -> None:
         assert token.start is not None
-        raise CssSyntaxError('Double colon', token.start, token.start + len(token.text))
+        raise CssSyntaxError(DOUBLE_COLON, (), token.start, token.start + len(token.text))
 
     def unclosed_block(self) -> None:
-        raise CssSyntaxError('Unclosed block', self.current.start or 0)
+        raise CssSyntaxError(UNCLOSED_BLOCK, (), self.current.start or 0)
 
     def unclosed_bracket(self, bracket: Token) -> None:
         assert bracket.start is not None
-        raise CssSyntaxError('Unclosed bracket', bracket.start, bracket.start + 1)
+        raise CssSyntaxError(UNCLOSED_BRACKET, (), bracket.start, bracket.start + 1)
 
     def unexpected_close(self, token: Token) -> None:
         assert token.start is not None
-        raise CssSyntaxError('Unexpected }', token.start, token.start + 1)
+        raise CssSyntaxError(UNEXPECTED_CLOSE, (), token.start, token.start + 1)
 
     def unknown_word(self, tokens: list[Token]) -> None:
         first = tokens[0]
         start = first.start or 0  # spaces have no position: PostCSS reports offset undefined
-        raise CssSyntaxError('Unknown word ' + first.text, start, start + len(first.text))
+        raise CssSyntaxError(UNKNOWN_WORD, (first.text,), start, start + len(first.text))
 
     def unnamed_atrule(self, node: AtRule, token: Token) -> None:
         assert token.start is not None
-        raise CssSyntaxError('At-rule without name', token.start, token.start + len(token.text))
+        raise CssSyntaxError(AT_RULE_WITHOUT_NAME, (), token.start, token.start + len(token.text))
 
 
 class SafeParser(Parser):

@@ -14,6 +14,7 @@ from kgcss._css_data import (
     WEBKIT_SCROLLBAR_PSEUDO_ELEMENTS,
 )
 from kgcss.linter._engine import Context
+from kgcss.linter._messages import UNKNOWN_PSEUDO_CLASS
 from kgcss.linter._postcss import AtRule, Node, Root, Rule
 from kgcss.linter._selector_parser import Combinator, Nesting, Pseudo, SelectorError
 from kgcss.linter._selector_parser import Node as SelectorNode
@@ -97,9 +98,7 @@ def check_selector(selector: str, node: Rule | AtRule, ctx: Context) -> None:
             ):
                 continue
             index = selector_index(pseudo)
-        ctx.report(
-            node, f'Unknown pseudo-class selector "{value}"', (value,), index=index, end_index=index + len(value)
-        )
+        ctx.report(node, UNKNOWN_PSEUDO_CLASS, (value,), index=index, end_index=index + len(value))
 
 
 def check(root: Root, ctx: Context) -> None:

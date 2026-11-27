@@ -49,7 +49,7 @@ def postcss_outcome(css: str, safe: bool, in_c: bool) -> object:
         else:
             root = (_postcss.SafeParser(css) if safe else _postcss.Parser(css)).parse()
     except _postcss.CssSyntaxError as err:
-        return err.reason, err.offset, err.end
+        return err.reason, err.template, err.args, err.offset, err.end
     return dump_postcss(root, None)
 
 

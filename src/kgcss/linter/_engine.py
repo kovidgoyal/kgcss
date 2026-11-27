@@ -13,10 +13,20 @@ from bisect import bisect_right
 from collections.abc import Callable, Collection, Mapping
 from typing import Final, NamedTuple, Protocol, cast
 
-from kgcss.linter import LINT_RULES, LintProblem, LintResult, LintRule, SyntaxProblem, SyntaxProblemKind, TextEdit
+from kgcss.linter import (
+    LINT_RULES,
+    SYNTAX_PROBLEM_TEMPLATES,
+    LintProblem,
+    LintResult,
+    LintRule,
+    SyntaxProblem,
+    SyntaxProblemKind,
+    TextEdit,
+)
 from kgcss.linter._disables import disabled_ranges, is_disabled
 from kgcss.linter._postcss import CssSyntaxError, Node, Root, parse, to_string
 
+SYNTAX_PROBLEM_KINDS: Final[Mapping[str, SyntaxProblemKind]] = {t: k for k, t in SYNTAX_PROBLEM_TEMPLATES.items()}
 # Fixing one problem can leave or make another that a further pass fixes
 MAX_FIX_PASSES: Final = 10
 RE_NEWLINE: Final = re.compile(r'\r?\n')
@@ -88,7 +98,7 @@ class Source:
 
 class Report(NamedTuple):
     rule: LintRule
-    message: str
+    template: str  # of kgcss.linter._messages
     args: tuple[str, ...]
     start: Position
     end: Position
@@ -151,7 +161,7 @@ class Context:
     def report(
         self,
         node: Node,
-        message: str,
+        template: str,
         args: tuple[str, ...] = (),
         *,
         index: int | None = None,
@@ -161,12 +171,15 @@ class Context:
         end: Position | None = None,
         fix: TextEdit | None = None,
     ) -> None:
-        """stylelint's report(): at start and end if given, else node.rangeBy() of the rest."""
+        """stylelint's report(): at start and end if given, else node.rangeBy() of the rest.
+
+        The message is template.format(*args), with a template of kgcss.linter._messages.
+        """
         if start is not None and end is not None:
             rng = start, end
         else:
             rng = self.source.range_by(node, index, end_index, word)
-        self.reports.append(Report(self.rule, message, args, rng[0], rng[1], fix))
+        self.reports.append(Report(self.rule, template, args, rng[0], rng[1], fix))
 
 
 class RuleModule(Protocol):
@@ -246,14 +259,17 @@ def removal_edit(css: str, node: Node) -> TextEdit | None:
 
 
 def syntax_problem(err: CssSyntaxError, source: Source, shift: int) -> SyntaxProblem:
-    kind = next(k for k in SyntaxProblemKind if err.reason == k.value or err.reason.startswith(k.value + ' '))
+    kind = SYNTAX_PROBLEM_KINDS[err.template]
     start = source.position(err.offset)
     if err.end is None:
-        return SyntaxProblem(kind, err.reason, err.offset + shift, None, start.line, start.column, None, None)
+        return SyntaxProblem(
+            kind, err.reason, err.offset + shift, None, start.line, start.column, None, None, err.template, err.args
+        )
     end = source.position(err.end)
     return SyntaxProblem(
-        kind, err.reason, err.offset + shift, err.end + shift, start.line, start.column, end.line, end.column
-    )
+        kind, err.reason, err.offset + shift, err.end + shift, start.line, start.column, end.line, end.column,
+        err.template, err.args,
+    )  # fmt: skip
 
 
 def run(text: str, rules: Collection[LintRule], options: Mapping[LintRule, Options]) -> LintResult:
@@ -281,8 +297,8 @@ def run(text: str, rules: Collection[LintRule], options: Mapping[LintRule, Optio
     for r in reports:
         fix = None if r.fix is None else TextEdit(r.fix.pos + shift, r.fix.end + shift, r.fix.text)
         problems.append(LintProblem(
-            r.rule, r.message, r.args, r.start.offset + shift, r.end.offset + shift,
-            r.start.line, r.start.column, r.end.line, r.end.column, fix,
+            r.rule, r.template.format(*r.args), r.args, r.start.offset + shift, r.end.offset + shift,
+            r.start.line, r.start.column, r.end.line, r.end.column, fix, r.template,
         ))  # fmt: skip
     problems.sort(key=lambda p: (p.pos, p.end))  # stable: in rule order where positions are equal
     syntax = () if err is None else (syntax_problem(err, source, shift),)

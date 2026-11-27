@@ -25,6 +25,7 @@ from kgcss.linter._csstools import (
 )
 from kgcss.linter._engine import Context
 from kgcss.linter._media_query import MediaWalkEntry, is_media_feature, parse_from_tokens
+from kgcss.linter._messages import UNKNOWN_UNIT
 from kgcss.linter._postcss import AtRule, Declaration, Root
 from kgcss.linter._utils import (
     at_rule_param_index,
@@ -85,7 +86,7 @@ def check_node(ctx: Context, node: AtRule | Declaration, start: int, value: Comp
     if (lower == 'x' and state['allow_x']) or lower in KNOWN_UNITS:
         return
     index = start + token.end + 1 - len(lower)
-    ctx.report(node, f'Unknown unit "{unit}"', (unit,), index=index, end_index=index + len(lower))
+    ctx.report(node, UNKNOWN_UNIT, (unit,), index=index, end_index=index + len(lower))
 
 
 def check(root: Root, ctx: Context) -> None:

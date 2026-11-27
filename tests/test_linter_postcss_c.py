@@ -143,7 +143,13 @@ def test_parse_matches_python() -> None:
     root2, err2 = python_parse(css)
     assert err is not None
     assert err2 is not None
-    assert (err.reason, err.offset, err.end) == (err2.reason, err2.offset, err2.end)
+    assert (err.reason, err.template, err.args, err.offset, err.end) == (
+        err2.reason,
+        err2.template,
+        err2.args,
+        err2.offset,
+        err2.end,
+    )
     assert to_string(root) == to_string(root2) == 'a{b:c; d:e} f{g:h}'  # the safe parser splits the declaration
 
 

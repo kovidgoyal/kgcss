@@ -5,6 +5,7 @@
 from typing import Final
 
 from kgcss.linter._engine import Context
+from kgcss.linter._messages import UNKNOWN_ANNOTATION
 from kgcss.linter._postcss import Root
 from kgcss.linter._utils import declaration_value, is_standard_syntax_value
 from kgcss.linter._value_parser import iter_nodes, parse
@@ -22,4 +23,4 @@ def check(root: Root, ctx: Context) -> None:
                 and node.value.startswith('!')
                 and not ctx.matches('ignoreAnnotations', node.value[1:])
             ):
-                ctx.report(decl, f'Unknown annotation "{node.value}"', (node.value,), word=node.value)
+                ctx.report(decl, UNKNOWN_ANNOTATION, (node.value,), word=node.value)

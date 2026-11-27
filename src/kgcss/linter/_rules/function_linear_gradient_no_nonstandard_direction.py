@@ -7,6 +7,7 @@ from collections.abc import Iterator
 from typing import Final
 
 from kgcss.linter._engine import Context
+from kgcss.linter._messages import NONSTANDARD_DIRECTION
 from kgcss.linter._postcss import JS_WHITESPACE, Declaration, Root
 from kgcss.linter._utils import (
     char_at,
@@ -53,7 +54,7 @@ def check_function(decl: Declaration, node: ValueNode, ctx: Context) -> None:
         if is_nonstandard(expression, not vendor_prefix(node.value)):
             index = declaration_value_index(decl) + node.source_index + expression_index
             end_index = index + len(expression.split(',', 1)[0].rstrip(JS_WHITESPACE))
-            ctx.report(decl, 'Nonstandard direction', index=index, end_index=end_index)
+            ctx.report(decl, NONSTANDARD_DIRECTION, index=index, end_index=end_index)
 
     function_arguments_search(stringify(node).lower(), RE_NAME, callback)
 
@@ -114,7 +115,7 @@ def check_nested(decl: Declaration, order: list[ValueNode], ends: list[int], ctx
         with_to = not vendor_prefix(outer.value)
         for g in order[i : ends[i]]:
             if RE_NAME.search(g.value) and (problem := decide(g, with_to)) is not None:
-                ctx.report(decl, 'Nonstandard direction', index=problem[0], end_index=problem[1])
+                ctx.report(decl, NONSTANDARD_DIRECTION, index=problem[0], end_index=problem[1])
 
 
 def check(root: Root, ctx: Context) -> None:

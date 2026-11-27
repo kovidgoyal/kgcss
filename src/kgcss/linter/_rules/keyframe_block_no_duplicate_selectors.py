@@ -3,6 +3,7 @@
 """keyframe-block-no-duplicate-selectors: stylelint's rule of that name."""
 
 from kgcss.linter._engine import Context
+from kgcss.linter._messages import DUPLICATE_KEYFRAME_SELECTOR
 from kgcss.linter._postcss import Root
 from kgcss.linter._selector_helpers import stripped_selector_source
 from kgcss.linter._selector_parser import Selector
@@ -25,6 +26,6 @@ def check(root: Root, ctx: Context) -> None:
                 text, index, end_index = stripped_selector_source(selector)
                 key = text.lower()
                 if key in seen:
-                    ctx.report(rule, f'Duplicate keyframe selector "{text}"', (text,), index=index, end_index=end_index)
+                    ctx.report(rule, DUPLICATE_KEYFRAME_SELECTOR, (text,), index=index, end_index=end_index)
                 else:
                     seen.add(key)
