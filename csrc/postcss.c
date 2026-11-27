@@ -128,16 +128,6 @@ tokens_free(tokens *t) {
     t->len = t->cap = 0;
 }
 
-/* tokens[a:b], as a new list (b may be below a: the slice is empty) */
-static int
-tokens_slice(const tokens *t, Py_ssize_t a, Py_ssize_t b, tokens *out) {
-    *out = (tokens){0};
-    for (Py_ssize_t i = a; i < b; i++) {
-        if (tokens_push(out, t->items[i]) != 0) { tokens_free(out); return -1; }
-    }
-    return 0;
-}
-
 /* Python's slice indexes: a negative index counts from the end */
 static Py_ssize_t
 py_index(Py_ssize_t i, Py_ssize_t len) {
@@ -845,11 +835,13 @@ end:
     return r;
 }
 
-static int decl(parser *p, tokens *t, bool custom_property);
-
-/* SafeParser.precheck_missed_semicolon() */
+/* SafeParser.precheck_missed_semicolon(), without its call of decl(): *other is set to the tokens of the
+ * declaration that it would parse, a view of the end of t, or left empty. decl() parses them after its own
+ * declaration, in a loop rather than by recursion, as many missed semicolons would otherwise make deep recursion
+ * and, with a copy of the remaining tokens at every level, quadratic memory. */
 static int
-precheck_missed_semicolon(parser *p, tokens *t) {
+precheck_missed_semicolon(parser *p, tokens *t, tokens *other) {
+    *other = (tokens){0};
     if (!p->safe) return ERR_NONE;
     Py_ssize_t colon;
     int r = colon_index(p, t, &colon);
@@ -868,16 +860,13 @@ precheck_missed_semicolon(parser *p, tokens *t) {
         }
         prev_end--;
     }
-    tokens other = {0};
-    if (tokens_slice(t, next_start, t->len, &other) != 0) return ERR_PYTHON;
     const Py_ssize_t pe = py_index(prev_end, t->len);
     PyObject *spaces = join_tokens(p, t, pe, next_start);
-    if (spaces == NULL) { tokens_free(&other); return ERR_PYTHON; }
+    if (spaces == NULL) return ERR_PYTHON;
+    *other = (tokens){.items = t->items + next_start, .len = t->len - next_start, .cap = 0};
     t->len = pe;
     Py_SETREF(p->spaces, spaces);
-    r = decl(p, &other, false);
-    tokens_free(&other);
-    return r;
+    return ERR_NONE;
 }
 
 /* Parser.check_missed_semicolon() */
@@ -900,9 +889,11 @@ check_missed_semicolon(parser *p, const tokens *t) {
     return syntax_error(p, "Missed semicolon", offset < 0 ? 0 : offset, -1);
 }
 
-/* Parser.decl() and SafeParser.decl() */
+/* Parser.decl() and SafeParser.decl(), but for the declaration that SafeParser.precheck_missed_semicolon()
+ * splits off the end, which is left in *next for decl() */
 static int
-decl(parser *p, tokens *t, bool custom_property) {
+decl_one(parser *p, tokens *t, bool custom_property, tokens *next) {
+    *next = (tokens){0};
     if (p->safe) {
         bool word = false;
         for (Py_ssize_t i = 0; i < t->len && !word; i++) word = t->items[i].type == PT_WORD;
@@ -993,10 +984,10 @@ decl(parser *p, tokens *t, bool custom_property) {
     const Py_ssize_t first_spaces_start = start;
     while (start < t->len && is_space_or_comment(t->items[start])) start++;
     Py_ssize_t first_spaces_end = start;
-    /* tokens = tokens[start:] */
-    if (tokens_slice(t, start, t->len, &rest) != 0) goto end;
+    /* tokens = tokens[start:], a view of t */
+    rest = (tokens){.items = t->items + start, .len = t->len - start, .cap = 0};
 
-    if ((r = precheck_missed_semicolon(p, &rest)) != ERR_NONE) goto end;
+    if ((r = precheck_missed_semicolon(p, &rest, next)) != ERR_NONE) goto end;
     r = ERR_PYTHON;
 
     for (Py_ssize_t i = rest.len - 1; i >= 0; i--) {
@@ -1079,10 +1070,22 @@ decl(parser *p, tokens *t, bool custom_property) {
 end:
     Py_XDECREF(prop);
     Py_XDECREF(s);
-    tokens_free(&rest);
     tokens_free(&value);
     Py_DECREF(node);
     return r;
+}
+
+/* Parser.decl() and SafeParser.decl(), with the declarations of missed semicolons parsed in turn */
+static int
+decl(parser *p, tokens *t, bool custom_property) {
+    tokens current = *t;
+    for (;;) {
+        tokens next;
+        const int r = decl_one(p, &current, custom_property, &next);
+        if (r != ERR_NONE || next.len == 0) return r;
+        current = next;
+        custom_property = false;
+    }
 }
 
 /* Parser.rule() */

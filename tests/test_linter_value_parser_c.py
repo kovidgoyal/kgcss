@@ -2,16 +2,17 @@
 
 """The C version of the value parser (csrc/value_parser.c) against python_parse() in kgcss.linter._value_parser."""
 
-import threading
+import gc
+import weakref
 
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
 from kgcss._kgcss import value_parse
-from kgcss.linter._value_parser import ValueNode, parse, python_parse, stringify
+from kgcss.linter._value_parser import ValueNode, parse, stringify
 
-from .linter_c_checks import check_value, dump_value
+from .linter_c_checks import check_value
 from .strategies import FRAGMENTS
 
 VALUE_FRAGMENTS = (
@@ -99,6 +100,21 @@ def test_node() -> None:
         value_parse(1)  # ty: ignore[invalid-argument-type]
 
 
+@pytest.mark.parametrize('field', ['type', 'value', 'before', 'after', 'quote', 'nodes'])
+def test_cycles_are_collected(field: str) -> None:
+    # The fields are writable, so the collector must see all of them
+    class Holder:
+        node: ValueNode
+
+    holder = Holder()
+    holder.node = ValueNode('word', 0)
+    setattr(holder.node, field, holder)
+    ref = weakref.ref(holder)
+    del holder
+    gc.collect()
+    assert ref() is None
+
+
 def test_deep_nesting() -> None:
     # Parsing is iterative and freeing the nodes uses the trashcan: neither recurses on the C stack
     nodes = parse('f(' * 100_000)
@@ -107,28 +123,3 @@ def test_deep_nesting() -> None:
         nodes = nodes[0].nodes or []
         depth += 1
     assert depth == 100_000
-
-
-def test_threads() -> None:
-    from .test_threads import STRESS
-
-    value = 'calc(1px + 2*3) url( x ) "s" a/b, f(g(h)) /* c */ u+0-7f' * 20
-    expected = [dump_value(n) for n in python_parse(value)]
-    n = 4
-    barrier = threading.Barrier(n)
-    errors: list[BaseException] = []
-
-    def work() -> None:
-        try:
-            barrier.wait()
-            for _ in range(50 * STRESS):
-                assert [dump_value(n) for n in parse(value)] == expected
-        except BaseException as e:
-            errors.append(e)
-
-    threads = [threading.Thread(target=work) for _ in range(n)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
-    assert not errors

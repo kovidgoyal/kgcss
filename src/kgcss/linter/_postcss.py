@@ -865,6 +865,10 @@ class Parser:
 class SafeParser(Parser):
     """postcss-safe-parser: parses any text, as stylelint does when it fixes."""
 
+    def __init__(self, css: str) -> None:
+        super().__init__(css)
+        self.missed: list[Token] | None = None
+
     def create_tokenizer(self) -> Tokenizer:
         return Tokenizer(self.css, ignore_errors=True)
 
@@ -886,8 +890,15 @@ class SafeParser(Parser):
             node.raws.left, node.text, node.raws.right = _split_comment(text)
 
     def decl(self, tokens: list[Token], custom_property: bool) -> None:
-        if len(tokens) > 1 and any(t.type == 'word' for t in tokens):
-            super().decl(tokens, False)  # the safe parser drops customProperty
+        # PostCSS parses the declaration that precheck_missed_semicolon() splits off by recursion, from the middle
+        # of decl(). Doing so after it, in a loop, gives the same tree, without a level of recursion per missed
+        # semicolon.
+        pending: list[Token] | None = tokens
+        while pending is not None:
+            tokens, self.missed = pending, None
+            if len(tokens) > 1 and any(t.type == 'word' for t in tokens):
+                super().decl(tokens, False)  # the safe parser drops customProperty
+            pending = self.missed
 
     def double_colon(self, token: Token) -> None:
         pass
@@ -922,7 +933,7 @@ class SafeParser(Parser):
         spaces = tokens[prev_end:next_start]
         del tokens[prev_end:]
         self.spaces = ''.join(t.text for t in spaces)
-        self.decl(other, False)
+        self.missed = other  # parsed by decl()
 
     def unclosed_bracket(self, bracket: Token) -> None:
         pass

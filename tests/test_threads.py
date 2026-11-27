@@ -8,6 +8,9 @@ Set KGCSS_STRESS to a number to multiply the amount of work.
 """
 
 import os
+import subprocess
+import sys
+import textwrap
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -550,7 +553,8 @@ def test_log_handler_runs_outside_the_sheet_lock() -> None:
 
 
 def test_concurrent_lint() -> None:
-    # Each thread lints its own sheet and a shared one, with fixes, while the rule modules load lazily
+    # Each thread lints its own sheet and a shared one, with fixes (test_concurrent_lint_loads_rules races the
+    # loading of the rules, which computing expected does here)
     sheets = [
         f'@foo{{}} a{{colr:#ff;;}} .c{i}{{color:red;color:blue}} .c{i}{{}} b{{width:calc(1px+2px)}} '
         f'@media (widht:1px){{x:hovr{{margin:1pix}}}} p{{font-family:Arial}}'
@@ -566,6 +570,199 @@ def test_concurrent_lint() -> None:
             css = sheets[idx]
             ok = ok and kgcss.lint(css) == expected[idx][0] and kgcss.lint(css, fix=True) == expected[idx][1]
             ok = ok and kgcss.lint(sheets[0]) == expected[0][0]
+        return ok
+
+    assert all(run_concurrently(work))
+    check_gil()
+
+
+def test_concurrent_lint_loads_rules() -> None:
+    # The rule modules load when first used: in a new process, so that the threads really race to import them
+    script = textwrap.dedent(
+        """
+        import sys, threading
+        import kgcss
+        assert not any(m.startswith('kgcss.linter._rules.') for m in sys.modules)
+        css = '@foo{} a{colr:#ff;;} .c{color:red;color:blue} b{width:calc(1px+2px)} [a=b]{} a::BEFORE{} ' * 3
+        n = 8
+        barrier = threading.Barrier(n)
+        results = [None] * n
+        def work(i):
+            barrier.wait()
+            results[i] = (kgcss.lint(css), kgcss.lint(css, fix=True))
+        threads = [threading.Thread(target=work, args=(i,)) for i in range(n)]
+        for t in threads: t.start()
+        for t in threads: t.join()
+        expected = (kgcss.lint(css), kgcss.lint(css, fix=True))
+        assert expected[0].problems and all(r == expected for r in results), results
+        """
+    )
+    for _ in range(STRESS):
+        subprocess.run([sys.executable, '-c', script], check=True, timeout=120)
+
+
+# The C code of the linter
+
+
+def test_postcss_parse_concurrently() -> None:
+    from kgcss.linter._postcss import SafeParser, parse, to_string
+
+    css = 'a{b:c d:e} @m x{f{g:h}} /* i */ j{k:l m:n o:p}' * 50
+    expected = to_string(SafeParser(css).parse())
+    barrier = threading.Barrier(THREADS)
+
+    def work(_: int) -> bool:
+        barrier.wait()
+        return all(to_string(parse(css)[0]) == expected for _ in range(20 * STRESS))
+
+    assert all(run_concurrently(work))
+    check_gil()
+
+
+def test_value_parse_concurrently() -> None:
+    from kgcss.linter._value_parser import parse, python_parse
+
+    from .linter_c_checks import dump_value
+
+    value = 'calc(1px + 2*3) url( x ) "s" a/b, f(g(h)) /* c */ u+0-7f' * 20
+    expected = [dump_value(n) for n in python_parse(value)]
+    barrier = threading.Barrier(THREADS)
+
+    def work(_: int) -> bool:
+        barrier.wait()
+        return all([dump_value(n) for n in parse(value)] == expected for _ in range(50 * STRESS))
+
+    assert all(run_concurrently(work))
+    check_gil()
+
+
+def test_value_node_shared() -> None:
+    from kgcss.linter._value_parser import ValueNode, parse, stringify
+
+    node = parse('f(a, b) c')[0]
+    assert isinstance(node, ValueNode)
+    barrier = threading.Barrier(THREADS)
+
+    def work(idx: int) -> bool:
+        barrier.wait()
+        ok = True
+        for i in range(2000 * STRESS):
+            if idx % 2:
+                node.value = ('g', 'hh')[i % 2]
+                node.source_end_index = i
+                node.nodes = [ValueNode('word', 2, 'x')] if i % 3 else parse('a, b')
+            else:
+                ok = ok and repr(node).startswith('ValueNode(function, ') and stringify(node)[0] in 'fgh'
+        return ok
+
+    assert all(run_concurrently(work))
+    check_gil()
+
+
+def test_selector_strings_concurrently() -> None:
+    from kgcss.linter._selector_parser import (
+        cssesc,
+        python_cssesc,
+        python_tokenize,
+        python_unesc,
+        tokenize,
+        unesc,
+    )
+
+    from .linter_c_checks import PREDICATES
+
+    text = '.a\\31 b > #c\\:d:not(.e, [f="g"]) /* h */ ~ i @{x} #{y} $(z) a:extend(b) <% c %>' * 20
+    expected = (
+        python_tokenize(text),
+        python_unesc(text),
+        python_cssesc(text, is_identifier=True),
+        [python(text) for _, python in PREDICATES],
+    )
+    barrier = threading.Barrier(THREADS)
+
+    def work(_: int) -> bool:
+        barrier.wait()
+        ok = True
+        for _ in range(50 * STRESS):
+            got = (tokenize(text), unesc(text), cssesc(text, is_identifier=True), [c(text) for c, _ in PREDICATES])
+            ok = ok and got == expected
+        return ok
+
+    assert all(run_concurrently(work))
+    check_gil()
+
+
+def test_selector_parser_shared_tree() -> None:
+    # Printing and normalizing a tree that other threads change: the C code reads each slot under the lock of its
+    # node and copies the lists of children, so it must neither crash nor fail, whatever it reads
+    from kgcss.linter._selector_parser import (
+        C_PARSER,
+        Container,
+        Node,
+        Raws,
+        RawSpaces,
+        Spaces,
+        parse_selector,
+        python_parse_selector,
+    )
+
+    text = 'a.b > #c:not(.d, e) ~ f::before, g h, :is(i, j)'
+    root = parse_selector(text * 3)
+    nodes: list[Node] = []
+    stack: list[Node] = [root]
+    while stack:
+        node = stack.pop()
+        nodes.append(node)
+        if isinstance(node, Container):
+            stack.extend(node.nodes)
+    writers = 2
+    barrier = threading.Barrier(THREADS)
+
+    def work(idx: int) -> bool:
+        barrier.wait()
+        ok = True
+        for i in range(200 * STRESS):
+            if idx < writers:
+                for node in nodes:
+                    node.raws = Raws(f'x{i}') if i % 2 else Raws()
+                    node.spaces = Spaces(' ' * (i % 3), '')
+                    node.raws.spaces = RawSpaces('/*c*/', None)
+                    node.spaces.before = str(i)
+                    if isinstance(node, Container) and node.nodes and i % 5 == 0:
+                        node.nodes = list(node.nodes)
+            else:
+                printed = C_PARSER.to_string(root)
+                normalized = C_PARSER.normalize(root)
+                ok = ok and isinstance(printed, str) and (normalized is NotImplemented or isinstance(normalized, tuple))
+                ok = ok and C_PARSER.to_string(C_PARSER.parse(text)) == text
+        return ok
+
+    assert all(run_concurrently(work))
+    # When nothing changes it any more, the C and Python versions agree again
+    assert C_PARSER.to_string(root) == root._stringify(0)
+    assert C_PARSER.to_string(python_parse_selector(text)) == text
+    check_gil()
+
+
+def test_selector_records_shared() -> None:
+    from kgcss.linter._selector_parser import Raws, RawSpaces
+
+    record = Raws('v')
+    barrier = threading.Barrier(THREADS)
+
+    def work(idx: int) -> bool:
+        barrier.wait()
+        ok = True
+        for i in range(5000 * STRESS):
+            if idx % 2:
+                record.value = f'a{i % 7}'
+                record.spaces = RawSpaces(str(i % 3), None)
+            else:
+                copy, deep = record.copy(), record.deepcopy()
+                spaces = deep.spaces
+                ok = ok and (copy.value == 'v' or (copy.value or '')[:1] == 'a')
+                ok = ok and repr(record).startswith('SelectorRaws(value=')
+                ok = ok and (spaces is None or spaces.before in ('0', '1', '2'))
         return ok
 
     assert all(run_concurrently(work))

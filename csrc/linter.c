@@ -550,15 +550,19 @@ SelectorParser_dealloc(PyObject *o) {
     Py_DECREF(tp);
 }
 
-/* The offset of the member descriptor name of cls, or -1 with an error */
+/* The offset of the member descriptor name of cls, or -1 with an error. The parser writes to it in instances of
+ * cls, so it must be a slot of cls or a base of it, and lie inside the instance. */
 static Py_ssize_t
 slot_offset(PyTypeObject *cls, const char *name) {
     PyObject *descr = PyObject_GetAttrString((PyObject *)cls, name);
     if (descr == NULL) return -1;
     Py_ssize_t ans = -1;
-    if (Py_IS_TYPE(descr, &PyMemberDescr_Type)) {
+    if (Py_IS_TYPE(descr, &PyMemberDescr_Type) && PyType_IsSubtype(cls, PyDescr_TYPE(descr))) {
         PyMemberDef *m = ((PyMemberDescrObject *)descr)->d_member;
-        if (m->type == Py_T_OBJECT_EX && !(m->flags & Py_READONLY)) ans = m->offset;
+        if (m->type == Py_T_OBJECT_EX && !(m->flags & Py_READONLY) && m->offset >= (Py_ssize_t)sizeof(PyObject) &&
+            m->offset <= cls->tp_basicsize - (Py_ssize_t)sizeof(PyObject *)) {
+            ans = m->offset;
+        }
     }
     Py_DECREF(descr);
     if (ans < 0) PyErr_Format(PyExc_TypeError, "%s.%s is not a slot", cls->tp_name, name);
@@ -585,6 +589,13 @@ SelectorParser_new(PyTypeObject *type, PyObject *args, PyObject *kwds) {
         for (int j = 0; j < SS_COUNT; j++) {
             self->offsets[i][j] = -1;
             if (has_slot(i, j) && (self->offsets[i][j] = slot_offset(self->classes[i], SS_NAMES[j])) < 0) goto error;
+            for (int k = 0; k < j; k++) {
+                if (self->offsets[i][j] >= 0 && self->offsets[i][k] == self->offsets[i][j]) {
+                    PyErr_Format(PyExc_TypeError, "%s.%s and %s.%s are the same slot", SN_NAMES[i], SS_NAMES[k],
+                                 SN_NAMES[i], SS_NAMES[j]);
+                    goto error;
+                }
+            }
         }
     }
     return (PyObject *)self;
@@ -1159,13 +1170,22 @@ attribute(sparser *p) {
     }
     PyObject *node = PyObject_CallFunction(p->f->attribute_node, "OOn", p->css, p->token_list, p->position);
     if (node == NULL) {
-        /* An error: the Python parser raises it */
+        /* An error in the selector: the Python parser raises it. Not one that parsing again cannot help. */
+        if (!PyErr_ExceptionMatches(PyExc_Exception) || PyErr_ExceptionMatches(PyExc_MemoryError)) return SP_ERROR;
         PyErr_Clear();
         return SP_FALLBACK;
     }
-    if (!Py_IS_TYPE(node, p->f->classes[SN_ATTRIBUTE])) {
+    /* The parser goes on to change the spaces, read the source and print the raws of the node */
+    const bool attr = Py_IS_TYPE(node, p->f->classes[SN_ATTRIBUTE]);
+    PyObject *spaces = attr ? SLOT(p, node, SN_ATTRIBUTE, SS_SPACES) : NULL;
+    PyObject *src = attr ? SLOT(p, node, SN_ATTRIBUTE, SS_SOURCE) : NULL;
+    PyObject *raws = attr ? SLOT(p, node, SN_ATTRIBUTE, SS_RAWS) : NULL;
+    PyTypeObject *const *records = p->state->record_types;
+    if (spaces == NULL || !Py_IS_TYPE(spaces, records[KG_RECORD_SELECTOR_SPACES]) || src == NULL ||
+        (src != Py_None && !Py_IS_TYPE(src, records[KG_RECORD_SELECTOR_SOURCE])) || raws == NULL ||
+        !Py_IS_TYPE(raws, records[KG_RECORD_SELECTOR_RAWS])) {
         Py_DECREF(node);
-        PyErr_SetString(PyExc_TypeError, "attribute_node() must return an Attribute");
+        PyErr_SetString(PyExc_TypeError, "attribute_node() must return an Attribute with its records");
         return SP_ERROR;
     }
     p->position = close + 1;
@@ -1724,52 +1744,55 @@ end:
     return r;
 }
 
-/* _order() */
+/* _order(). The nodes are those of the private copy that normalize() makes, but printing them may call Python
+ * code, so the children are taken from a copy of each list, which holds references to them. */
 static int
 order(kg_module_state *state, const kg_SelectorParser *f, PyObject *node) {
     const int cls = known_class(f, node);
     if (!has_slot(cls, SS_NODES)) return SP_OK;
     PyObject **slot = &SLOT_OF(f, node, cls, SS_NODES);
-    for (Py_ssize_t i = 0; i < PyList_GET_SIZE(*slot); i++) {
-        const int r = order(state, f, PyList_GET_ITEM(*slot, i));
-        if (r != SP_OK) return r;
-    }
+    if (!PyList_CheckExact(*slot)) return SP_FALLBACK;
+    PyObject *items = PyList_GetSlice(*slot, 0, PY_SSIZE_T_MAX), *keyed = NULL, *ordered = NULL;
+    if (items == NULL) return SP_ERROR;
+    const Py_ssize_t n = PyList_GET_SIZE(items);
+    int r = SP_OK;
+    for (Py_ssize_t i = 0; i < n && r == SP_OK; i++) r = order(state, f, PyList_GET_ITEM(items, i));
+    if (r != SP_OK) goto end;
+    r = SP_ERROR;
     if (cls == SN_ROOT || cls == SN_PSEUDO) {
-        const Py_ssize_t n = PyList_GET_SIZE(*slot);
-        PyObject *ordered = NULL;
         if (n > 1) {
             /* The first node of each string, in the order of the strings */
-            PyObject *keyed = PyList_New(n);
-            if (keyed == NULL) return SP_ERROR;
+            if ((keyed = PyList_New(n)) == NULL) goto end;
             for (Py_ssize_t i = 0; i < n; i++) {
-                PyObject *str = NULL, *child = PyList_GET_ITEM(*slot, i);
-                const int r = node_to_string(state, f, child, &str);
-                if (r != SP_OK) { Py_DECREF(keyed); return r; }
+                PyObject *str = NULL, *child = PyList_GET_ITEM(items, i);
+                if ((r = node_to_string(state, f, child, &str)) != SP_OK) goto end;
+                r = SP_ERROR;
                 PyObject *t = Py_BuildValue("(NnO)", str, i, child);
-                if (t == NULL) { Py_DECREF(keyed); return SP_ERROR; }
+                if (t == NULL) goto end;
                 PyList_SET_ITEM(keyed, i, t);
             }
-            if (PyList_Sort(keyed) != 0 || (ordered = PyList_New(0)) == NULL) { Py_DECREF(keyed); return SP_ERROR; }
+            if (PyList_Sort(keyed) != 0 || (ordered = PyList_New(0)) == NULL) goto end;
             PyObject *prev = NULL;
             for (Py_ssize_t i = 0; i < n; i++) {
                 PyObject *t = PyList_GET_ITEM(keyed, i), *str = PyTuple_GET_ITEM(t, 0);
                 if (prev != NULL && PyUnicode_Compare(prev, str) == 0) continue;
                 prev = str;
-                if (PyList_Append(ordered, PyTuple_GET_ITEM(t, 2)) != 0) { Py_DECREF(keyed); Py_DECREF(ordered); return SP_ERROR; }
+                if (PyList_Append(ordered, PyTuple_GET_ITEM(t, 2)) != 0) goto end;
             }
-            Py_DECREF(keyed);
-        } else if ((ordered = PyList_GetSlice(*slot, 0, n)) == NULL) {
-            return SP_ERROR;
+        } else {
+            ordered = Py_NewRef(items);
         }
-        Py_SETREF(*slot, ordered);
+    } else if (cls == SN_SELECTOR) {
+        if ((r = sort_compounds(state, f, items, &ordered)) != SP_OK) goto end;
     }
-    if (cls == SN_SELECTOR) {
-        PyObject *sorted = NULL;
-        const int r = sort_compounds(state, f, *slot, &sorted);
-        if (r != SP_OK) return r;
-        Py_SETREF(*slot, sorted);
-    }
-    return SP_OK;
+    if (ordered != NULL) Py_SETREF(*slot, ordered);
+    ordered = NULL;
+    r = SP_OK;
+end:
+    Py_XDECREF(items);
+    Py_XDECREF(keyed);
+    Py_XDECREF(ordered);
+    return r;
 }
 
 static PyObject *

@@ -8,7 +8,6 @@ included, and raise the same errors, for any text.
 
 import gc
 import sys
-import threading
 
 import pytest
 from hypothesis import given
@@ -103,6 +102,12 @@ EXAMPLES = (
     'a{b c}',
     'a{b:c d:e;f}',
     'a{b c:d}',
+    'a{x:y b:c d:e}',
+    'a{x:y b:c d:e;}',
+    'a{x:y  /*c*/ b:c !important d : e f:g}',
+    'a{x:y b:c ! important e:f}',
+    'a{x:y b:(c:d) e:f progid:g h:i}',
+    'a{ _x:y *b:c d:e important}',
     '}',
     'a{b:c}}}',
     '{}',
@@ -204,32 +209,18 @@ def test_deep_nesting() -> None:
     gc.collect()
 
 
+def test_missed_semicolons() -> None:
+    # The safe parser splits a declaration at every missed semicolon. PostCSS does so by recursion, with a copy of
+    # the remaining tokens at each level, which took memory quadratic in their number
+    check('a{x:y ' + 'b:c ' * 3000 + '}')
+    n = 200_000
+    root = c_parse('a{x:y ' + 'b:c ' * n + '}', True)
+    rule = (root.nodes or [])[0]
+    assert isinstance(rule, Rule)
+    assert len(rule.nodes or []) == n + 1
+
+
 def test_huge_input() -> None:
     css = 'a{b:c}' * 50_000 + 'x{' + 'y:z;' * 50_000
     assert to_string(c_parse(css, True)) == to_string(SafeParser(css).parse())
     assert sys.getrefcount(css) >= 2
-
-
-def test_threads() -> None:
-    from .test_threads import STRESS
-
-    css = 'a{b:c d:e} @m x{f{g:h}} /* i */' * 50
-    expected = to_string(SafeParser(css).parse())
-    n = 4
-    barrier = threading.Barrier(n)
-    errors: list[BaseException] = []
-
-    def work() -> None:
-        try:
-            barrier.wait()
-            for _ in range(20 * STRESS):
-                assert to_string(parse(css)[0]) == expected
-        except BaseException as e:
-            errors.append(e)
-
-    threads = [threading.Thread(target=work) for _ in range(n)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
-    assert not errors

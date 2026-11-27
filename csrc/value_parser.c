@@ -27,6 +27,12 @@ static int
 ValueNode_traverse(PyObject *o, visitproc visit, void *arg) {
     kg_ValueNode *self = (kg_ValueNode *)o;
     Py_VISIT(Py_TYPE(o));
+    /* The fields are writable, so any of them can make a cycle */
+    Py_VISIT(self->type);
+    Py_VISIT(self->value);
+    Py_VISIT(self->before);
+    Py_VISIT(self->after);
+    Py_VISIT(self->quote);
     Py_VISIT(self->nodes);
     return 0;
 }
@@ -78,7 +84,7 @@ error:
 
 static PyObject *
 ValueNode_new(PyTypeObject *tp, PyObject *args, PyObject *kwds) {
-    static char *kwlist[] = {"type", "source_index", "value", NULL};
+    static char *const kwlist[] = {"type", "source_index", "value", NULL};
     PyObject *type, *value = NULL;
     Py_ssize_t source_index;
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "Un|U:ValueNode", kwlist, &type, &source_index, &value)) return NULL;
@@ -92,13 +98,21 @@ static PyObject *
 ValueNode_repr(PyObject *o) {
     kg_ValueNode *self = (kg_ValueNode *)o;
     PyObject *type = NULL, *value = NULL, *ans = NULL;
+    Py_ssize_t source_index, source_end_index;
     Py_BEGIN_CRITICAL_SECTION(o);
     type = Py_XNewRef(self->type);
     value = Py_XNewRef(self->value);
     Py_END_CRITICAL_SECTION();
+    /* The member descriptors store these with relaxed atomics on free-threaded builds, without the lock */
+#ifdef Py_GIL_DISABLED
+    source_index = _Py_atomic_load_ssize_relaxed(&self->source_index);
+    source_end_index = _Py_atomic_load_ssize_relaxed(&self->source_end_index);
+#else
+    source_index = self->source_index;
+    source_end_index = self->source_end_index;
+#endif
     if (type != NULL && value != NULL) {
-        ans = PyUnicode_FromFormat("ValueNode(%S, %R, %zd, %zd)", type, value, self->source_index,
-                                   self->source_end_index);
+        ans = PyUnicode_FromFormat("ValueNode(%S, %R, %zd, %zd)", type, value, source_index, source_end_index);
     } else {
         PyErr_SetString(PyExc_AttributeError, "a field of the ValueNode is deleted");
     }
@@ -255,6 +269,9 @@ parse_value(vparser *p, Py_ssize_t max_) {
     Py_ssize_t pos = 0, balanced = 0;
     long code = code_at(p, pos);
 #define SET(var, val) do { PyObject *v_ = (val); if (v_ == NULL) goto end; Py_SETREF(var, v_); } while (0)
+/* SET() of a field of the node n, which is released on error */
+#define SET_FIELD(n, field, val) \
+    do { PyObject *v_ = (val); if (v_ == NULL) { Py_DECREF(n); goto end; } Py_SETREF((n)->field, v_); } while (0)
     while (pos < max_) {
         if (le32(code)) {  /* whitespace */
             Py_ssize_t nxt = pos;
@@ -288,7 +305,7 @@ parse_value(vparser *p, Py_ssize_t max_) {
             const Py_UCS4 quote = (Py_UCS4)code;
             kg_ValueNode *n = node(p, VT_STRING, pos, Py_NewRef(p->state->empty_string));
             if (n == NULL) goto end;
-            SET(n->quote, PyUnicode_FromOrdinal(quote));
+            SET_FIELD(n, quote, PyUnicode_FromOrdinal(quote));
             while (true) {
                 bool escape = false;
                 nxt = find_char(p, quote, nxt + 1);
@@ -301,7 +318,7 @@ parse_value(vparser *p, Py_ssize_t max_) {
                 }
                 if (!escape) break;
             }
-            SET(n->value, slice(p, pos + 1, nxt));
+            SET_FIELD(n, value, slice(p, pos + 1, nxt));
             n->source_end_index = n->unclosed ? nxt : nxt + 1;
             if (append(tokens, n) != 0) goto end;
             pos = nxt + 1;
@@ -456,6 +473,7 @@ parse_value(vparser *p, Py_ssize_t max_) {
         }
     }
 #undef SET
+#undef SET_FIELD
     for (Py_ssize_t i = PyList_GET_SIZE(stack) - 1; i > 0; i--) {
         kg_ValueNode *n = (kg_ValueNode *)PyList_GET_ITEM(stack, i);
         n->unclosed = 1;

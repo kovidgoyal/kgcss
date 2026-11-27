@@ -6,13 +6,14 @@ The Python versions in kgcss.linter._selector_parser are the reference: the
 C ones must give exactly the same results, errors included, for any text.
 """
 
-import threading
+from collections.abc import Callable
 
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
 from kgcss._kgcss import SelectorParser, selector_cssesc, selector_tokenize, selector_unesc
+from kgcss.linter import _selector_parser
 from kgcss.linter._selector_helpers import python_normalize_selector
 from kgcss.linter._selector_parser import (
     C_PARSER,
@@ -161,31 +162,6 @@ def test_bad_arguments() -> None:
         selector_tokenize(None)  # ty: ignore[invalid-argument-type]
     with pytest.raises(TypeError):
         selector_cssesc('a', True, True)  # ty: ignore[missing-argument]
-
-
-def test_threads() -> None:
-    from .test_threads import STRESS
-
-    text = '.a\\31 b > #c\\:d:not(.e, [f="g"]) /* h */ ~ i' * 20
-    expected = (python_tokenize(text), python_unesc(text), python_cssesc(text, is_identifier=True))
-    n = 4
-    barrier = threading.Barrier(n)
-    errors: list[BaseException] = []
-
-    def work() -> None:
-        try:
-            barrier.wait()
-            for _ in range(50 * STRESS):
-                assert (tokenize(text), unesc(text), cssesc(text, is_identifier=True)) == expected
-        except BaseException as e:
-            errors.append(e)
-
-    threads = [threading.Thread(target=work) for _ in range(n)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
-    assert not errors
 
 
 # The selector parser
@@ -348,6 +324,79 @@ def test_selector_parser_bad_arguments() -> None:
         SelectorParser(*[Root] * 12, print)
     with pytest.raises(TypeError):
         C_PARSER.parse(1)  # ty: ignore[invalid-argument-type]
+
+
+C_PARSER_CLASSES: tuple[type, ...] = (
+    _selector_parser.Root, _selector_parser.Selector, _selector_parser.Pseudo, _selector_parser.ClassName,
+    _selector_parser.ID, _selector_parser.Tag, _selector_parser.Universal, _selector_parser.Combinator,
+    _selector_parser.Nesting, _selector_parser.String, _selector_parser.Comment, _selector_parser.Attribute,
+)  # fmt: skip
+
+
+def test_selector_parser_foreign_slots() -> None:
+    # The parser writes to the slots at the offsets of their descriptors, so descriptors of another class, which
+    # may lie past the end of the instances or share an offset, must be refused
+    sp = _selector_parser
+    classes = list(C_PARSER_CLASSES)
+
+    class Big:
+        __slots__ = ('s0', 's1', 's2')
+
+    names = ('_value', 'parent', 'raws', 'source', 'source_index', 'spaces', '_namespace')
+    for descr in (Big.__dict__['s2'], Big.__dict__['s0']):
+        classes[5] = type('Tag', (), {**dict.fromkeys(names, descr), '__slots__': ()})
+        with pytest.raises(TypeError, match='is not a slot'):
+            SelectorParser(*classes, sp._attribute_node)
+    # Two names for one slot
+    classes[5] = type('Tag', (sp.Tag,), {'raws': sp.Node.__dict__['source'], '__slots__': ()})
+    with pytest.raises(TypeError, match='same slot'):
+        SelectorParser(*classes, sp._attribute_node)
+
+    class Tag(sp.Tag):
+        __slots__ = ()
+
+    # The descriptors of a base are those of the subclass too
+    classes[5] = Tag
+    root = SelectorParser(*classes, sp._attribute_node).parse('a')
+    assert isinstance(root, sp.Root)
+    selector = root.nodes[0]
+    assert isinstance(selector, sp.Selector)
+    assert type(selector.nodes[0]) is Tag
+
+
+def test_selector_parser_attribute_node() -> None:
+    sp = _selector_parser
+    classes = C_PARSER_CLASSES
+
+    def broken(field: str, value: object) -> Callable[[str, list[sp.Token], int], sp.Attribute]:
+        def attribute_node(css: str, tokens: list[sp.Token], position: int) -> sp.Attribute:
+            node = sp._attribute_node(css, tokens, position)
+            if value is None:
+                delattr(node, field)
+            else:
+                setattr(node, field, value)
+            return node
+
+        return attribute_node
+
+    # The parser changes the records of the node, so they must be records of the right types
+    for field, value in (('spaces', None), ('spaces', 'x'), ('source', 'x'), ('source', None), ('raws', 1)):
+        parser = SelectorParser(*classes, broken(field, value))
+        with pytest.raises(TypeError, match='with its records'):
+            parser.parse('a [b] c')
+    assert SelectorParser(*classes, broken('raws', sp.Raws())).parse('[b]') is not NotImplemented
+
+    def fail(exc: BaseException) -> Callable[[str, list[sp.Token], int], sp.Attribute]:
+        def attribute_node(css: str, tokens: list[sp.Token], position: int) -> sp.Attribute:
+            raise exc
+
+        return attribute_node
+
+    # An error in the selector is left to the Python parser, but not errors that it cannot help with
+    assert SelectorParser(*classes, fail(sp.SelectorError('x'))).parse('[b]') is NotImplemented
+    for exc in (MemoryError(), KeyboardInterrupt()):
+        with pytest.raises(type(exc)):
+            SelectorParser(*classes, fail(exc)).parse('[b]')
 
 
 # Printing and normalizing
